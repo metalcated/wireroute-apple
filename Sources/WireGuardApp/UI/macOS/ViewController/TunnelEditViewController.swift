@@ -3,6 +3,7 @@
 
 import Cocoa
 
+@MainActor
 protocol TunnelEditViewControllerDelegate: AnyObject {
     func tunnelSaved(tunnel: TunnelContainer)
     func tunnelEditingCancelled()

@@ -12,7 +12,12 @@ enum ZipExporterError: WireGuardAppError {
 }
 
 class ZipExporter {
-    static func exportConfigFiles(tunnelConfigurations: [TunnelConfiguration], to url: URL, completion: @escaping (WireGuardAppError?) -> Void) {
+    @MainActor
+    static func exportConfigFiles(
+        tunnelConfigurations: [TunnelConfiguration],
+        to url: URL,
+        completion: @escaping @MainActor @Sendable (WireGuardAppError?) -> Void
+    ) {
 
         guard !tunnelConfigurations.isEmpty else {
             completion(ZipExporterError.noTunnelsToExport)

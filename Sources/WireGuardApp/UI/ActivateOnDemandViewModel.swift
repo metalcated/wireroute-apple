@@ -3,6 +3,7 @@
 
 import Foundation
 
+@MainActor
 class ActivateOnDemandViewModel {
     enum OnDemandField {
         case onDemand

@@ -4,7 +4,10 @@
 import Foundation
 
 class ZipImporter {
-    static func importConfigFiles(from url: URL, completion: @escaping (Result<[TunnelConfiguration?], ZipArchiveError>) -> Void) {
+    static func importConfigFiles(
+        from url: URL,
+        completion: @escaping @MainActor @Sendable (Result<[TunnelConfiguration?], ZipArchiveError>) -> Void
+    ) {
         DispatchQueue.global(qos: .userInitiated).async {
             var unarchivedFiles: [(fileBaseName: String, contents: Data)]
             do {

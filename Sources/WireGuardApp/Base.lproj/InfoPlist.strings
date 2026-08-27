@@ -3,5 +3,5 @@
 
 // iOS permission prompts
 
-NSCameraUsageDescription = "Camera is used for scanning QR codes for importing WireGuard configurations";
+NSCameraUsageDescription = "WireRoute uses the camera to import a tunnel configuration from a QR code";
 NSFaceIDUsageDescription = "Face ID is used for authenticating viewing and exporting of private keys";

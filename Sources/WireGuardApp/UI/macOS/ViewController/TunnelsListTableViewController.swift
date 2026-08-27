@@ -3,6 +3,7 @@
 
 import Cocoa
 
+@MainActor
 protocol TunnelsListTableViewControllerDelegate: AnyObject {
     func tunnelsSelected(tunnelIndices: [Int])
     func tunnelsListEmpty()

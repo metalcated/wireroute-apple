@@ -3,8 +3,15 @@
 
 import UIKit
 
+@MainActor
 class ConfirmationAlertPresenter {
-    static func showConfirmationAlert(message: String, buttonTitle: String, from sourceObject: AnyObject, presentingVC: UIViewController, onConfirmed: @escaping (() -> Void)) {
+    static func showConfirmationAlert(
+        message: String,
+        buttonTitle: String,
+        from sourceObject: AnyObject,
+        presentingVC: UIViewController,
+        onConfirmed: @escaping @MainActor @Sendable () -> Void
+    ) {
         let destroyAction = UIAlertAction(title: buttonTitle, style: .destructive) { _ in
             onConfirmed()
         }

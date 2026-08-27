@@ -3,7 +3,33 @@
 
 import Foundation
 
-extension Array {
+private final class ConcurrentMapStorage<Value>: @unchecked Sendable {
+    private var values: [Value?]
+    private let lock = NSLock()
+
+    init(count: Int) {
+        values = [Value?](repeating: nil, count: count)
+    }
+
+    func store(_ value: Value, at index: Int) {
+        lock.lock()
+        values[index] = value
+        lock.unlock()
+    }
+
+    func completedValues() -> [Value] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values.map { value in
+            guard let value else {
+                preconditionFailure("Concurrent map did not produce a value for every input")
+            }
+            return value
+        }
+    }
+}
+
+extension Array where Element: Sendable {
 
     /// Returns an array containing the results of mapping the given closure over the sequence’s
     /// elements concurrently.
@@ -14,21 +40,24 @@ extension Array {
     ///            Pass `nil` to perform computations on the current queue.
     ///   - transform: the block to perform concurrent computations over the given element.
     /// - Returns: an array of concurrently computed values.
-    func concurrentMap<U>(queue: DispatchQueue?, _ transform: (Element) -> U) -> [U] {
-        var result = [U?](repeating: nil, count: self.count)
-        let resultQueue = DispatchQueue(label: "ConcurrentMapQueue")
-
-        let execute = queue?.sync ?? { $0() }
-
-        execute {
+    func concurrentMap<U: Sendable>(
+        queue: DispatchQueue?,
+        _ transform: @escaping @Sendable (Element) -> U
+    ) -> [U] {
+        let storage = ConcurrentMapStorage<U>(count: count)
+        let operation: @Sendable () -> Void = {
             DispatchQueue.concurrentPerform(iterations: self.count) { index in
                 let value = transform(self[index])
-                resultQueue.sync {
-                    result[index] = value
-                }
+                storage.store(value, at: index)
             }
         }
 
-        return result.map { $0! }
+        if let queue {
+            queue.sync(execute: operation)
+        } else {
+            operation()
+        }
+
+        return storage.completedValues()
     }
 }

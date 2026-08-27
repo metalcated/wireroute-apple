@@ -4,6 +4,17 @@
 import Foundation
 import Network
 
+public struct BlockedAddressFamilies: OptionSet, Sendable {
+    public let rawValue: UInt8
+
+    public init(rawValue: UInt8) {
+        self.rawValue = rawValue
+    }
+
+    public static let ipv4 = BlockedAddressFamilies(rawValue: 1 << 0)
+    public static let ipv6 = BlockedAddressFamilies(rawValue: 1 << 1)
+}
+
 public struct IPAddressRange {
     public let address: IPAddress
     public let networkPrefixLength: UInt8

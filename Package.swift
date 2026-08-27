@@ -1,16 +1,16 @@
-// swift-tools-version:5.3
-// The swift-tools-version declares the minimum version of Swift required to build this package.
+// swift-tools-version:6.0
 
 import PackageDescription
 
 let package = Package(
-    name: "WireGuardKit",
+    name: "WireRoute",
     platforms: [
-        .macOS(.v12),
-        .iOS(.v15)
+        .macOS(.v14),
+        .iOS(.v17)
     ],
     products: [
-        .library(name: "WireGuardKit", targets: ["WireGuardKit"])
+        .library(name: "WireGuardKit", targets: ["WireGuardKit"]),
+        .library(name: "WireRouteCore", targets: ["WireRouteCore"])
     ],
     dependencies: [],
     targets: [
@@ -35,6 +35,8 @@ let package = Package(
             ],
             publicHeadersPath: ".",
             linkerSettings: [.linkedLibrary("wg-go")]
-        )
+        ),
+        .target(name: "WireRouteCore"),
+        .testTarget(name: "WireRouteCoreTests", dependencies: ["WireRouteCore"])
     ]
 )

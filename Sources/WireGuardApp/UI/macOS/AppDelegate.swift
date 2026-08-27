@@ -4,7 +4,8 @@
 import Cocoa
 import ServiceManagement
 
-@NSApplicationMain
+@main
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 
     var tunnelsManager: TunnelsManager?

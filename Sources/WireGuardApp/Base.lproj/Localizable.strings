@@ -9,7 +9,7 @@
 
 // Tunnels list UI
 
-"tunnelsListTitle" = "WireGuard";
+"tunnelsListTitle" = "WireRoute";
 "tunnelsListSettingsButtonTitle" = "Settings";
 "tunnelsListCenteredAddTunnelButtonTitle" = "Add a tunnel";
 "tunnelsListSwipeDeleteButtonTitle" = "Delete";
@@ -213,7 +213,7 @@
 "settingsViewTitle" = "Settings";
 
 "settingsSectionTitleAbout" = "About";
-"settingsVersionKeyWireGuardForIOS" = "WireGuard for iOS";
+"settingsVersionKeyWireGuardForIOS" = "WireRoute for iOS";
 "settingsVersionKeyWireGuardGoBackend" = "WireGuard Go Backend";
 
 "settingsSectionTitleExportConfigurations" = "Export configurations";
@@ -304,17 +304,17 @@
 "macMenuNetworks (%@)" = "Networks: %@";
 "macMenuNetworksNone" = "Networks: None";
 
-"macMenuTitle" = "WireGuard";
+"macMenuTitle" = "WireRoute";
 "macTunnelsMenuTitle" = "Tunnels";
 "macMenuManageTunnels" = "Manage Tunnels";
 "macMenuImportTunnels" = "Import Tunnel(s) from File…";
 "macMenuAddEmptyTunnel" = "Add Empty Tunnel…";
 "macMenuViewLog" = "View Log";
 "macMenuExportTunnels" = "Export Tunnels to Zip…";
-"macMenuAbout" = "About WireGuard";
-"macMenuQuit" = "Quit WireGuard";
+"macMenuAbout" = "About WireRoute";
+"macMenuQuit" = "Quit WireRoute";
 
-"macMenuHideApp" = "Hide WireGuard";
+"macMenuHideApp" = "Hide WireRoute";
 "macMenuHideOtherApps" = "Hide Others";
 "macMenuShowAllApps" = "Show All";
 
@@ -338,7 +338,7 @@
 
 // Mac manage tunnels window
 
-"macWindowTitleManageTunnels" = "Manage WireGuard Tunnels";
+"macWindowTitleManageTunnels" = "Manage WireRoute Tunnels";
 
 "macDeleteTunnelConfirmationAlertMessage (%@)" = "Are you sure you want to delete ‘%@’?";
 "macDeleteMultipleTunnelsConfirmationAlertMessage (%d)" = "Are you sure you want to delete %d tunnels?";
@@ -414,16 +414,31 @@
 "iosExportPrivateData" = "Authenticate to export tunnel private keys.";
 "iosViewPrivateData" = "Authenticate to view tunnel private keys.";
 
+// WireRoute routing mode
+
+"tunnelSectionTitleRouting" = "Routing";
+"tunnelRoutingFullTunnel" = "Full tunnel";
+"tunnelRoutingSplitDescription" = "Split tunnel sends only the profile’s saved AllowedIPs through the VPN.";
+"tunnelRoutingFullDescription" = "Full tunnel sends all supported traffic through the VPN and blocks an unsupported address family.";
+"alertRoutingMissingSplitRoutesTitle" = "Split routes needed";
+"alertRoutingMissingSplitRoutesMessage" = "This profile does not contain any specific AllowedIPs to restore. Edit the profile and add the networks that should use the VPN, then try Split tunnel again.";
+"alertRoutingNoAddressTitle" = "Tunnel address needed";
+"alertRoutingNoAddressMessage" = "This profile needs at least one IPv4 or IPv6 interface address before Full tunnel can be enabled.";
+"alertRoutingMultiplePeersTitle" = "Choose a gateway peer";
+"alertRoutingMultiplePeersMessage" = "WireRoute cannot safely choose a Full tunnel gateway because this profile has multiple peers and no single existing default-route peer.";
+"alertRoutingInvalidRoutesTitle" = "Routes could not be restored";
+"alertRoutingInvalidRoutesMessage" = "The saved split routes for this profile are invalid. Review its AllowedIPs before changing routing mode.";
+
 // Mac alert
 
-"macConfirmAndQuitAlertMessage" = "Do you want to close the tunnels manager or quit WireGuard entirely?";
-"macConfirmAndQuitAlertInfo" = "If you close the tunnels manager, WireGuard will continue to be available from the menu bar icon.";
-"macConfirmAndQuitInfoWithActiveTunnel (%@)" = "If you close the tunnels manager, WireGuard will continue to be available from the menu bar icon.\n\nNote that if you quit WireGuard entirely the currently active tunnel ('%@') will still remain active until you deactivate it from this application or through the Network panel in System Preferences.";
-"macConfirmAndQuitAlertQuitWireGuard" = "Quit WireGuard";
+"macConfirmAndQuitAlertMessage" = "Do you want to close the tunnels manager or quit WireRoute entirely?";
+"macConfirmAndQuitAlertInfo" = "If you close the tunnels manager, WireRoute will continue to be available from the menu bar icon.";
+"macConfirmAndQuitInfoWithActiveTunnel (%@)" = "If you close the tunnels manager, WireRoute will continue to be available from the menu bar icon.\n\nNote that if you quit WireRoute entirely the currently active tunnel ('%@') will still remain active until you deactivate it from this application or through the Network panel in System Settings.";
+"macConfirmAndQuitAlertQuitWireGuard" = "Quit WireRoute";
 "macConfirmAndQuitAlertCloseWindow" = "Close Tunnels Manager";
 
-"macAppExitingWithActiveTunnelMessage" = "WireGuard is exiting with an active tunnel";
-"macAppExitingWithActiveTunnelInfo" = "The tunnel will remain active after exiting. You may disable it by reopening this application or through the Network panel in System Preferences.";
+"macAppExitingWithActiveTunnelMessage" = "WireRoute is exiting with an active tunnel";
+"macAppExitingWithActiveTunnelInfo" = "The tunnel will remain active after exiting. You may disable it by reopening this application or through VPN settings in System Settings.";
 
 // Mac tooltip
 
@@ -445,7 +460,7 @@
 
 // Mac App Store updating alert
 
-"macAppStoreUpdatingAlertMessage" = "App Store would like to update WireGuard";
+"macAppStoreUpdatingAlertMessage" = "App Store would like to update WireRoute";
 "macAppStoreUpdatingAlertInfoWithOnDemand (%@)" = "Please disable on-demand for tunnel ‘%@’, deactivate it, and then continue updating in App Store.";
 "macAppStoreUpdatingAlertInfoWithoutOnDemand (%@)" = "Please deactivate tunnel ‘%@’ and then continue updating in App Store.";
 

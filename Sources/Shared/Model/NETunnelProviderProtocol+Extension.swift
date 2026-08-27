@@ -2,6 +2,18 @@
 // Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
 
 import NetworkExtension
+import Network
+
+private enum WireRouteProviderMetadataKey {
+    static let routingMode = "WireRouteRoutingMode"
+    static let splitAllowedIPs = "WireRouteSplitAllowedIPs"
+    static let blockedAddressFamilies = "WireRouteBlockedAddressFamilies"
+}
+
+private enum WireRouteProviderRoutingMode: String {
+    case split
+    case full
+}
 
 enum PacketTunnelProviderError: String, Error {
     case savedProtocolConfigurationIsInvalid
@@ -22,9 +34,14 @@ extension NETunnelProviderProtocol {
         if passwordReference == nil {
             return nil
         }
+        providerConfiguration = (old as? NETunnelProviderProtocol)?.providerConfiguration
         #if os(macOS)
-        providerConfiguration = ["UID": getuid()]
+        var metadata = providerConfiguration ?? [:]
+        metadata["UID"] = getuid()
+        providerConfiguration = metadata
         #endif
+
+        synchronizeWireRouteRoutingMetadata(with: tunnelConfiguration)
 
         let endpoints = tunnelConfiguration.peers.compactMap { $0.endpoint }
         if endpoints.count == 1 {
@@ -55,6 +72,108 @@ extension NETunnelProviderProtocol {
     func verifyConfigurationReference() -> Bool {
         guard let ref = passwordReference else { return false }
         return Keychain.verifyReference(called: ref)
+    }
+
+    var wireRouteRoutingMode: String? {
+        providerConfiguration?[WireRouteProviderMetadataKey.routingMode] as? String
+    }
+
+    var wireRouteSplitAllowedIPs: [String: [String]]? {
+        providerConfiguration?[WireRouteProviderMetadataKey.splitAllowedIPs] as? [String: [String]]
+    }
+
+    var wireRouteBlockedAddressFamilies: BlockedAddressFamilies {
+        let rawFamilies = providerConfiguration?[WireRouteProviderMetadataKey.blockedAddressFamilies] as? [String] ?? []
+        var families: BlockedAddressFamilies = []
+        if rawFamilies.contains("ipv4") {
+            families.insert(.ipv4)
+        }
+        if rawFamilies.contains("ipv6") {
+            families.insert(.ipv6)
+        }
+        return families
+    }
+
+    func wireRouteEffectiveBlockedAddressFamilies(
+        for tunnelConfiguration: TunnelConfiguration
+    ) -> BlockedAddressFamilies {
+        let isFullTunnel = tunnelConfiguration.peers
+            .flatMap(\.allowedIPs)
+            .contains { $0.networkPrefixLength == 0 }
+        guard isFullTunnel else { return [] }
+
+        var families: BlockedAddressFamilies = []
+        if !tunnelConfiguration.interface.addresses.contains(where: { $0.address is IPv4Address }) {
+            families.insert(.ipv4)
+        }
+        if !tunnelConfiguration.interface.addresses.contains(where: { $0.address is IPv6Address }) {
+            families.insert(.ipv6)
+        }
+        return families
+    }
+
+    func setWireRouteRoutingMetadata(
+        mode: String,
+        splitAllowedIPs: [String: [String]],
+        blockedAddressFamilies: BlockedAddressFamilies
+    ) {
+        var metadata = providerConfiguration ?? [:]
+        metadata[WireRouteProviderMetadataKey.routingMode] = mode
+        metadata[WireRouteProviderMetadataKey.splitAllowedIPs] = splitAllowedIPs
+        var blockedFamilies = [String]()
+        if blockedAddressFamilies.contains(.ipv4) {
+            blockedFamilies.append("ipv4")
+        }
+        if blockedAddressFamilies.contains(.ipv6) {
+            blockedFamilies.append("ipv6")
+        }
+        metadata[WireRouteProviderMetadataKey.blockedAddressFamilies] = blockedFamilies
+        providerConfiguration = metadata
+    }
+
+    @discardableResult
+    func synchronizeWireRouteRoutingMetadata(with tunnelConfiguration: TunnelConfiguration) -> Bool {
+        let containsDefaultRoute = tunnelConfiguration.peers
+            .flatMap(\.allowedIPs)
+            .contains { $0.networkPrefixLength == 0 }
+        let mode: WireRouteProviderRoutingMode = containsDefaultRoute ? .full : .split
+
+        let previousSplitRoutes = wireRouteSplitAllowedIPs ?? [:]
+        let currentPeerKeys = Set(tunnelConfiguration.peers.map { $0.publicKey.base64Key })
+        var splitRoutes = [String: [String]]()
+        for peer in tunnelConfiguration.peers {
+            let publicKey = peer.publicKey.base64Key
+            let specificRoutes = stableUnique(
+                peer.allowedIPs
+                    .filter { $0.networkPrefixLength != 0 }
+                    .map(\.stringRepresentation)
+            )
+            if mode == .full && specificRoutes.isEmpty {
+                splitRoutes[publicKey] = previousSplitRoutes[publicKey] ?? []
+            } else {
+                splitRoutes[publicKey] = specificRoutes
+            }
+        }
+        splitRoutes = splitRoutes.filter { currentPeerKeys.contains($0.key) }
+
+        let blockedAddressFamilies = wireRouteEffectiveBlockedAddressFamilies(for: tunnelConfiguration)
+
+        guard wireRouteRoutingMode != mode.rawValue
+                || wireRouteSplitAllowedIPs != splitRoutes
+                || wireRouteBlockedAddressFamilies != blockedAddressFamilies else {
+            return false
+        }
+        setWireRouteRoutingMetadata(
+            mode: mode.rawValue,
+            splitAllowedIPs: splitRoutes,
+            blockedAddressFamilies: blockedAddressFamilies
+        )
+        return true
+    }
+
+    private func stableUnique(_ routes: [String]) -> [String] {
+        var seen = Set<String>()
+        return routes.filter { seen.insert($0).inserted }
     }
 
     @discardableResult

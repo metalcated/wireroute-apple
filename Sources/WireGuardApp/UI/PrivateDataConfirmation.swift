@@ -7,8 +7,9 @@ import LocalAuthentication
 import AppKit
 #endif
 
+@MainActor
 class PrivateDataConfirmation {
-    static func confirmAccess(to reason: String, _ after: @escaping () -> Void) {
+    static func confirmAccess(to reason: String, _ after: @escaping @MainActor @Sendable () -> Void) {
         let context = LAContext()
 
         var error: NSError?
@@ -22,7 +23,7 @@ class PrivateDataConfirmation {
         }
 
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 #if os(macOS)
                 if !NSApp.isActive {
                     NSApp.activate(ignoringOtherApps: true)

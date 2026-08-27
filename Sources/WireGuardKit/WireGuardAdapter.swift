@@ -38,8 +38,41 @@ private enum State {
     case temporaryShutdown(_ settingsGenerator: PacketTunnelSettingsGenerator)
 }
 
-public class WireGuardAdapter {
-    public typealias LogHandler = (WireGuardLogLevel, String) -> Void
+private final class NetworkSettingsOperation: @unchecked Sendable {
+    enum WaitResult {
+        case completed(Error?)
+        case timedOut
+    }
+
+    private let condition = NSCondition()
+    private var isComplete = false
+    private var error: Error?
+
+    func complete(with error: Error?) {
+        condition.lock()
+        self.error = error
+        isComplete = true
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func wait(timeout: TimeInterval) -> WaitResult {
+        let deadline = Date().addingTimeInterval(timeout)
+        condition.lock()
+        defer { condition.unlock() }
+
+        while !isComplete {
+            guard condition.wait(until: deadline) else {
+                return .timedOut
+            }
+        }
+        return .completed(error)
+    }
+}
+
+/// All mutable adapter state is confined to `workQueue`.
+public final class WireGuardAdapter: @unchecked Sendable {
+    public typealias LogHandler = @Sendable (WireGuardLogLevel, String) -> Void
 
     /// Network routes monitor.
     private var networkMonitor: NWPathMonitor?
@@ -154,7 +187,7 @@ public class WireGuardAdapter {
 
     /// Returns a runtime configuration from WireGuard.
     /// - Parameter completionHandler: completion handler.
-    public func getRuntimeConfiguration(completionHandler: @escaping (String?) -> Void) {
+    public func getRuntimeConfiguration(completionHandler: @escaping @Sendable (String?) -> Void) {
         workQueue.async {
             guard case .started(let handle, _) = self.state else {
                 completionHandler(nil)
@@ -174,7 +207,11 @@ public class WireGuardAdapter {
     /// - Parameters:
     ///   - tunnelConfiguration: tunnel configuration.
     ///   - completionHandler: completion handler.
-    public func start(tunnelConfiguration: TunnelConfiguration, completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
+    public func start(
+        tunnelConfiguration: TunnelConfiguration,
+        blockedAddressFamilies: BlockedAddressFamilies = [],
+        completionHandler: @escaping @Sendable (WireGuardAdapterError?) -> Void
+    ) {
         workQueue.async {
             guard case .stopped = self.state else {
                 completionHandler(.invalidState)
@@ -188,7 +225,10 @@ public class WireGuardAdapter {
             networkMonitor.start(queue: self.workQueue)
 
             do {
-                let settingsGenerator = try self.makeSettingsGenerator(with: tunnelConfiguration)
+                let settingsGenerator = try self.makeSettingsGenerator(
+                    with: tunnelConfiguration,
+                    blockedAddressFamilies: blockedAddressFamilies
+                )
                 try self.setNetworkSettings(settingsGenerator.generateNetworkSettings())
 
                 let (wgConfig, resolutionResults) = settingsGenerator.uapiConfiguration()
@@ -211,7 +251,7 @@ public class WireGuardAdapter {
 
     /// Stop the tunnel.
     /// - Parameter completionHandler: completion handler.
-    public func stop(completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
+    public func stop(completionHandler: @escaping @Sendable (WireGuardAdapterError?) -> Void) {
         workQueue.async {
             switch self.state {
             case .started(let handle, _):
@@ -238,7 +278,11 @@ public class WireGuardAdapter {
     /// - Parameters:
     ///   - tunnelConfiguration: tunnel configuration.
     ///   - completionHandler: completion handler.
-    public func update(tunnelConfiguration: TunnelConfiguration, completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
+    public func update(
+        tunnelConfiguration: TunnelConfiguration,
+        blockedAddressFamilies: BlockedAddressFamilies = [],
+        completionHandler: @escaping @Sendable (WireGuardAdapterError?) -> Void
+    ) {
         workQueue.async {
             if case .stopped = self.state {
                 completionHandler(.invalidState)
@@ -254,7 +298,10 @@ public class WireGuardAdapter {
             }
 
             do {
-                let settingsGenerator = try self.makeSettingsGenerator(with: tunnelConfiguration)
+                let settingsGenerator = try self.makeSettingsGenerator(
+                    with: tunnelConfiguration,
+                    blockedAddressFamilies: blockedAddressFamilies
+                )
                 try self.setNetworkSettings(settingsGenerator.generateNetworkSettings())
 
                 switch self.state {
@@ -312,27 +359,22 @@ public class WireGuardAdapter {
     /// - Throws: an error of type `WireGuardAdapterError`.
     /// - Returns: `PacketTunnelSettingsGenerator`.
     private func setNetworkSettings(_ networkSettings: NEPacketTunnelNetworkSettings) throws {
-        var systemError: Error?
-        let condition = NSCondition()
-
-        // Activate the condition
-        condition.lock()
-        defer { condition.unlock() }
+        let operation = NetworkSettingsOperation()
 
         self.packetTunnelProvider?.setTunnelNetworkSettings(networkSettings) { error in
-            systemError = error
-            condition.signal()
+            operation.complete(with: error)
         }
 
         // Packet tunnel's `setTunnelNetworkSettings` times out in certain
         // scenarios & never calls the given callback.
         let setTunnelNetworkSettingsTimeout: TimeInterval = 5 // seconds
 
-        if condition.wait(until: Date().addingTimeInterval(setTunnelNetworkSettingsTimeout)) {
-            if let systemError = systemError {
+        switch operation.wait(timeout: setTunnelNetworkSettingsTimeout) {
+        case .completed(let systemError):
+            if let systemError {
                 throw WireGuardAdapterError.setNetworkSettings(systemError)
             }
-        } else {
+        case .timedOut:
             self.logHandler(.error, "setTunnelNetworkSettings timed out after 5 seconds; proceeding anyway")
         }
     }
@@ -387,10 +429,14 @@ public class WireGuardAdapter {
     /// - Parameter tunnelConfiguration: an instance of type `TunnelConfiguration`.
     /// - Throws: an error of type `WireGuardAdapterError`.
     /// - Returns: an instance of type `PacketTunnelSettingsGenerator`.
-    private func makeSettingsGenerator(with tunnelConfiguration: TunnelConfiguration) throws -> PacketTunnelSettingsGenerator {
+    private func makeSettingsGenerator(
+        with tunnelConfiguration: TunnelConfiguration,
+        blockedAddressFamilies: BlockedAddressFamilies
+    ) throws -> PacketTunnelSettingsGenerator {
         return PacketTunnelSettingsGenerator(
             tunnelConfiguration: tunnelConfiguration,
-            resolvedEndpoints: try self.resolvePeers(for: tunnelConfiguration)
+            resolvedEndpoints: try self.resolvePeers(for: tunnelConfiguration),
+            blockedAddressFamilies: blockedAddressFamilies
         )
     }
 

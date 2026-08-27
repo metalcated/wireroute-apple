@@ -5,6 +5,7 @@ import UIKit
 import SystemConfiguration.CaptiveNetwork
 import NetworkExtension
 
+@MainActor
 protocol SSIDOptionEditTableViewControllerDelegate: AnyObject {
     func ssidOptionSaved(option: ActivateOnDemandViewModel.OnDemandSSIDOption, ssids: [String])
 }
@@ -260,12 +261,17 @@ extension SSIDOptionEditTableViewController {
         }
     }
 
-    private func getConnectedSSID(completionHandler: @escaping (String?) -> Void) {
+    private func getConnectedSSID(
+        completionHandler: @escaping @MainActor @Sendable (String?) -> Void
+    ) {
         #if targetEnvironment(simulator)
         completionHandler("Simulator Wi-Fi")
         #else
         NEHotspotNetwork.fetchCurrent { hotspotNetwork in
-            completionHandler(hotspotNetwork?.ssid)
+            let ssid = hotspotNetwork?.ssid
+            Task { @MainActor in
+                completionHandler(ssid)
+            }
         }
         #endif
     }

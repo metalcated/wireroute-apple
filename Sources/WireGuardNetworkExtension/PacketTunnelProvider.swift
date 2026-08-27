@@ -5,6 +5,20 @@ import Foundation
 import NetworkExtension
 import os
 
+/// NetworkExtension completion blocks are Objective-C callbacks that are safe to invoke from the
+/// adapter queue, but the framework does not annotate them as `Sendable` yet.
+private final class NetworkExtensionCallback<Input>: @unchecked Sendable {
+    private let callback: (Input) -> Void
+
+    init(_ callback: @escaping (Input) -> Void) {
+        self.callback = callback
+    }
+
+    func callAsFunction(_ input: Input) {
+        callback(input)
+    }
+}
+
 class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private lazy var adapter: WireGuardAdapter = {
@@ -14,6 +28,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }()
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
+        let completion = NetworkExtensionCallback(completionHandler)
         let activationAttemptId = options?["activationAttemptId"] as? String
         let errorNotifier = ErrorNotifier(activationAttemptId: activationAttemptId)
 
@@ -24,18 +39,25 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         guard let tunnelProviderProtocol = self.protocolConfiguration as? NETunnelProviderProtocol,
               let tunnelConfiguration = tunnelProviderProtocol.asTunnelConfiguration() else {
             errorNotifier.notify(PacketTunnelProviderError.savedProtocolConfigurationIsInvalid)
-            completionHandler(PacketTunnelProviderError.savedProtocolConfigurationIsInvalid)
+            completion(PacketTunnelProviderError.savedProtocolConfigurationIsInvalid)
             return
         }
 
         // Start the tunnel
-        adapter.start(tunnelConfiguration: tunnelConfiguration) { adapterError in
+        let adapter = self.adapter
+        let blockedAddressFamilies = tunnelProviderProtocol.wireRouteEffectiveBlockedAddressFamilies(
+            for: tunnelConfiguration
+        )
+        adapter.start(
+            tunnelConfiguration: tunnelConfiguration,
+            blockedAddressFamilies: blockedAddressFamilies
+        ) { adapterError in
             guard let adapterError = adapterError else {
-                let interfaceName = self.adapter.interfaceName ?? "unknown"
+                let interfaceName = adapter.interfaceName ?? "unknown"
 
                 wg_log(.info, message: "Tunnel interface is \(interfaceName)")
 
-                completionHandler(nil)
+                completion(nil)
                 return
             }
 
@@ -43,24 +65,24 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             case .cannotLocateTunnelFileDescriptor:
                 wg_log(.error, staticMessage: "Starting tunnel failed: could not determine file descriptor")
                 errorNotifier.notify(PacketTunnelProviderError.couldNotDetermineFileDescriptor)
-                completionHandler(PacketTunnelProviderError.couldNotDetermineFileDescriptor)
+                completion(PacketTunnelProviderError.couldNotDetermineFileDescriptor)
 
             case .dnsResolution(let dnsErrors):
                 let hostnamesWithDnsResolutionFailure = dnsErrors.map { $0.address }
                     .joined(separator: ", ")
                 wg_log(.error, message: "DNS resolution failed for the following hostnames: \(hostnamesWithDnsResolutionFailure)")
                 errorNotifier.notify(PacketTunnelProviderError.dnsResolutionFailure)
-                completionHandler(PacketTunnelProviderError.dnsResolutionFailure)
+                completion(PacketTunnelProviderError.dnsResolutionFailure)
 
             case .setNetworkSettings(let error):
                 wg_log(.error, message: "Starting tunnel failed with setTunnelNetworkSettings returning \(error.localizedDescription)")
                 errorNotifier.notify(PacketTunnelProviderError.couldNotSetNetworkSettings)
-                completionHandler(PacketTunnelProviderError.couldNotSetNetworkSettings)
+                completion(PacketTunnelProviderError.couldNotSetNetworkSettings)
 
             case .startWireGuardBackend(let errorCode):
                 wg_log(.error, message: "Starting tunnel failed with wgTurnOn returning \(errorCode)")
                 errorNotifier.notify(PacketTunnelProviderError.couldNotStartBackend)
-                completionHandler(PacketTunnelProviderError.couldNotStartBackend)
+                completion(PacketTunnelProviderError.couldNotStartBackend)
 
             case .invalidState:
                 // Must never happen
@@ -70,6 +92,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
+        let completion = NetworkExtensionCallback<Void> { completionHandler() }
         wg_log(.info, staticMessage: "Stopping tunnel")
 
         adapter.stop { error in
@@ -78,7 +101,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             if let error = error {
                 wg_log(.error, message: "Failed to stop WireGuard adapter: \(error.localizedDescription)")
             }
-            completionHandler()
+            completion(())
 
             #if os(macOS)
             // HACK: This is a filthy hack to work around Apple bug 32073323 (dup'd by us as 47526107).
@@ -91,6 +114,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)? = nil) {
         guard let completionHandler = completionHandler else { return }
+        let completion = NetworkExtensionCallback(completionHandler)
 
         if messageData.count == 1 && messageData[0] == 0 {
             adapter.getRuntimeConfiguration { settings in
@@ -98,10 +122,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 if let settings = settings {
                     data = settings.data(using: .utf8)!
                 }
-                completionHandler(data)
+                completion(data)
             }
         } else {
-            completionHandler(nil)
+            completion(nil)
         }
     }
 }

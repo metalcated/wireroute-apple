@@ -4,7 +4,7 @@
 import Foundation
 import Network
 
-public struct Endpoint {
+public struct Endpoint: @unchecked Sendable {
     public let host: NWEndpoint.Host
     public let port: NWEndpoint.Port
 

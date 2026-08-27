@@ -3,6 +3,7 @@
 
 import Cocoa
 
+@MainActor
 class StatusItemController {
     var currentTunnel: TunnelContainer? {
         didSet {
@@ -47,9 +48,11 @@ class StatusItemController {
     func startActivatingAnimation() {
         guard animationTimer == nil else { return }
         let timer = Timer(timeInterval: 0.3, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            self.statusItem.button?.image = self.animationImages[self.animationImageIndex]
-            self.animationImageIndex = (self.animationImageIndex + 1) % self.animationImages.count
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.statusItem.button?.image = self.animationImages[self.animationImageIndex]
+                self.animationImageIndex = (self.animationImageIndex + 1) % self.animationImages.count
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         animationTimer = timer

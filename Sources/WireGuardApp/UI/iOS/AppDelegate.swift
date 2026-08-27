@@ -4,7 +4,7 @@
 import UIKit
 import os.log
 
-@UIApplicationMain
+@main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?

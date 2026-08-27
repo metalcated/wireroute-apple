@@ -4,15 +4,40 @@
 import Foundation
 import os.log
 
-public class Logger {
+private final class GlobalLoggerStorage: @unchecked Sendable {
+    private let lock = NSLock()
+    private var logger: Logger?
+
+    var current: Logger? {
+        lock.lock()
+        defer { lock.unlock() }
+        return logger
+    }
+
+    func installIfAbsent(_ candidate: Logger) -> Logger {
+        lock.lock()
+        defer { lock.unlock() }
+        if let logger {
+            return logger
+        }
+        logger = candidate
+        return candidate
+    }
+}
+
+public final class Logger: @unchecked Sendable {
     enum LoggerError: Error {
         case openFailure
     }
 
-    static var global: Logger?
+    private static let globalStorage = GlobalLoggerStorage()
 
-    var log: OpaquePointer
-    var tag: String
+    static var global: Logger? {
+        globalStorage.current
+    }
+
+    let log: OpaquePointer
+    let tag: String
 
     init(tagged tag: String, withFilePath filePath: String) throws {
         guard let log = open_log(filePath) else { throw LoggerError.openFailure }
@@ -33,7 +58,7 @@ public class Logger {
     }
 
     static func configureGlobal(tagged tag: String, withFilePath filePath: String?) {
-        if Logger.global != nil {
+        if global != nil {
             return
         }
         guard let filePath = filePath else {
@@ -44,13 +69,13 @@ public class Logger {
             os_log("Unable to open log file for writing. Log will not be saved to file.", log: OSLog.default, type: .error)
             return
         }
-        Logger.global = logger
+        let globalLogger = globalStorage.installIfAbsent(logger)
         var appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown version"
         if let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
             appVersion += " (\(appBuild))"
         }
 
-        Logger.global?.log(message: "App version: \(appVersion)")
+        globalLogger.log(message: "App version: \(appVersion)")
     }
 }
 

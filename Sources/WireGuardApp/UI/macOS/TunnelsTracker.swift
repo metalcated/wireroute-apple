@@ -8,6 +8,7 @@ import Cocoa
 //   - Status item controller
 //   - Tunnels list view controller in the Manage Tunnels window
 
+@MainActor
 class TunnelsTracker {
 
     weak var statusMenu: StatusMenu? {
@@ -47,13 +48,15 @@ class TunnelsTracker {
 
     func observeStatus(of tunnel: TunnelContainer) -> AnyObject {
         return tunnel.observe(\.status) { [weak self] tunnel, _ in
-            guard let self = self else { return }
-            if tunnel.status == .deactivating || tunnel.status == .inactive {
-                if self.currentTunnel == tunnel {
-                    self.currentTunnel = self.tunnelsManager.tunnelInOperation()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if tunnel.status == .deactivating || tunnel.status == .inactive {
+                    if self.currentTunnel == tunnel {
+                        self.currentTunnel = self.tunnelsManager.tunnelInOperation()
+                    }
+                } else {
+                    self.currentTunnel = tunnel
                 }
-            } else {
-                self.currentTunnel = tunnel
             }
         }
     }

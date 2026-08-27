@@ -3,10 +3,12 @@
 
 import Cocoa
 
+@MainActor
 protocol StatusMenuWindowDelegate: AnyObject {
     func showManageTunnelsWindow(completion: ((NSWindow?) -> Void)?)
 }
 
+@MainActor
 class StatusMenu: NSMenu {
 
     let tunnelsManager: TunnelsManager
@@ -295,7 +297,8 @@ extension StatusMenu {
     }
 }
 
-class TunnelMenuItem: NSMenuItem {
+@MainActor
+final class TunnelMenuItem: NSMenuItem, @unchecked Sendable {
 
     var tunnel: TunnelContainer
 
@@ -306,17 +309,24 @@ class TunnelMenuItem: NSMenuItem {
     init(tunnel: TunnelContainer, action selector: Selector?) {
         self.tunnel = tunnel
         super.init(title: tunnel.name, action: selector, keyEquivalent: "")
+        let itemBox = WeakTunnelMenuItemBox(self)
         updateStatus()
-        let statusObservationToken = tunnel.observe(\.status) { [weak self] _, _ in
-            self?.updateStatus()
+        let statusObservationToken = tunnel.observe(\.status) { _, _ in
+            Task { @MainActor in
+                itemBox.value?.updateStatus()
+            }
         }
         updateTitle()
-        let nameObservationToken = tunnel.observe(\TunnelContainer.name) { [weak self] _, _ in
-            self?.updateTitle()
+        let nameObservationToken = tunnel.observe(\TunnelContainer.name) { _, _ in
+            Task { @MainActor in
+                itemBox.value?.updateTitle()
+            }
         }
-        let isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { [weak self] _, _ in
-            self?.updateTitle()
-            self?.updateStatus()
+        let isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { _, _ in
+            Task { @MainActor in
+                itemBox.value?.updateTitle()
+                itemBox.value?.updateStatus()
+            }
         }
         self.statusObservationToken = statusObservationToken
         self.isOnDemandEnabledObservationToken = isOnDemandEnabledObservationToken
@@ -341,6 +351,14 @@ class TunnelMenuItem: NSMenuItem {
         } else {
             state = (tunnel.status == .inactive || tunnel.status == .deactivating) ? .off : .on
         }
+    }
+}
+
+private final class WeakTunnelMenuItemBox: @unchecked Sendable {
+    weak var value: TunnelMenuItem?
+
+    init(_ value: TunnelMenuItem) {
+        self.value = value
     }
 }
 

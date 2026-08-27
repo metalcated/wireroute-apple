@@ -31,7 +31,7 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.</string>
 	<key>NSPrincipalClass</key>
-	<string>WireGuard.Application</string>
+	<string>WireRoute.Application</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>com.wireguard.macos.app_group_id</key>

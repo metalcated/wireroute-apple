@@ -3,11 +3,14 @@
 
 import Cocoa
 
+@MainActor
 class DeleteTunnelsConfirmationAlert: NSAlert {
+    typealias DeleteCompletion = @MainActor @Sendable () -> Void
+
     var alertDeleteButton: NSButton?
     var alertCancelButton: NSButton?
 
-    var onDeleteClicked: ((_ completionHandler: @escaping () -> Void) -> Void)?
+    var onDeleteClicked: ((_ completionHandler: @escaping DeleteCompletion) -> Void)?
 
     override init() {
         super.init()

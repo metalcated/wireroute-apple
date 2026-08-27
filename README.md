@@ -1,24 +1,30 @@
-# [WireGuard](https://www.wireguard.com/) for iOS and macOS
+# WireRoute for iOS and macOS
 
-This project contains an application for iOS and for macOS, as well as many components shared between the two of them. You may toggle between the two platforms by selecting the target from within Xcode.
+WireRoute is a native client for standard WireGuard tunnels with a simple Split/Full routing control. It is initially focused on private iPhone testing against RouterOS, while retaining a shared macOS foundation.
+
+WireRoute is based on the official [WireGuard Apple](https://git.zx2c4.com/wireguard-apple) project. It does not include AmneziaWG, Xray, or modified tunnel protocols.
+
+The project currently contains the inherited iOS and macOS applications, their packet-tunnel extensions, WireGuardKit, and a new Swift 6 `WireRouteCore` package for profile-derived routing policy. Environment-specific tunnel addresses, endpoints, keys, DNS servers, and routes belong to imported profiles or user settings—not source code.
 
 ## Building
 
 - Clone this repo:
 
 ```
-$ git clone https://git.zx2c4.com/wireguard-apple
-$ cd wireguard-apple
+$ git clone https://github.com/metalcated/wireroute-apple.git
+$ cd wireroute-apple
 ```
 
-- Rename and populate developer team ID file:
+- Create a local signing configuration:
 
 ```
 $ cp Sources/WireGuardApp/Config/Developer.xcconfig.template Sources/WireGuardApp/Config/Developer.xcconfig
-$ vim Sources/WireGuardApp/Config/Developer.xcconfig
+$ open -e Sources/WireGuardApp/Config/Developer.xcconfig
 ```
 
-- Install swiftlint and go 1.19:
+- Set your Apple Developer Team ID. The iOS App ID is `com.gnet.wireroute`; create it with the Network Extensions capability before installing on an iPhone. Set a separate macOS App ID when macOS signing begins.
+
+- Install the build tools required by the inherited tunnel bridge:
 
 ```
 $ brew install swiftlint go
@@ -30,7 +36,22 @@ $ brew install swiftlint go
 $ open WireGuard.xcodeproj
 ```
 
-- Flip switches, press buttons, and make whirling noises until Xcode builds it.
+Select the `WireGuardiOS` scheme for the first device milestone. Internal target names remain unchanged temporarily to keep the upstream history and project migration reviewable; built products are branded WireRoute.
+
+## Routing behavior
+
+- Split mode uses the profile's specific `AllowedIPs`.
+- Full mode computes the default route for every IP family supported by the profile.
+- Full mode blocks an unsupported IP family instead of allowing traffic to leak outside the tunnel.
+- If an imported profile contains only default routes, Split mode is blocked until specific routes are provided. A route-entry modal is the next UI milestone.
+- Switching modes updates the saved effective configuration while preserving the original specific routes in profile metadata for later restoration.
+- No RouterOS address, endpoint, key, DNS server, or customer route is hard-coded. The only fixed IPs are RFC documentation addresses used internally as non-routable sinks when Full mode must block an unsupported address family.
+
+Run the Swift 6 package tests with:
+
+```sh
+swift test
+```
 
 ## WireGuardKit integration
 

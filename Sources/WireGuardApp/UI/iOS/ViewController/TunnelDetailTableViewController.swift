@@ -7,6 +7,7 @@ class TunnelDetailTableViewController: UITableViewController {
 
     private enum Section {
         case status
+        case routing
         case interface
         case peer(index: Int, peer: TunnelViewModel.PeerData)
         case onDemand
@@ -50,18 +51,23 @@ class TunnelDetailTableViewController: UITableViewController {
         loadSections()
         loadVisibleFields()
         statusObservationToken = tunnel.observe(\.status) { [weak self] _, _ in
-            guard let self = self else { return }
-            if tunnel.status == .active {
-                self.startUpdatingRuntimeConfiguration()
-            } else if tunnel.status == .inactive {
-                self.reloadRuntimeConfiguration()
-                self.stopUpdatingRuntimeConfiguration()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.tunnel.status == .active {
+                    self.startUpdatingRuntimeConfiguration()
+                } else if self.tunnel.status == .inactive {
+                    self.reloadRuntimeConfiguration()
+                    self.stopUpdatingRuntimeConfiguration()
+                }
             }
         }
-        onDemandObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { [weak self] tunnel, _ in
-            // Handle On-Demand getting turned on/off outside of the app
-            self?.onDemandViewModel = ActivateOnDemandViewModel(tunnel: tunnel)
-            self?.updateActivateOnDemandFields()
+        onDemandObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Handle On-Demand getting turned on/off outside of the app.
+                self.onDemandViewModel = ActivateOnDemandViewModel(tunnel: self.tunnel)
+                self.updateActivateOnDemandFields()
+            }
         }
     }
 
@@ -87,6 +93,7 @@ class TunnelDetailTableViewController: UITableViewController {
     private func loadSections() {
         sections.removeAll()
         sections.append(.status)
+        sections.append(.routing)
         sections.append(.interface)
         for (index, peer) in tunnelViewModel.peersData.enumerated() {
             sections.append(.peer(index: index, peer: peer))
@@ -129,7 +136,9 @@ class TunnelDetailTableViewController: UITableViewController {
         reloadRuntimeConfiguration()
         reloadRuntimeConfigurationTimer?.invalidate()
         let reloadTimer = Timer(timeInterval: 1 /* second */, repeats: true) { [weak self] _ in
-            self?.reloadRuntimeConfiguration()
+            Task { @MainActor [weak self] in
+                self?.reloadRuntimeConfiguration()
+            }
         }
         reloadRuntimeConfigurationTimer = reloadTimer
         RunLoop.main.add(reloadTimer, forMode: .common)
@@ -280,6 +289,8 @@ extension TunnelDetailTableViewController {
         switch sections[section] {
         case .status:
             return 1
+        case .routing:
+            return 1
         case .interface:
             return interfaceFieldIsVisible.filter { $0 }.count
         case .peer(let peerIndex, _):
@@ -295,6 +306,8 @@ extension TunnelDetailTableViewController {
         switch sections[section] {
         case .status:
             return tr("tunnelSectionTitleStatus")
+        case .routing:
+            return tr("tunnelSectionTitleRouting")
         case .interface:
             return tr("tunnelSectionTitleInterface")
         case .peer:
@@ -310,6 +323,8 @@ extension TunnelDetailTableViewController {
         switch sections[indexPath.section] {
         case .status:
             return statusCell(for: tableView, at: indexPath)
+        case .routing:
+            return routingCell(for: tableView, at: indexPath)
         case .interface:
             return interfaceCell(for: tableView, at: indexPath)
         case .peer(let index, let peer):
@@ -321,10 +336,17 @@ extension TunnelDetailTableViewController {
         }
     }
 
+    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        guard case .routing = sections[section] else { return nil }
+        return tunnel.routingMode == .full
+            ? tr("tunnelRoutingFullDescription")
+            : tr("tunnelRoutingSplitDescription")
+    }
+
     private func statusCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
         let cell: SwitchCell = tableView.dequeueReusableCell(for: indexPath)
 
-        func update(cell: SwitchCell?, with tunnel: TunnelContainer) {
+        let update: @MainActor @Sendable (SwitchCell?, TunnelContainer) -> Void = { cell, tunnel in
             guard let cell = cell else { return }
 
             let status = tunnel.status
@@ -373,15 +395,24 @@ extension TunnelDetailTableViewController {
             cell.textLabel?.text = text
         }
 
-        update(cell: cell, with: tunnel)
-        cell.statusObservationToken = tunnel.observe(\.status) { [weak cell] tunnel, _ in
-            update(cell: cell, with: tunnel)
+        update(cell, tunnel)
+        cell.statusObservationToken = tunnel.observe(\.status) { [weak self, weak cell] _, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                update(cell, self.tunnel)
+            }
         }
-        cell.isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { [weak cell] tunnel, _ in
-            update(cell: cell, with: tunnel)
+        cell.isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { [weak self, weak cell] _, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                update(cell, self.tunnel)
+            }
         }
-        cell.hasOnDemandRulesObservationToken = tunnel.observe(\.hasOnDemandRules) { [weak cell] tunnel, _ in
-            update(cell: cell, with: tunnel)
+        cell.hasOnDemandRulesObservationToken = tunnel.observe(\.hasOnDemandRules) { [weak self, weak cell] _, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                update(cell, self.tunnel)
+            }
         }
 
         cell.onSwitchToggled = { [weak self] isOn in
@@ -399,6 +430,30 @@ extension TunnelDetailTableViewController {
                 } else {
                     self.tunnelsManager.startDeactivation(of: self.tunnel)
                 }
+            }
+        }
+        return cell
+    }
+
+    private func routingCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
+        let cell: SwitchCell = tableView.dequeueReusableCell(for: indexPath)
+        cell.message = tr("tunnelRoutingFullTunnel")
+        cell.isOn = tunnel.routingMode == .full
+        cell.onSwitchToggled = { [weak self, weak cell] isFullTunnel in
+            guard let self, let cell else { return }
+            cell.isEnabled = false
+            let requestedMode: TunnelRouteMode = isFullTunnel ? .full : .split
+            self.tunnelsManager.setRoutingMode(requestedMode, on: self.tunnel) { error in
+                cell.isEnabled = true
+                guard let error else {
+                    self.tunnelViewModel = TunnelViewModel(tunnelConfiguration: self.tunnel.tunnelConfiguration)
+                    self.loadSections()
+                    self.loadVisibleFields()
+                    self.tableView.reloadData()
+                    return
+                }
+                cell.isOn = self.tunnel.routingMode == .full
+                ErrorPresenter.showErrorAlert(error: error, from: self)
             }
         }
         return cell

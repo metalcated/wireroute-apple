@@ -5,7 +5,13 @@ import UIKit
 import os.log
 
 class ErrorPresenter: ErrorPresenterProtocol {
-    static func showErrorAlert(title: String, message: String, from sourceVC: AnyObject?, onPresented: (() -> Void)?, onDismissal: (() -> Void)?) {
+    static func showErrorAlert(
+        title: String,
+        message: String,
+        from sourceVC: AnyObject?,
+        onPresented: (@MainActor @Sendable () -> Void)?,
+        onDismissal: (@MainActor @Sendable () -> Void)?
+    ) {
         guard let sourceVC = sourceVC as? UIViewController else { return }
 
         let okAction = UIAlertAction(title: "OK", style: .default) { _ in

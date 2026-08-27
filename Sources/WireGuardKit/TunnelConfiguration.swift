@@ -21,6 +21,10 @@ public final class TunnelConfiguration {
     }
 }
 
+// Instances are treated as immutable snapshots after they cross into the adapter's serial queue.
+// The UI constructs a new configuration rather than mutating one while a tunnel operation runs.
+extension TunnelConfiguration: @unchecked Sendable {}
+
 extension TunnelConfiguration: Equatable {
     public static func == (lhs: TunnelConfiguration, rhs: TunnelConfiguration) -> Bool {
         return lhs.name == rhs.name &&

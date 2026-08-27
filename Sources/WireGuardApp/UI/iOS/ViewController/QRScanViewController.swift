@@ -4,8 +4,13 @@
 import AVFoundation
 import UIKit
 
+@MainActor
 protocol QRScanViewControllerDelegate: AnyObject {
-    func addScannedQRCode(tunnelConfiguration: TunnelConfiguration, qrScanViewController: QRScanViewController, completionHandler: (() -> Void)?)
+    func addScannedQRCode(
+        tunnelConfiguration: TunnelConfiguration,
+        qrScanViewController: QRScanViewController,
+        completionHandler: (@MainActor @Sendable () -> Void)?
+    )
 }
 
 class QRScanViewController: UIViewController {
@@ -138,7 +143,7 @@ class QRScanViewController: UIViewController {
     }
 }
 
-extension QRScanViewController: AVCaptureMetadataOutputObjectsDelegate {
+extension QRScanViewController: @MainActor AVCaptureMetadataOutputObjectsDelegate {
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
         captureSession?.stopRunning()
 

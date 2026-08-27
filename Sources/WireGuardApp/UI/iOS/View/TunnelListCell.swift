@@ -8,20 +8,28 @@ class TunnelListCell: UITableViewCell {
         didSet {
             // Bind to the tunnel's name
             nameLabel.text = tunnel?.name ?? ""
-            nameObservationToken = tunnel?.observe(\.name) { [weak self] tunnel, _ in
-                self?.nameLabel.text = tunnel.name
+            nameObservationToken = tunnel?.observe(\.name) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.nameLabel.text = self?.tunnel?.name
+                }
             }
             // Bind to the tunnel's status
             update(from: tunnel, animated: false)
-            statusObservationToken = tunnel?.observe(\.status) { [weak self] tunnel, _ in
-                self?.update(from: tunnel, animated: true)
+            statusObservationToken = tunnel?.observe(\.status) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.update(from: self?.tunnel, animated: true)
+                }
             }
             // Bind to tunnel's on-demand settings
-            isOnDemandEnabledObservationToken = tunnel?.observe(\.isActivateOnDemandEnabled) { [weak self] tunnel, _ in
-                self?.update(from: tunnel, animated: true)
+            isOnDemandEnabledObservationToken = tunnel?.observe(\.isActivateOnDemandEnabled) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.update(from: self?.tunnel, animated: true)
+                }
             }
-            hasOnDemandRulesObservationToken = tunnel?.observe(\.hasOnDemandRules) { [weak self] tunnel, _ in
-                self?.update(from: tunnel, animated: true)
+            hasOnDemandRulesObservationToken = tunnel?.observe(\.hasOnDemandRules) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.update(from: self?.tunnel, animated: true)
+                }
             }
         }
     }

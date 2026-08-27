@@ -3,7 +3,7 @@
 
 import NetworkExtension
 
-class ErrorNotifier {
+final class ErrorNotifier: @unchecked Sendable {
     let activationAttemptId: String?
 
     init(activationAttemptId: String?) {

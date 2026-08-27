@@ -47,7 +47,7 @@ extension TunnelStatus: CustomDebugStringConvertible {
     }
 }
 
-extension NEVPNStatus: CustomDebugStringConvertible {
+extension NEVPNStatus: @retroactive CustomDebugStringConvertible {
     public var debugDescription: String {
         switch self {
         case .connected: return "connected"

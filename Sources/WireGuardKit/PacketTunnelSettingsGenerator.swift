@@ -15,10 +15,16 @@ typealias EndpointResolutionResult = Result<(Endpoint, Endpoint), DNSResolutionE
 class PacketTunnelSettingsGenerator {
     let tunnelConfiguration: TunnelConfiguration
     let resolvedEndpoints: [Endpoint?]
+    let blockedAddressFamilies: BlockedAddressFamilies
 
-    init(tunnelConfiguration: TunnelConfiguration, resolvedEndpoints: [Endpoint?]) {
+    init(
+        tunnelConfiguration: TunnelConfiguration,
+        resolvedEndpoints: [Endpoint?],
+        blockedAddressFamilies: BlockedAddressFamilies = []
+    ) {
         self.tunnelConfiguration = tunnelConfiguration
         self.resolvedEndpoints = resolvedEndpoints
+        self.blockedAddressFamilies = blockedAddressFamilies
     }
 
     func endpointUapiConfiguration() -> (String, [EndpointResolutionResult?]) {
@@ -113,8 +119,20 @@ class PacketTunnelSettingsGenerator {
             networkSettings.mtu = NSNumber(value: mtu)
         }
 
-        let (ipv4Addresses, ipv6Addresses) = addresses()
-        let (ipv4IncludedRoutes, ipv6IncludedRoutes) = includedRoutes()
+        var (ipv4Addresses, ipv6Addresses) = addresses()
+        var (ipv4IncludedRoutes, ipv6IncludedRoutes) = includedRoutes()
+
+        // A full tunnel must not leak a family the profile cannot carry. Route that family into
+        // the packet tunnel without adding a WireGuard peer AllowedIP; wireguard-go then drops it.
+        // The interface addresses use documentation-only ranges and are not profile defaults.
+        if blockedAddressFamilies.contains(.ipv4) {
+            ipv4Addresses = [NEIPv4Route(destinationAddress: "192.0.2.1", subnetMask: "255.255.255.255")]
+            ipv4IncludedRoutes.append(.default())
+        }
+        if blockedAddressFamilies.contains(.ipv6) {
+            ipv6Addresses = [NEIPv6Route(destinationAddress: "2001:db8::1", networkPrefixLength: 128)]
+            ipv6IncludedRoutes.append(.default())
+        }
 
         let ipv4Settings = NEIPv4Settings(addresses: ipv4Addresses.map { $0.destinationAddress }, subnetMasks: ipv4Addresses.map { $0.destinationSubnetMask })
         ipv4Settings.includedRoutes = ipv4IncludedRoutes

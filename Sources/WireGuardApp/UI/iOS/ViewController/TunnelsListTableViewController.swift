@@ -281,7 +281,7 @@ extension TunnelsListTableViewController: UIDocumentPickerDelegate {
 
 extension TunnelsListTableViewController: QRScanViewControllerDelegate {
     func addScannedQRCode(tunnelConfiguration: TunnelConfiguration, qrScanViewController: QRScanViewController,
-                          completionHandler: (() -> Void)?) {
+                          completionHandler: (@MainActor @Sendable () -> Void)?) {
         tunnelsManager?.add(tunnelConfiguration: tunnelConfiguration) { result in
             switch result {
             case .failure(let error):

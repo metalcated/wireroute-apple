@@ -4,7 +4,13 @@
 import Cocoa
 
 class ErrorPresenter: ErrorPresenterProtocol {
-    static func showErrorAlert(title: String, message: String, from sourceVC: AnyObject?, onPresented: (() -> Void)?, onDismissal: (() -> Void)?) {
+    static func showErrorAlert(
+        title: String,
+        message: String,
+        from sourceVC: AnyObject?,
+        onPresented: (@MainActor @Sendable () -> Void)?,
+        onDismissal: (@MainActor @Sendable () -> Void)?
+    ) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message

@@ -4,6 +4,11 @@
 import UIKit
 
 class LogViewController: UIViewController {
+    private enum LogExportResult: Sendable {
+        case success
+        case couldNotRemoveExistingFile
+        case couldNotWriteFile
+    }
 
     let textView: UITextView = {
         let textView = UITextView()
@@ -101,7 +106,9 @@ class LogViewController: UIViewController {
         updateLogEntries()
         updateLogEntriesTimer?.invalidate()
         let timer = Timer(timeInterval: 1 /* second */, repeats: true) { [weak self] _ in
-            self?.updateLogEntries()
+            Task { @MainActor [weak self] in
+                self?.updateLogEntries()
+            }
         }
         updateLogEntriesTimer = timer
         RunLoop.main.add(timer, forMode: .common)
@@ -113,34 +120,37 @@ class LogViewController: UIViewController {
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withFullDate, .withTime, .withTimeZone] // Avoid ':' in the filename
         let timeStampString = dateFormatter.string(from: Date())
-        let destinationURL = destinationDir.appendingPathComponent("wireguard-log-\(timeStampString).txt")
+        let destinationURL = destinationDir.appendingPathComponent("wireroute-log-\(timeStampString).txt")
 
         DispatchQueue.global(qos: .userInitiated).async {
-
+            let result: LogExportResult
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 let isDeleted = FileManager.deleteFile(at: destinationURL)
                 if !isDeleted {
-                    ErrorPresenter.showErrorAlert(title: tr("alertUnableToRemovePreviousLogTitle"), message: tr("alertUnableToRemovePreviousLogMessage"), from: self)
-                    return
+                    result = .couldNotRemoveExistingFile
+                } else {
+                    result = Logger.global?.writeLog(to: destinationURL.path) == true ? .success : .couldNotWriteFile
                 }
+            } else {
+                result = Logger.global?.writeLog(to: destinationURL.path) == true ? .success : .couldNotWriteFile
             }
 
-            let isWritten = Logger.global?.writeLog(to: destinationURL.path) ?? false
-
-            DispatchQueue.main.async {
-                guard isWritten else {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch result {
+                case .couldNotRemoveExistingFile:
+                    ErrorPresenter.showErrorAlert(title: tr("alertUnableToRemovePreviousLogTitle"), message: tr("alertUnableToRemovePreviousLogMessage"), from: self)
+                case .couldNotWriteFile:
                     ErrorPresenter.showErrorAlert(title: tr("alertUnableToWriteLogTitle"), message: tr("alertUnableToWriteLogMessage"), from: self)
-                    return
+                case .success:
+                    let activityVC = UIActivityViewController(activityItems: [destinationURL], applicationActivities: nil)
+                    activityVC.popoverPresentationController?.barButtonItem = self.navigationItem.rightBarButtonItem
+                    activityVC.completionWithItemsHandler = { _, _, _, _ in
+                        // Remove the exported log file after the activity has completed
+                        _ = FileManager.deleteFile(at: destinationURL)
+                    }
+                    self.present(activityVC, animated: true)
                 }
-                let activityVC = UIActivityViewController(activityItems: [destinationURL], applicationActivities: nil)
-                if let sender = sender as? UIBarButtonItem {
-                    activityVC.popoverPresentationController?.barButtonItem = sender
-                }
-                activityVC.completionWithItemsHandler = { _, _, _, _ in
-                    // Remove the exported log file after the activity has completed
-                    _ = FileManager.deleteFile(at: destinationURL)
-                }
-                self.present(activityVC, animated: true)
             }
         }
     }
