@@ -16,10 +16,12 @@ class TunnelsListTableViewController: UIViewController {
     }
 
     let tableView: UITableView = {
-        let tableView = UITableView(frame: CGRect.zero, style: .plain)
-        tableView.estimatedRowHeight = 60
+        let tableView = UITableView(frame: CGRect.zero, style: .insetGrouped)
+        tableView.backgroundColor = WireRouteAppearance.background
+        tableView.estimatedRowHeight = 76
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.separatorStyle = .none
+        tableView.separatorInset = UIEdgeInsets(top: 0, left: 72, bottom: 0, right: 16)
+        tableView.cellLayoutMarginsFollowReadableWidth = true
         tableView.register(TunnelListCell.self)
         return tableView
     }()
@@ -27,14 +29,46 @@ class TunnelsListTableViewController: UIViewController {
     let centeredAddButton: BorderedTextButton = {
         let button = BorderedTextButton()
         button.title = tr("tunnelsListCenteredAddTunnelButtonTitle")
-        button.isHidden = true
         return button
+    }()
+
+    let emptyStateView: UIView = {
+        let view = UIView()
+        view.isHidden = true
+        return view
+    }()
+
+    let emptyStateGlyph: WireRouteGlyphView = {
+        let glyph = WireRouteGlyphView()
+        glyph.update(status: .inactive, routingMode: .split, animated: false)
+        return glyph
+    }()
+
+    let emptyStateTitleLabel: UILabel = {
+        let label = UILabel()
+        label.text = tr("tunnelsListTitle")
+        label.font = WireRouteAppearance.roundedFont(size: 28, weight: .bold, textStyle: .title1)
+        label.adjustsFontForContentSizeCategory = true
+        label.textAlignment = .center
+        return label
+    }()
+
+    let emptyStateMessageLabel: UILabel = {
+        let label = UILabel()
+        label.text = tr("addTunnelMenuHeader")
+        label.font = UIFont.preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        return label
     }()
 
     let busyIndicator: UIActivityIndicatorView = {
         let busyIndicator: UIActivityIndicatorView
         busyIndicator = UIActivityIndicatorView(style: .medium)
         busyIndicator.hidesWhenStopped = true
+        busyIndicator.color = WireRouteAppearance.signalBlue
         return busyIndicator
     }()
 
@@ -47,7 +81,7 @@ class TunnelsListTableViewController: UIViewController {
 
     override func loadView() {
         view = UIView()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = WireRouteAppearance.background
 
         tableView.dataSource = self
         tableView.delegate = self
@@ -68,11 +102,30 @@ class TunnelsListTableViewController: UIViewController {
             busyIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
 
-        view.addSubview(centeredAddButton)
-        centeredAddButton.translatesAutoresizingMaskIntoConstraints = false
+        let emptyStateStack = UIStackView(arrangedSubviews: [emptyStateGlyph, emptyStateTitleLabel, emptyStateMessageLabel, centeredAddButton])
+        emptyStateStack.axis = .vertical
+        emptyStateStack.alignment = .center
+        emptyStateStack.spacing = 12
+        emptyStateStack.setCustomSpacing(20, after: emptyStateMessageLabel)
+
+        emptyStateView.addSubview(emptyStateStack)
+        emptyStateStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(emptyStateView)
+        emptyStateView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            centeredAddButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            centeredAddButton.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            emptyStateView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            emptyStateView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            emptyStateView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            emptyStateView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+
+            emptyStateStack.leadingAnchor.constraint(greaterThanOrEqualTo: emptyStateView.leadingAnchor, constant: 32),
+            emptyStateStack.trailingAnchor.constraint(lessThanOrEqualTo: emptyStateView.trailingAnchor, constant: -32),
+            emptyStateStack.centerXAnchor.constraint(equalTo: emptyStateView.centerXAnchor),
+            emptyStateStack.centerYAnchor.constraint(equalTo: emptyStateView.centerYAnchor, constant: -24),
+
+            emptyStateGlyph.widthAnchor.constraint(equalToConstant: 72),
+            emptyStateGlyph.heightAnchor.constraint(equalTo: emptyStateGlyph.widthAnchor),
+            emptyStateMessageLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 360)
         ])
 
         centeredAddButton.onTapped = { [weak self] in
@@ -88,13 +141,34 @@ class TunnelsListTableViewController: UIViewController {
 
         tableState = .normal
         restorationIdentifier = "TunnelsListVC"
+
+        navigationController?.navigationBar.prefersLargeTitles = true
+        navigationItem.largeTitleDisplayMode = .always
+
+        let navigationAppearance = UINavigationBarAppearance()
+        navigationAppearance.configureWithOpaqueBackground()
+        navigationAppearance.backgroundColor = WireRouteAppearance.background
+        navigationAppearance.shadowColor = .clear
+        navigationAppearance.titleTextAttributes = [
+            .font: WireRouteAppearance.roundedFont(size: 17, weight: .semibold, textStyle: .headline),
+            .foregroundColor: UIColor.label
+        ]
+        navigationAppearance.largeTitleTextAttributes = [
+            .font: WireRouteAppearance.roundedFont(size: 34, weight: .bold, textStyle: .largeTitle),
+            .foregroundColor: UIColor.label
+        ]
+        navigationController?.navigationBar.standardAppearance = navigationAppearance
+        navigationController?.navigationBar.scrollEdgeAppearance = navigationAppearance
+        navigationController?.navigationBar.compactAppearance = navigationAppearance
     }
 
     func handleTableStateChange() {
         switch tableState {
         case .normal:
             navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addButtonTapped(sender:)))
-            navigationItem.leftBarButtonItem = UIBarButtonItem(title: tr("tunnelsListSettingsButtonTitle"), style: .plain, target: self, action: #selector(settingsButtonTapped(sender:)))
+            let settingsButton = UIBarButtonItem(image: UIImage(systemName: "gearshape"), style: .plain, target: self, action: #selector(settingsButtonTapped(sender:)))
+            settingsButton.accessibilityLabel = tr("tunnelsListSettingsButtonTitle")
+            navigationItem.leftBarButtonItem = settingsButton
         case .rowSwiped:
             navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneButtonTapped))
             navigationItem.leftBarButtonItem = UIBarButtonItem(title: tr("tunnelsListSelectButtonTitle"), style: .plain, target: self, action: #selector(selectButtonTapped))
@@ -114,8 +188,10 @@ class TunnelsListTableViewController: UIViewController {
         }
         if case .multiSelect = tableState {
             tableView.allowsMultipleSelectionDuringEditing = true
+            navigationItem.largeTitleDisplayMode = .never
         } else {
             tableView.allowsMultipleSelectionDuringEditing = false
+            navigationItem.largeTitleDisplayMode = .always
         }
     }
 
@@ -125,7 +201,37 @@ class TunnelsListTableViewController: UIViewController {
 
         busyIndicator.stopAnimating()
         tableView.reloadData()
-        centeredAddButton.isHidden = tunnelsManager.numberOfTunnels() > 0
+        updateEmptyState(animated: false)
+    }
+
+    func updateEmptyState(animated: Bool) {
+        let shouldShowEmptyState = (tunnelsManager?.numberOfTunnels() ?? 0) == 0
+        guard emptyStateView.isHidden == shouldShowEmptyState || tableView.isHidden != shouldShowEmptyState else { return }
+
+        let changes = {
+            self.emptyStateView.alpha = shouldShowEmptyState ? 1 : 0
+            self.tableView.alpha = shouldShowEmptyState ? 0 : 1
+        }
+
+        if shouldShowEmptyState {
+            emptyStateView.alpha = 0
+            emptyStateView.isHidden = false
+        } else {
+            tableView.alpha = 0
+            tableView.isHidden = false
+        }
+
+        let completion: (Bool) -> Void = { _ in
+            self.emptyStateView.isHidden = !shouldShowEmptyState
+            self.tableView.isHidden = shouldShowEmptyState
+        }
+
+        if animated && !UIAccessibility.isReduceMotionEnabled {
+            UIView.animate(withDuration: 0.2, animations: changes, completion: completion)
+        } else {
+            changes()
+            completion(true)
+        }
     }
 
     override func viewWillAppear(_: Bool) {
@@ -382,7 +488,7 @@ extension TunnelsListTableViewController: UITableViewDelegate {
 extension TunnelsListTableViewController: TunnelsManagerListDelegate {
     func tunnelAdded(at index: Int) {
         tableView.insertRows(at: [IndexPath(row: index, section: 0)], with: .automatic)
-        centeredAddButton.isHidden = (tunnelsManager?.numberOfTunnels() ?? 0 > 0)
+        updateEmptyState(animated: true)
     }
 
     func tunnelModified(at index: Int) {
@@ -395,7 +501,7 @@ extension TunnelsListTableViewController: TunnelsManagerListDelegate {
 
     func tunnelRemoved(at index: Int, tunnel: TunnelContainer) {
         tableView.deleteRows(at: [IndexPath(row: index, section: 0)], with: .automatic)
-        centeredAddButton.isHidden = tunnelsManager?.numberOfTunnels() ?? 0 > 0
+        updateEmptyState(animated: true)
         if detailDisplayedTunnel == tunnel, let splitViewController = splitViewController {
             if splitViewController.isCollapsed != false {
                 (splitViewController.viewControllers[0] as? UINavigationController)?.popToRootViewController(animated: false)

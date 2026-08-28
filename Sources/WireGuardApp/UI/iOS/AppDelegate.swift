@@ -21,6 +21,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
 
         let window = UIWindow(frame: UIScreen.main.bounds)
+        window.backgroundColor = WireRouteAppearance.background
+        window.tintColor = WireRouteAppearance.signalBlue
         self.window = window
 
         let mainVC = MainViewController()
