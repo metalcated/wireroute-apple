@@ -131,18 +131,27 @@ final class RouterOSManagerViewController: NSViewController {
         scrollView.borderType = .noBorder
         configureTableView()
         scrollView.documentView = tableView
+
+        let tableContainer = NSView()
+        tableContainer.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
         emptyStateLabel.alignment = .center
         emptyStateLabel.textColor = .tertiaryLabelColor
         emptyStateLabel.font = .systemFont(ofSize: 13)
-        scrollView.addSubview(emptyStateLabel)
+        tableContainer.addSubview(emptyStateLabel)
         emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            emptyStateLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
-            emptyStateLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
-            emptyStateLabel.widthAnchor.constraint(lessThanOrEqualTo: scrollView.widthAnchor, constant: -80)
+            scrollView.leadingAnchor.constraint(equalTo: tableContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: tableContainer.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: tableContainer.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: tableContainer.bottomAnchor),
+            emptyStateLabel.centerXAnchor.constraint(equalTo: tableContainer.centerXAnchor),
+            emptyStateLabel.centerYAnchor.constraint(equalTo: tableContainer.centerYAnchor, constant: 12),
+            emptyStateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: tableContainer.leadingAnchor, constant: 40),
+            emptyStateLabel.trailingAnchor.constraint(lessThanOrEqualTo: tableContainer.trailingAnchor, constant: -40)
         ])
 
-        let contentStack = NSStackView(views: [headerRow, subtitleLabel, connectionCard, messageLabel, summaryRow, scrollView])
+        let contentStack = NSStackView(views: [headerRow, subtitleLabel, connectionCard, messageLabel, summaryRow, tableContainer])
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 12
@@ -152,7 +161,7 @@ final class RouterOSManagerViewController: NSViewController {
 
         view.addSubview(contentStack)
         contentStack.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        tableContainer.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             contentStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
             contentStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
@@ -163,8 +172,8 @@ final class RouterOSManagerViewController: NSViewController {
             connectionCard.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             messageLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             summaryRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
-            scrollView.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 210)
+            tableContainer.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
+            tableContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 210)
         ])
 
         self.view = view

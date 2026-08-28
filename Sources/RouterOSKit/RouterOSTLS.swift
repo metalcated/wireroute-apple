@@ -51,6 +51,17 @@ public enum RouterOSTLSCertificateError: Error, Equatable, LocalizedError, Senda
     }
 }
 
+public enum RouterOSTLSConnectionError: Error, Equatable, LocalizedError, Sendable {
+    case handshakeFailed
+
+    public var errorDescription: String? {
+        switch self {
+        case .handshakeFailed:
+            return "RouterOS ended the TLS handshake before presenting a certificate. Verify that the www-ssl service has a certificate assigned and supports TLS 1.2 or newer."
+        }
+    }
+}
+
 final class RouterOSTrustDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let trustedCertificate: RouterOSServerCertificate?
     private let failureLock = NSLock()

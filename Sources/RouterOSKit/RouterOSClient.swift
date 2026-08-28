@@ -71,8 +71,20 @@ public struct URLSessionRouterOSHTTPTransport: RouterOSHTTPTransport {
             if let certificateFailure = trustDelegate?.certificateFailure() {
                 throw certificateFailure
             }
+            if let connectionFailure = Self.tlsConnectionError(for: error) {
+                throw connectionFailure
+            }
             throw error
         }
+    }
+
+    static func tlsConnectionError(for error: Error) -> RouterOSTLSConnectionError? {
+        let error = error as NSError
+        guard error.domain == NSURLErrorDomain,
+              error.code == URLError.Code.secureConnectionFailed.rawValue else {
+            return nil
+        }
+        return .handshakeFailed
     }
 }
 

@@ -72,6 +72,20 @@ final class RouterOSTLSTests: XCTestCase {
         XCTAssertFalse(error.localizedDescription.contains("replacement-cert"))
     }
 
+    func testSecureConnectionFailureBeforeCertificateIsActionable() {
+        XCTAssertEqual(
+            URLSessionRouterOSHTTPTransport.tlsConnectionError(
+                for: URLError(.secureConnectionFailed)
+            ),
+            .handshakeFailed
+        )
+        XCTAssertNil(
+            URLSessionRouterOSHTTPTransport.tlsConnectionError(
+                for: URLError(.timedOut)
+            )
+        )
+    }
+
     func testSelfSignedServerRequiresExactPinWhenIntegrationServerIsConfigured() async throws {
         guard let rawURL = ProcessInfo.processInfo.environment["WIREROUTE_TLS_INTEGRATION_URL"] else {
             throw XCTSkip("Set WIREROUTE_TLS_INTEGRATION_URL to run the local TLS integration test.")
