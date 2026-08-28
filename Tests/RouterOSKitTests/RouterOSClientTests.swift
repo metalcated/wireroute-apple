@@ -324,6 +324,96 @@ final class RouterOSClientTests: XCTestCase {
             )
         }
     }
+
+    func testReplacesWireGuardPeerPublicKeyWithPatch() async throws {
+        let oldPublicKey = Data(repeating: 11, count: 32).base64EncodedString()
+        let newPublicKey = Data(repeating: 12, count: 32).base64EncodedString()
+        let peer = try makePeer(id: "*B", publicKey: oldPublicKey)
+        let responseData = Data("""
+        {
+          ".id": "*B",
+          "interface": "wg-remote",
+          "name": "iPhone",
+          "public-key": "\(newPublicKey)",
+          "allowed-address": "10.255.100.10/32"
+        }
+        """.utf8)
+        let transport = StubTransport(data: responseData, statusCode: 200)
+        let client = try RouterOSClient(
+            baseURL: URL(string: "https://router.example")!,
+            credentials: RouterOSCredentials(username: "writer", password: "secret"),
+            transport: transport
+        )
+
+        let updatedPeer = try await client.replaceWireGuardPeerPublicKey(peer, with: newPublicKey)
+
+        XCTAssertEqual(updatedPeer.publicKey, newPublicKey)
+        let capturedRequest = await transport.lastRequest()
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.httpMethod, "PATCH")
+        XCTAssertEqual(request.url?.path, "/rest/interface/wireguard/peers/*B")
+        let body = try XCTUnwrap(request.httpBody)
+        XCTAssertEqual(
+            try JSONSerialization.jsonObject(with: body) as? [String: String],
+            ["public-key": newPublicKey]
+        )
+    }
+
+    func testRemovesWireGuardPeerWithDelete() async throws {
+        let peer = try makePeer(
+            id: "*C",
+            publicKey: Data(repeating: 13, count: 32).base64EncodedString()
+        )
+        let transport = StubTransport(data: Data(), statusCode: 204)
+        let client = try RouterOSClient(
+            baseURL: URL(string: "https://router.example")!,
+            credentials: RouterOSCredentials(username: "writer", password: "secret"),
+            transport: transport
+        )
+
+        try await client.removeWireGuardPeer(peer)
+
+        let capturedRequest = await transport.lastRequest()
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.httpMethod, "DELETE")
+        XCTAssertEqual(request.url?.path, "/rest/interface/wireguard/peers/*C")
+        XCTAssertNil(request.httpBody)
+    }
+
+    func testTreatsServerFailureAfterPeerMutationAsUncertain() async throws {
+        let peer = try makePeer(
+            id: "*D",
+            publicKey: Data(repeating: 14, count: 32).base64EncodedString()
+        )
+        let client = try RouterOSClient(
+            baseURL: URL(string: "https://router.example")!,
+            credentials: RouterOSCredentials(username: "writer", password: "secret"),
+            transport: StubTransport(
+                data: Data(#"{"error":500,"message":"Internal error"}"#.utf8),
+                statusCode: 500
+            )
+        )
+
+        do {
+            try await client.removeWireGuardPeer(peer)
+            XCTFail("Expected an uncertain write outcome")
+        } catch let error as RouterOSClientError {
+            XCTAssertEqual(error, .writeOutcomeUncertain)
+        }
+    }
+
+    private func makePeer(id: String, publicKey: String) throws -> RouterOSWireGuardPeer {
+        let data = Data("""
+        {
+          ".id": "\(id)",
+          "interface": "wg-remote",
+          "name": "iPhone",
+          "public-key": "\(publicKey)",
+          "allowed-address": "10.255.100.10/32"
+        }
+        """.utf8)
+        return try JSONDecoder().decode(RouterOSWireGuardPeer.self, from: data)
+    }
 }
 
 private actor StubTransport: RouterOSHTTPTransport {

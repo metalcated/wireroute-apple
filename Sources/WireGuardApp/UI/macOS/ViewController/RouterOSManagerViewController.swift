@@ -1,7 +1,59 @@
 // SPDX-License-Identifier: MIT
 
 import Cocoa
+import CoreImage.CIFilterBuiltins
 import UniformTypeIdentifiers
+
+@MainActor
+private final class RouterOSDiscoveryTableView: NSTableView {
+    var contextMenuProvider: ((Int) -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let location = convert(event.locationInWindow, from: nil)
+        let targetRow = row(at: location)
+        guard targetRow >= 0 else { return nil }
+        selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
+        return contextMenuProvider?(targetRow)
+    }
+}
+
+@MainActor
+private final class RouterOSRemovePeerOptionsView: NSStackView {
+    let removeLocalProfile = NSButton(
+        checkboxWithTitle: tr("macRouterOSRemoveLocalProfile"),
+        target: nil,
+        action: nil
+    )
+    let exportLocalProfile = NSButton(
+        checkboxWithTitle: tr("macRouterOSExportBeforeRemoval"),
+        target: nil,
+        action: nil
+    )
+
+    init(hasLocalProfile: Bool) {
+        super.init(frame: .zero)
+        orientation = .vertical
+        alignment = .leading
+        spacing = 8
+        addArrangedSubview(removeLocalProfile)
+        addArrangedSubview(exportLocalProfile)
+
+        removeLocalProfile.isEnabled = hasLocalProfile
+        removeLocalProfile.target = self
+        removeLocalProfile.action = #selector(removeLocalProfileChanged)
+        exportLocalProfile.state = .on
+        exportLocalProfile.isEnabled = false
+        frame = NSRect(x: 0, y: 0, width: 430, height: 52)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func removeLocalProfileChanged() {
+        exportLocalProfile.isEnabled = removeLocalProfile.state == .on
+    }
+}
 
 @MainActor
 final class RouterOSManagerViewController: NSViewController {
@@ -76,7 +128,7 @@ final class RouterOSManagerViewController: NSViewController {
     private let messageLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSReadOnlyMessage"))
     private let summaryLabel = NSTextField(labelWithString: tr("macRouterOSNotConnected"))
     private let emptyStateLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSEmptyDiscovery"))
-    private let tableView = NSTableView()
+    private let tableView = RouterOSDiscoveryTableView()
     private var rows = [DiscoveryRow]()
     private var interfaces = [RouterOSWireGuardInterface]()
     private var peers = [RouterOSWireGuardPeer]()
@@ -84,6 +136,7 @@ final class RouterOSManagerViewController: NSViewController {
     private var connectedContext: ConnectedContext?
     private var connectionTask: Task<Void, Never>?
     private var isBusy = false
+    private var contextPeer: RouterOSWireGuardPeer?
 
     init(tunnelsManager: TunnelsManager) {
         self.tunnelsManager = tunnelsManager
@@ -287,6 +340,9 @@ final class RouterOSManagerViewController: NSViewController {
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.rowHeight = 30
         tableView.intercellSpacing = NSSize(width: 8, height: 2)
+        tableView.contextMenuProvider = { [weak self] row in
+            self?.peerContextMenu(for: row)
+        }
 
         let columns: [(String, String, CGFloat)] = [
             ("type", tr("macRouterOSColumnType"), 100),
@@ -584,6 +640,512 @@ final class RouterOSManagerViewController: NSViewController {
         importPeerButton.isEnabled = !isBusy && connectedContext != nil && selectedPeer != nil
     }
 
+    private func peerContextMenu(for row: Int) -> NSMenu? {
+        guard !isBusy, connectedContext != nil, rows.indices.contains(row),
+              case .peer(let peer) = rows[row] else {
+            return nil
+        }
+        contextPeer = peer
+        let tunnel = existingTunnel(matching: peer)
+        let hasLocalConfiguration = tunnel?.tunnelConfiguration != nil
+        let hasRecovery = Keychain.recoveryConfiguration(for: peer.id) != nil
+
+        let menu = NSMenu()
+        let openItem = menuItem(
+            title: tr("macRouterOSContextOpenInWireRoute"),
+            action: #selector(openContextPeerInWireRoute)
+        )
+        openItem.isEnabled = tunnel != nil
+        menu.addItem(openItem)
+        menu.addItem(
+            menuItem(
+                title: tr("macRouterOSContextImportConfiguration"),
+                action: #selector(importContextPeerConfiguration)
+            )
+        )
+
+        let exportItem = menuItem(
+            title: tr("macRouterOSContextExportConfiguration"),
+            action: #selector(exportContextPeerConfiguration)
+        )
+        exportItem.isEnabled = hasLocalConfiguration
+        menu.addItem(exportItem)
+        let qrItem = menuItem(
+            title: tr("macRouterOSContextShowQRCode"),
+            action: #selector(showContextPeerQRCode)
+        )
+        qrItem.isEnabled = hasLocalConfiguration
+        menu.addItem(qrItem)
+        menu.addItem(.separator())
+        menu.addItem(
+            menuItem(
+                title: tr("macRouterOSContextCopyPublicKey"),
+                action: #selector(copyContextPeerPublicKey)
+            )
+        )
+        let privateKeyItem = menuItem(
+            title: tr("macRouterOSContextCopyPrivateKey"),
+            action: #selector(copyContextPeerPrivateKey)
+        )
+        privateKeyItem.isEnabled = hasLocalConfiguration
+        menu.addItem(privateKeyItem)
+        menu.addItem(.separator())
+
+        let replaceItem = menuItem(
+            title: tr(
+                hasRecovery
+                    ? "macRouterOSContextResumeCredentialReplacement"
+                    : "macRouterOSContextReplaceCredentials"
+            ),
+            action: #selector(replaceContextPeerCredentials)
+        )
+        replaceItem.isEnabled = tunnel != nil || hasRecovery
+        menu.addItem(replaceItem)
+        let removeItem = menuItem(
+            title: tr("macRouterOSContextRemovePeer"),
+            action: #selector(removeContextPeer)
+        )
+        removeItem.isEnabled = true
+        menu.addItem(removeItem)
+        return menu
+    }
+
+    private func menuItem(title: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func openContextPeerInWireRoute() {
+        guard let peer = contextPeer, let tunnel = existingTunnel(matching: peer) else { return }
+        (NSApp.delegate as? AppDelegate)?.showManageTunnelsWindow(selecting: tunnel)
+    }
+
+    @objc private func importContextPeerConfiguration() {
+        guard let peer = contextPeer else { return }
+        beginImportExistingPeer(peer)
+    }
+
+    @objc private func exportContextPeerConfiguration() {
+        guard let peer = contextPeer,
+              let configuration = existingTunnel(matching: peer)?.tunnelConfiguration else { return }
+        PrivateDataConfirmation.confirmAccess(to: tr("macRouterOSExportPrivateData")) { [weak self] in
+            self?.saveTunnelConfiguration(configuration)
+        }
+    }
+
+    @objc private func showContextPeerQRCode() {
+        guard let peer = contextPeer,
+              let configuration = existingTunnel(matching: peer)?.tunnelConfiguration else { return }
+        PrivateDataConfirmation.confirmAccess(to: tr("macRouterOSShowQRCodePrivateData")) { [weak self] in
+            self?.showConfigurationQRCode(configuration)
+        }
+    }
+
+    @objc private func copyContextPeerPublicKey() {
+        guard let peer = contextPeer else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(peer.publicKey, forType: .string)
+    }
+
+    @objc private func copyContextPeerPrivateKey() {
+        guard let peer = contextPeer,
+              let privateKey = existingTunnel(matching: peer)?
+                .tunnelConfiguration?.interface.privateKey.base64Key else { return }
+        PrivateDataConfirmation.confirmAccess(to: tr("macRouterOSCopyPrivateKeyAuthentication")) { [weak self] in
+            self?.confirmCopyPrivateKey(privateKey)
+        }
+    }
+
+    @objc private func replaceContextPeerCredentials() {
+        guard let peer = contextPeer else { return }
+        PrivateDataConfirmation.confirmAccess(
+            to: tr("macRouterOSReplaceCredentialsAuthentication")
+        ) { [weak self] in
+            self?.beginCredentialReplacement(for: peer)
+        }
+    }
+
+    @objc private func removeContextPeer() {
+        guard let peer = contextPeer, let window = view.window else { return }
+        let tunnel = existingTunnel(matching: peer)
+        let options = RouterOSRemovePeerOptionsView(hasLocalProfile: tunnel != nil)
+        let allowedAddresses = peer.allowedAddresses.isEmpty
+            ? tr("macRouterOSNone")
+            : peer.allowedAddresses.joined(separator: ", ")
+
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = tr("macRouterOSRemovePeerTitle")
+        alert.informativeText = tr(
+            format: "macRouterOSRemovePeerMessage (%@,%@,%@)",
+            displayName(for: peer),
+            peer.interfaceName,
+            allowedAddresses
+        )
+        alert.accessoryView = options
+        let removeButton = alert.addButton(withTitle: tr("macRouterOSRemovePeerConfirm"))
+        removeButton.hasDestructiveAction = true
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            let shouldRemoveLocalProfile = options.removeLocalProfile.state == .on
+            let shouldExport = shouldRemoveLocalProfile && options.exportLocalProfile.state == .on
+            self?.preparePeerRemoval(
+                peer,
+                localTunnel: shouldRemoveLocalProfile ? tunnel : nil,
+                shouldExportLocalProfile: shouldExport
+            )
+        }
+    }
+
+    private func beginCredentialReplacement(for peer: RouterOSWireGuardPeer) {
+        if let recovery = Keychain.recoveryConfiguration(for: peer.id) {
+            resumeCredentialReplacement(for: peer, recovery: recovery)
+            return
+        }
+        guard let tunnel = existingTunnel(matching: peer),
+              let currentConfiguration = tunnel.tunnelConfiguration else {
+            showError(tr("macRouterOSReplaceCredentialsRequiresProfile"))
+            return
+        }
+
+        var replacementInterface = currentConfiguration.interface
+        replacementInterface.privateKey = PrivateKey()
+        let replacementConfiguration = TunnelConfiguration(
+            name: currentConfiguration.name,
+            interface: replacementInterface,
+            peers: currentConfiguration.peers
+        )
+        guard let recoveryReference = Keychain.makeRecoveryReference(
+            containing: replacementConfiguration.asWgQuickConfig(),
+            called: tunnel.name,
+            peerID: peer.id
+        ) else {
+            showError(tr("macRouterOSCredentialRecoveryStoreFailed"))
+            return
+        }
+        presentCredentialReplacementReview(
+            peer: peer,
+            tunnel: tunnel,
+            replacementConfiguration: replacementConfiguration,
+            recoveryReference: recoveryReference
+        )
+    }
+
+    private func presentCredentialReplacementReview(
+        peer: RouterOSWireGuardPeer,
+        tunnel: TunnelContainer,
+        replacementConfiguration: TunnelConfiguration,
+        recoveryReference: Data
+    ) {
+        guard let window = view.window else {
+            Keychain.deleteReference(called: recoveryReference)
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = tr("macRouterOSReplaceCredentialsTitle")
+        alert.informativeText = tr(
+            format: "macRouterOSReplaceCredentialsMessage (%@,%@,%@,%@)",
+            displayName(for: peer),
+            peer.interfaceName,
+            peer.publicKey,
+            replacementConfiguration.interface.privateKey.publicKey.base64Key
+        )
+        let replaceButton = alert.addButton(withTitle: tr("macRouterOSReplaceCredentialsConfirm"))
+        replaceButton.hasDestructiveAction = true
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else {
+                Keychain.deleteReference(called: recoveryReference)
+                return
+            }
+            self?.performCredentialReplacement(
+                peer: peer,
+                tunnel: tunnel,
+                replacementConfiguration: replacementConfiguration,
+                recoveryReference: recoveryReference,
+                updateRouter: true
+            )
+        }
+    }
+
+    private func resumeCredentialReplacement(
+        for peer: RouterOSWireGuardPeer,
+        recovery: KeychainRecoveryConfiguration
+    ) {
+        guard let replacementConfiguration = try? TunnelConfiguration(
+            fromWgQuickConfig: recovery.configuration,
+            called: recovery.name
+        ) else {
+            showError(tr("macRouterOSCredentialRecoveryInvalid"))
+            return
+        }
+        let replacementPublicKey = replacementConfiguration.interface.privateKey.publicKey.base64Key
+        let localTunnel = tunnelsManager.tunnel(named: recovery.name)
+        let localPublicKey = localTunnel?.tunnelConfiguration?
+            .interface.privateKey.publicKey.base64Key
+
+        if localPublicKey == replacementPublicKey {
+            Keychain.deleteReference(called: recovery.reference)
+            messageLabel.stringValue = tr("macRouterOSCredentialReplacementComplete")
+            messageLabel.textColor = .systemGreen
+            if let localTunnel {
+                (NSApp.delegate as? AppDelegate)?.showManageTunnelsWindow(selecting: localTunnel)
+            }
+            return
+        }
+
+        guard let localTunnel else {
+            showCredentialRecoveryOptions(
+                replacementConfiguration,
+                recoveryReference: recovery.reference,
+                message: tr("macRouterOSCredentialRecoveryProfileMissing")
+            )
+            return
+        }
+
+        if peer.publicKey == replacementPublicKey {
+            performCredentialReplacement(
+                peer: peer,
+                tunnel: localTunnel,
+                replacementConfiguration: replacementConfiguration,
+                recoveryReference: recovery.reference,
+                updateRouter: false
+            )
+            return
+        }
+
+        guard localPublicKey == peer.publicKey else {
+            showCredentialRecoveryOptions(
+                replacementConfiguration,
+                recoveryReference: recovery.reference,
+                message: tr("macRouterOSCredentialRecoveryConflict")
+            )
+            return
+        }
+
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr("macRouterOSResumeCredentialReplacementTitle")
+        alert.informativeText = tr("macRouterOSResumeCredentialReplacementMessage")
+        alert.addButton(withTitle: tr("macRouterOSResumeCredentialReplacement"))
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.performCredentialReplacement(
+                peer: peer,
+                tunnel: localTunnel,
+                replacementConfiguration: replacementConfiguration,
+                recoveryReference: recovery.reference,
+                updateRouter: true
+            )
+        }
+    }
+
+    private func performCredentialReplacement(
+        peer: RouterOSWireGuardPeer,
+        tunnel: TunnelContainer,
+        replacementConfiguration: TunnelConfiguration,
+        recoveryReference: Data,
+        updateRouter: Bool
+    ) {
+        guard let connectedContext else { return }
+        let replacementPublicKey = replacementConfiguration.interface.privateKey.publicKey.base64Key
+        connectionTask?.cancel()
+        messageLabel.stringValue = updateRouter
+            ? tr("macRouterOSReplacingCredentials")
+            : tr("macRouterOSFinishingCredentialReplacement")
+        messageLabel.textColor = .secondaryLabelColor
+        setConnecting(true)
+
+        connectionTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                var updatedPeer = peer
+                if updateRouter {
+                    let client = try RouterOSClient<URLSessionRouterOSHTTPTransport>(
+                        baseURL: connectedContext.baseURL,
+                        credentials: connectedContext.credentials,
+                        trustedCertificate: connectedContext.trustedCertificate
+                    )
+                    updatedPeer = try await client.replaceWireGuardPeerPublicKey(
+                        peer,
+                        with: replacementPublicKey
+                    )
+                    guard updatedPeer.id == peer.id,
+                          updatedPeer.publicKey == replacementPublicKey else {
+                        throw RouterOSClientError.writeOutcomeUncertain
+                    }
+                    replacePeerInDiscovery(updatedPeer)
+                }
+                guard !Task.isCancelled else { return }
+                finishLocalCredentialReplacement(
+                    peer: updatedPeer,
+                    tunnel: tunnel,
+                    replacementConfiguration: replacementConfiguration,
+                    recoveryReference: recoveryReference
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                if error as? RouterOSClientError == .writeOutcomeUncertain {
+                    invalidateDiscovery()
+                }
+                setConnecting(false)
+                showCredentialRecoveryOptions(
+                    replacementConfiguration,
+                    recoveryReference: recoveryReference,
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func finishLocalCredentialReplacement(
+        peer: RouterOSWireGuardPeer,
+        tunnel: TunnelContainer,
+        replacementConfiguration: TunnelConfiguration,
+        recoveryReference: Data
+    ) {
+        if tunnel.tunnelConfiguration?.interface.privateKey.publicKey.base64Key
+            == replacementConfiguration.interface.privateKey.publicKey.base64Key {
+            Keychain.deleteReference(called: recoveryReference)
+            setConnecting(false)
+            credentialReplacementSucceeded(peer: peer, tunnel: tunnel)
+            return
+        }
+        tunnelsManager.modify(
+            tunnel: tunnel,
+            tunnelConfiguration: replacementConfiguration,
+            onDemandOption: tunnel.onDemandOption
+        ) { [weak self] error in
+            guard let self else { return }
+            setConnecting(false)
+            if let error {
+                showCredentialRecoveryOptions(
+                    replacementConfiguration,
+                    recoveryReference: recoveryReference,
+                    message: [
+                        tr("macRouterOSCredentialReplacementLocalSaveFailed"),
+                        error.alertText.message
+                    ].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                )
+                return
+            }
+            Keychain.deleteReference(called: recoveryReference)
+            credentialReplacementSucceeded(peer: peer, tunnel: tunnel)
+        }
+    }
+
+    private func credentialReplacementSucceeded(
+        peer: RouterOSWireGuardPeer,
+        tunnel: TunnelContainer
+    ) {
+        messageLabel.stringValue = tr(
+            format: "macRouterOSCredentialReplacementSucceeded (%@)",
+            displayName(for: peer)
+        )
+        messageLabel.textColor = .systemGreen
+        (NSApp.delegate as? AppDelegate)?.showManageTunnelsWindow(selecting: tunnel)
+    }
+
+    private func showCredentialRecoveryOptions(
+        _ configuration: TunnelConfiguration,
+        recoveryReference: Data,
+        message: String
+    ) {
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = tr("macRouterOSCredentialRecoveryTitle")
+        alert.informativeText = message + "\n\n" + tr("macRouterOSCredentialRecoveryRetained")
+        alert.addButton(withTitle: tr("macRouterOSSaveConfiguration"))
+        alert.addButton(withTitle: tr("macRouterOSCopyConfiguration"))
+        alert.addButton(withTitle: tr("macRouterOSDone"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            switch response {
+            case .alertFirstButtonReturn:
+                self?.saveTunnelConfiguration(configuration)
+            case .alertSecondButtonReturn:
+                self?.copySensitiveConfiguration(configuration.asWgQuickConfig())
+            default:
+                _ = recoveryReference
+            }
+        }
+    }
+
+    private func preparePeerRemoval(
+        _ peer: RouterOSWireGuardPeer,
+        localTunnel: TunnelContainer?,
+        shouldExportLocalProfile: Bool
+    ) {
+        guard shouldExportLocalProfile,
+              let configuration = localTunnel?.tunnelConfiguration else {
+            performPeerRemoval(peer, localTunnel: localTunnel)
+            return
+        }
+        PrivateDataConfirmation.confirmAccess(to: tr("macRouterOSExportPrivateData")) { [weak self] in
+            self?.saveTunnelConfiguration(configuration) { saved in
+                guard saved else { return }
+                self?.performPeerRemoval(peer, localTunnel: localTunnel)
+            }
+        }
+    }
+
+    private func performPeerRemoval(
+        _ peer: RouterOSWireGuardPeer,
+        localTunnel: TunnelContainer?
+    ) {
+        guard let connectedContext else { return }
+        connectionTask?.cancel()
+        messageLabel.stringValue = tr("macRouterOSRemovingPeer")
+        messageLabel.textColor = .secondaryLabelColor
+        setConnecting(true)
+        connectionTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let client = try RouterOSClient<URLSessionRouterOSHTTPTransport>(
+                    baseURL: connectedContext.baseURL,
+                    credentials: connectedContext.credentials,
+                    trustedCertificate: connectedContext.trustedCertificate
+                )
+                try await client.removeWireGuardPeer(peer)
+                guard !Task.isCancelled else { return }
+                removePeerFromDiscovery(peer)
+                guard let localTunnel else {
+                    setConnecting(false)
+                    messageLabel.stringValue = tr("macRouterOSPeerRemoved")
+                    messageLabel.textColor = .systemGreen
+                    return
+                }
+                tunnelsManager.remove(tunnel: localTunnel) { [weak self] error in
+                    guard let self else { return }
+                    setConnecting(false)
+                    if let error {
+                        showExistingPeerImportError(
+                            title: tr("macRouterOSPeerRemovedLocalFailedTitle"),
+                            message: tr("macRouterOSPeerRemovedLocalFailedMessage")
+                                + "\n\n" + error.alertText.message
+                        )
+                    } else {
+                        messageLabel.stringValue = tr("macRouterOSPeerAndProfileRemoved")
+                        messageLabel.textColor = .systemGreen
+                    }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                if error as? RouterOSClientError == .writeOutcomeUncertain {
+                    invalidateDiscovery()
+                }
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
     @objc private func addPeerClicked() {
         guard connectedContext != nil, !interfaces.isEmpty else { return }
         let setupViewController = RouterOSPeerSetupViewController(
@@ -607,6 +1169,10 @@ final class RouterOSManagerViewController: NSViewController {
 
     @objc private func importExistingPeerClicked() {
         guard let peer = selectedPeer else { return }
+        beginImportExistingPeer(peer)
+    }
+
+    private func beginImportExistingPeer(_ peer: RouterOSWireGuardPeer) {
         if let tunnel = existingTunnel(matching: peer) {
             messageLabel.stringValue = tr(
                 format: "macRouterOSExistingPeerAlreadyImported (%@)",
@@ -863,6 +1429,38 @@ final class RouterOSManagerViewController: NSViewController {
         }
     }
 
+    private func displayName(for peer: RouterOSWireGuardPeer) -> String {
+        let name = peer.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let comment = peer.comment?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.flatMap { $0.isEmpty ? nil : $0 }
+            ?? comment.flatMap { $0.isEmpty ? nil : $0 }
+            ?? tr("macRouterOSUnnamedPeer")
+    }
+
+    private func replacePeerInDiscovery(_ peer: RouterOSWireGuardPeer) {
+        if let index = peers.firstIndex(where: { $0.id == peer.id }) {
+            peers[index] = peer
+        } else {
+            peers.append(peer)
+        }
+        rebuildDiscoveryRows()
+    }
+
+    private func removePeerFromDiscovery(_ peer: RouterOSWireGuardPeer) {
+        peers.removeAll { $0.id == peer.id }
+        rebuildDiscoveryRows()
+    }
+
+    private func rebuildDiscoveryRows() {
+        rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
+        reloadDiscoveryTable()
+        summaryLabel.stringValue = tr(
+            format: "macRouterOSDiscoverySummary (%d,%d)",
+            interfaces.count,
+            peers.count
+        )
+    }
+
     private func showExistingPeerImportError(title: String, message: String) {
         messageLabel.stringValue = message
         messageLabel.textColor = .systemRed
@@ -873,6 +1471,93 @@ final class RouterOSManagerViewController: NSViewController {
         alert.informativeText = message
         alert.addButton(withTitle: tr("macRouterOSDone"))
         alert.beginSheetModal(for: window) { _ in }
+    }
+
+    private func saveTunnelConfiguration(
+        _ configuration: TunnelConfiguration,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        guard let window = view.window else {
+            completion?(false)
+            return
+        }
+        let panel = NSSavePanel()
+        panel.prompt = tr("macRouterOSSave")
+        panel.nameFieldStringValue = "\(Self.safeFilename(configuration.name ?? "WireRoute-Peer")).conf"
+        panel.allowedContentTypes = [UTType(filenameExtension: "conf") ?? .plainText]
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else {
+                completion?(false)
+                return
+            }
+            do {
+                try Data(configuration.asWgQuickConfig().utf8).write(to: url, options: .atomic)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600],
+                    ofItemAtPath: url.path
+                )
+                completion?(true)
+            } catch {
+                self?.showExistingPeerImportError(
+                    title: tr("macRouterOSExportFailedTitle"),
+                    message: error.localizedDescription
+                )
+                completion?(false)
+            }
+        }
+    }
+
+    private func showConfigurationQRCode(_ configuration: TunnelConfiguration) {
+        guard let window = view.window else { return }
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(configuration.asWgQuickConfig().utf8)
+        filter.correctionLevel = "M"
+        guard let outputImage = filter.outputImage else {
+            showError(tr("macRouterOSQRCodeFailed"))
+            return
+        }
+        let scaledImage = outputImage.transformed(
+            by: CGAffineTransform(scaleX: 8, y: 8)
+        )
+        let representation = NSCIImageRep(ciImage: scaledImage)
+        let image = NSImage(size: representation.size)
+        image.addRepresentation(representation)
+
+        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: 320, height: 320))
+        imageView.image = image
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = configuration.name ?? tr("macRouterOSExistingPeerDefaultName")
+        alert.informativeText = tr("macRouterOSQRCodeMessage")
+        alert.accessoryView = imageView
+        alert.addButton(withTitle: tr("macRouterOSDone"))
+        alert.beginSheetModal(for: window) { _ in }
+    }
+
+    private func confirmCopyPrivateKey(_ privateKey: String) {
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr("macRouterOSCopyPrivateKeyTitle")
+        alert.informativeText = tr("macRouterOSCopyPrivateKeyMessage")
+        alert.addButton(withTitle: tr("macRouterOSCopyPrivateKeyConfirm"))
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.copySensitiveConfiguration(privateKey)
+        }
+    }
+
+    private func copySensitiveConfiguration(_ value: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+            let currentPasteboard = NSPasteboard.general
+            guard currentPasteboard.string(forType: .string) == value else { return }
+            currentPasteboard.clearContents()
+        }
     }
 
     private func saveConfiguration(_ configuration: WireGuardClientConfiguration) {

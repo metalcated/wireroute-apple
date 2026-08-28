@@ -9,6 +9,17 @@ private struct UncheckedTransfer<Value>: @unchecked Sendable {
     let value: Value
 }
 
+private enum TunnelConfigurationStorageError: LocalizedError {
+    case keychainWriteFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .keychainWriteFailed:
+            return tr("alertTunnelConfigurationKeychainWriteFailed")
+        }
+    }
+}
+
 @MainActor
 protocol TunnelsManagerListDelegate: AnyObject {
     func tunnelAdded(at index: Int)
@@ -158,7 +169,16 @@ class TunnelsManager {
         }
 
         let tunnelProviderManager = NETunnelProviderManager()
-        tunnelProviderManager.setTunnelConfiguration(tunnelConfiguration)
+        guard tunnelProviderManager.setTunnelConfiguration(tunnelConfiguration) != nil else {
+            completionHandler(
+                .failure(
+                    TunnelsManagerError.systemErrorOnAddTunnel(
+                        systemError: TunnelConfigurationStorageError.keychainWriteFailed
+                    )
+                )
+            )
+            return
+        }
         tunnelProviderManager.isEnabled = true
 
         onDemandOption.apply(on: tunnelProviderManager)
@@ -253,6 +273,12 @@ class TunnelsManager {
         }
 
         let tunnelProviderManager = tunnel.tunnelProvider
+        let previousProtocolConfiguration = tunnelProviderManager.protocolConfiguration
+        let previousLocalizedDescription = tunnelProviderManager.localizedDescription
+        let previousTunnelConfiguration = tunnelProviderManager.tunnelConfiguration
+        let previousIsEnabled = tunnelProviderManager.isEnabled
+        let previousOnDemandRules = tunnelProviderManager.onDemandRules
+        let previousIsOnDemandEnabled = tunnelProviderManager.isOnDemandEnabled
 
         let isIntroducingOnDemandRules = (tunnelProviderManager.onDemandRules ?? []).isEmpty && onDemandOption != .off
         if isIntroducingOnDemandRules && tunnel.status != .inactive && tunnel.status != .deactivating {
@@ -278,8 +304,18 @@ class TunnelsManager {
         }
 
         let isTunnelConfigurationChanged = tunnelProviderManager.tunnelConfiguration != tunnelConfiguration
+        var replacementProtocolConfiguration: NETunnelProviderProtocol?
         if isTunnelConfigurationChanged {
-            tunnelProviderManager.setTunnelConfiguration(tunnelConfiguration)
+            guard let replacement = tunnelProviderManager.setTunnelConfiguration(tunnelConfiguration) else {
+                tunnel.name = oldName
+                completionHandler(
+                    TunnelsManagerError.systemErrorOnModifyTunnel(
+                        systemError: TunnelConfigurationStorageError.keychainWriteFailed
+                    )
+                )
+                return
+            }
+            replacementProtocolConfiguration = replacement
         }
         tunnelProviderManager.isEnabled = true
 
@@ -293,10 +329,20 @@ class TunnelsManager {
             do {
                 try await tunnelProviderManager.saveToPreferences()
             } catch {
-                // TODO: the passwordReference for the old one has already been removed at this point and we can't easily roll back!
+                replacementProtocolConfiguration?.destroyConfigurationReference()
+                tunnelProviderManager.protocolConfiguration = previousProtocolConfiguration
+                tunnelProviderManager.localizedDescription = previousLocalizedDescription
+                tunnelProviderManager.cacheTunnelConfiguration(previousTunnelConfiguration)
+                tunnelProviderManager.isEnabled = previousIsEnabled
+                tunnelProviderManager.onDemandRules = previousOnDemandRules
+                tunnelProviderManager.isOnDemandEnabled = previousIsOnDemandEnabled
+                tunnel.name = oldName
                 wg_log(.error, message: "Modify: Saving configuration failed: \(error)")
                 completionHandler(TunnelsManagerError.systemErrorOnModifyTunnel(systemError: error))
                 return
+            }
+            if isTunnelConfigurationChanged {
+                (previousProtocolConfiguration as? NETunnelProviderProtocol)?.destroyConfigurationReference()
             }
             guard let self else { return }
             if isNameChanged {
@@ -340,12 +386,11 @@ class TunnelsManager {
         completionHandler: @escaping @MainActor @Sendable (TunnelsManagerError?) -> Void
     ) {
         let tunnelProviderManager = tunnel.tunnelProvider
+        let protocolConfiguration = tunnelProviderManager.protocolConfiguration as? NETunnelProviderProtocol
         #if os(macOS)
-        if tunnel.isTunnelAvailableToUser {
-            (tunnelProviderManager.protocolConfiguration as? NETunnelProviderProtocol)?.destroyConfigurationReference()
-        }
+        let shouldDestroyConfigurationReference = tunnel.isTunnelAvailableToUser
         #elseif os(iOS)
-        (tunnelProviderManager.protocolConfiguration as? NETunnelProviderProtocol)?.destroyConfigurationReference()
+        let shouldDestroyConfigurationReference = true
         #else
         #error("Unimplemented")
         #endif
@@ -356,6 +401,9 @@ class TunnelsManager {
                 wg_log(.error, message: "Remove: Saving configuration failed: \(error)")
                 completionHandler(TunnelsManagerError.systemErrorOnRemoveTunnel(systemError: error))
                 return
+            }
+            if shouldDestroyConfigurationReference {
+                protocolConfiguration?.destroyConfigurationReference()
             }
             if let self, let index = self.tunnels.firstIndex(of: tunnel) {
                 self.tunnels.remove(at: index)
@@ -874,10 +922,27 @@ extension NETunnelProviderManager {
         return config
     }
 
-    func setTunnelConfiguration(_ tunnelConfiguration: TunnelConfiguration) {
-        protocolConfiguration = NETunnelProviderProtocol(tunnelConfiguration: tunnelConfiguration, previouslyFrom: protocolConfiguration)
+    @discardableResult
+    func setTunnelConfiguration(_ tunnelConfiguration: TunnelConfiguration) -> NETunnelProviderProtocol? {
+        guard let newProtocolConfiguration = NETunnelProviderProtocol(
+            tunnelConfiguration: tunnelConfiguration,
+            previouslyFrom: protocolConfiguration
+        ) else {
+            return nil
+        }
+        protocolConfiguration = newProtocolConfiguration
         localizedDescription = tunnelConfiguration.name
         objc_setAssociatedObject(self, &NETunnelProviderManager.cachedConfigKey, tunnelConfiguration, objc_AssociationPolicy.OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return newProtocolConfiguration
+    }
+
+    func cacheTunnelConfiguration(_ tunnelConfiguration: TunnelConfiguration?) {
+        objc_setAssociatedObject(
+            self,
+            &NETunnelProviderManager.cachedConfigKey,
+            tunnelConfiguration,
+            objc_AssociationPolicy.OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
     }
 
     func isEquivalentTo(_ tunnel: TunnelContainer) -> Bool {

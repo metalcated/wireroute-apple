@@ -28,7 +28,7 @@ public enum RouterOSClientError: Error, Equatable, LocalizedError, Sendable {
         case .invalidPayload:
             return "RouterOS returned data in an unexpected format."
         case .writeOutcomeUncertain:
-            return "WireRoute could not confirm whether RouterOS added the peer. Reconnect and inspect the peer list before trying again."
+            return "WireRoute could not confirm whether RouterOS completed the peer change. Reconnect and inspect the peer list before trying again."
         }
     }
 }
@@ -166,6 +166,53 @@ public struct RouterOSClient<Transport: RouterOSHTTPTransport>: Sendable {
         }
     }
 
+    public func replaceWireGuardPeerPublicKey(
+        _ peer: RouterOSWireGuardPeer,
+        with publicKey: String
+    ) async throws -> RouterOSWireGuardPeer {
+        guard RouterOSPeerCreation.isWireGuardKey(publicKey) else {
+            throw RouterOSProvisioningError.invalidKey
+        }
+        let request = try peerMutationRequest(
+            peerID: peer.id,
+            method: "PATCH",
+            body: RouterOSPeerPublicKeyUpdateRequest(publicKey: publicKey)
+        )
+        do {
+            return try await decodeResponse(for: request)
+        } catch let error as RouterOSClientError {
+            if case .httpStatus(let code, _, _) = error,
+               (400 ..< 500).contains(code), code != 408 {
+                throw error
+            }
+            throw RouterOSClientError.writeOutcomeUncertain
+        } catch {
+            throw RouterOSClientError.writeOutcomeUncertain
+        }
+    }
+
+    public func removeWireGuardPeer(_ peer: RouterOSWireGuardPeer) async throws {
+        let request = try peerMutationRequest(
+            peerID: peer.id,
+            method: "DELETE",
+            body: Optional<RouterOSPeerPublicKeyUpdateRequest>.none
+        )
+        do {
+            let (data, response) = try await transport.data(for: request)
+            guard (200 ..< 300).contains(response.statusCode) else {
+                throw routerError(from: data, response: response)
+            }
+        } catch let error as RouterOSClientError {
+            if case .httpStatus(let code, _, _) = error,
+               (400 ..< 500).contains(code), code != 408 {
+                throw error
+            }
+            throw RouterOSClientError.writeOutcomeUncertain
+        } catch {
+            throw RouterOSClientError.writeOutcomeUncertain
+        }
+    }
+
     private func get<Response: Decodable>(pathComponents: [String]) async throws -> Response {
         let url = pathComponents.reduce(restBaseURL) { url, component in
             url.appendingPathComponent(component)
@@ -178,15 +225,32 @@ public struct RouterOSClient<Transport: RouterOSHTTPTransport>: Sendable {
         return try await decodeResponse(for: request)
     }
 
+    private func peerMutationRequest<Body: Encodable>(
+        peerID: String,
+        method: String,
+        body: Body?
+    ) throws -> URLRequest {
+        guard !peerID.isEmpty, !peerID.contains("/") else {
+            throw RouterOSClientError.invalidPayload
+        }
+        let url = ["interface", "wireguard", "peers", peerID].reduce(restBaseURL) { url, component in
+            url.appendingPathComponent(component)
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(authorizationHeader, forHTTPHeaderField: "Authorization")
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+        return request
+    }
+
     private func decodeResponse<Response: Decodable>(for request: URLRequest) async throws -> Response {
         let (data, response) = try await transport.data(for: request)
         guard (200 ..< 300).contains(response.statusCode) else {
-            let routerError = try? JSONDecoder().decode(RouterOSErrorResponse.self, from: data)
-            throw RouterOSClientError.httpStatus(
-                code: response.statusCode,
-                message: routerError?.message,
-                detail: routerError?.detail
-            )
+            throw routerError(from: data, response: response)
         }
 
         do {
@@ -194,6 +258,15 @@ public struct RouterOSClient<Transport: RouterOSHTTPTransport>: Sendable {
         } catch {
             throw RouterOSClientError.invalidPayload
         }
+    }
+
+    private func routerError(from data: Data, response: HTTPURLResponse) -> RouterOSClientError {
+        let routerError = try? JSONDecoder().decode(RouterOSErrorResponse.self, from: data)
+        return RouterOSClientError.httpStatus(
+            code: response.statusCode,
+            message: routerError?.message,
+            detail: routerError?.detail
+        )
     }
 }
 
@@ -214,4 +287,12 @@ public extension RouterOSClient where Transport == URLSessionRouterOSHTTPTranspo
 private struct RouterOSErrorResponse: Decodable {
     let message: String?
     let detail: String?
+}
+
+private struct RouterOSPeerPublicKeyUpdateRequest: Encodable {
+    let publicKey: String
+
+    private enum CodingKeys: String, CodingKey {
+        case publicKey = "public-key"
+    }
 }
