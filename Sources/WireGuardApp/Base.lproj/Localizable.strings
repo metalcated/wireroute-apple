@@ -428,6 +428,16 @@
 "alertRoutingMultiplePeersMessage" = "WireRoute cannot safely choose a Full tunnel gateway because this profile has multiple peers and no single existing default-route peer.";
 "alertRoutingInvalidRoutesTitle" = "Routes could not be restored";
 "alertRoutingInvalidRoutesMessage" = "The saved split routes for this profile are invalid. Review its AllowedIPs before changing routing mode.";
+"splitRouteEntryTitle" = "Choose split routes";
+"splitRouteEntryMessage" = "Enter the networks that should use this VPN. Other traffic stays on the device’s normal connection.";
+"splitRouteEntryPlaceholder" = "192.168.0.0/16\n10.0.0.0/8";
+"splitRouteEntryHint" = "Use CIDR notation, one network per line. Default routes (0.0.0.0/0 and ::/0) belong to Full tunnel.";
+"alertRoutingEmptyEnteredRoutesTitle" = "Routes required";
+"alertRoutingEmptyEnteredRoutesMessage" = "Add at least one network for Split tunnel.";
+"alertRoutingInvalidEnteredRoutesTitle" = "Check the routes";
+"alertRoutingInvalidEnteredRoutesMessage" = "One or more networks are not valid CIDR routes. Use an address and prefix such as 192.168.0.0/16.";
+"alertRoutingDefaultEnteredRouteTitle" = "Use Full tunnel instead";
+"alertRoutingDefaultEnteredRouteMessage" = "Split tunnel cannot include a default route. Remove 0.0.0.0/0 and ::/0, or use Full tunnel.";
 
 // Mac alert
 

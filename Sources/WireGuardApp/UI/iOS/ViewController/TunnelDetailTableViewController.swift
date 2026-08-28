@@ -3,6 +3,163 @@
 
 import UIKit
 
+private final class SplitRouteEntryViewController: UIViewController, UITextViewDelegate {
+    var onSave: ((String, @escaping @MainActor @Sendable (WireGuardAppError?) -> Void) -> Void)?
+
+    private let routeGlyphView: WireRouteGlyphView = {
+        let view = WireRouteGlyphView()
+        view.update(status: .inactive, routingMode: .split, animated: false)
+        return view
+    }()
+
+    private let messageLabel: UILabel = {
+        let label = UILabel()
+        label.text = tr("splitRouteEntryMessage")
+        label.font = UIFont.preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        return label
+    }()
+
+    private let routesTextView: UITextView = {
+        let textView = UITextView()
+        textView.backgroundColor = WireRouteAppearance.card
+        textView.font = UIFont.monospacedSystemFont(ofSize: 16, weight: .regular)
+        textView.adjustsFontForContentSizeCategory = true
+        textView.autocapitalizationType = .none
+        textView.autocorrectionType = .no
+        textView.spellCheckingType = .no
+        textView.keyboardType = .numbersAndPunctuation
+        textView.layer.cornerRadius = 14
+        textView.layer.cornerCurve = .continuous
+        textView.layer.borderWidth = 1
+        textView.layer.borderColor = UIColor.separator.cgColor
+        textView.textContainerInset = UIEdgeInsets(top: 14, left: 12, bottom: 14, right: 12)
+        return textView
+    }()
+
+    private let placeholderLabel: UILabel = {
+        let label = UILabel()
+        label.text = tr("splitRouteEntryPlaceholder")
+        label.font = UIFont.monospacedSystemFont(ofSize: 16, weight: .regular)
+        label.textColor = .placeholderText
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private let hintLabel: UILabel = {
+        let label = UILabel()
+        label.text = tr("splitRouteEntryHint")
+        label.font = UIFont.preferredFont(forTextStyle: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private let errorLabel: UILabel = {
+        let label = UILabel()
+        label.font = UIFont.preferredFont(forTextStyle: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .systemRed
+        label.numberOfLines = 0
+        label.isHidden = true
+        return label
+    }()
+
+    private lazy var saveButton = UIBarButtonItem(
+        barButtonSystemItem: .save,
+        target: self,
+        action: #selector(saveTapped)
+    )
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        title = tr("splitRouteEntryTitle")
+        view.backgroundColor = WireRouteAppearance.background
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .cancel,
+            target: self,
+            action: #selector(cancelTapped)
+        )
+        navigationItem.rightBarButtonItem = saveButton
+        saveButton.isEnabled = false
+
+        routesTextView.delegate = self
+        routesTextView.addSubview(placeholderLabel)
+        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            placeholderLabel.leadingAnchor.constraint(equalTo: routesTextView.leadingAnchor, constant: 17),
+            placeholderLabel.trailingAnchor.constraint(equalTo: routesTextView.trailingAnchor, constant: -17),
+            placeholderLabel.topAnchor.constraint(equalTo: routesTextView.topAnchor, constant: 14)
+        ])
+
+        let glyphContainer = UIView()
+        glyphContainer.addSubview(routeGlyphView)
+        routeGlyphView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            routeGlyphView.centerXAnchor.constraint(equalTo: glyphContainer.centerXAnchor),
+            routeGlyphView.centerYAnchor.constraint(equalTo: glyphContainer.centerYAnchor),
+            routeGlyphView.widthAnchor.constraint(equalToConstant: 56),
+            routeGlyphView.heightAnchor.constraint(equalTo: routeGlyphView.widthAnchor),
+            glyphContainer.heightAnchor.constraint(equalToConstant: 56)
+        ])
+
+        let stack = UIStackView(arrangedSubviews: [glyphContainer, messageLabel, routesTextView, hintLabel, errorLabel])
+        stack.axis = .vertical
+        stack.alignment = .fill
+        stack.spacing = 12
+        stack.setCustomSpacing(20, after: messageLabel)
+        stack.setCustomSpacing(8, after: routesTextView)
+
+        view.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            routesTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150)
+        ])
+        stack.setCustomSpacing(16, after: glyphContainer)
+    }
+
+    func textViewDidChange(_ textView: UITextView) {
+        let containsText = !textView.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        placeholderLabel.isHidden = containsText
+        saveButton.isEnabled = containsText
+        errorLabel.isHidden = true
+    }
+
+    @objc private func cancelTapped() {
+        dismiss(animated: true)
+    }
+
+    @objc private func saveTapped() {
+        guard let onSave else { return }
+        setSaving(true)
+        onSave(routesTextView.text) { [weak self] error in
+            guard let self else { return }
+            self.setSaving(false)
+            if let error {
+                self.errorLabel.text = error.alertText.message
+                self.errorLabel.isHidden = false
+                return
+            }
+            self.dismiss(animated: true)
+        }
+    }
+
+    private func setSaving(_ isSaving: Bool) {
+        routesTextView.isEditable = !isSaving
+        navigationItem.leftBarButtonItem?.isEnabled = !isSaving
+        saveButton.isEnabled = !isSaving
+    }
+}
+
 class TunnelDetailTableViewController: UITableViewController {
 
     private enum Section {
@@ -446,17 +603,55 @@ extension TunnelDetailTableViewController {
             self.tunnelsManager.setRoutingMode(requestedMode, on: self.tunnel) { error in
                 cell.isEnabled = true
                 guard let error else {
-                    self.tunnelViewModel = TunnelViewModel(tunnelConfiguration: self.tunnel.tunnelConfiguration)
-                    self.loadSections()
-                    self.loadVisibleFields()
-                    self.tableView.reloadData()
+                    self.refreshAfterRoutingChange()
                     return
                 }
                 cell.isOn = self.tunnel.routingMode == .full
+                if let routingError = error as? TunnelRoutingError,
+                   case .missingSplitRoutes = routingError {
+                    self.presentSplitRouteEntry()
+                    return
+                }
                 ErrorPresenter.showErrorAlert(error: error, from: self)
             }
         }
         return cell
+    }
+
+    private func presentSplitRouteEntry() {
+        let routeEntryViewController = SplitRouteEntryViewController()
+        routeEntryViewController.onSave = { [weak self] routes, completion in
+            guard let self else {
+                completion(TunnelRoutingError.invalidStoredRoutes)
+                return
+            }
+            self.tunnelsManager.setRoutingMode(
+                .split,
+                enteredSplitRoutes: routes,
+                on: self.tunnel
+            ) { error in
+                if error == nil {
+                    self.refreshAfterRoutingChange()
+                }
+                completion(error)
+            }
+        }
+
+        let navigationController = UINavigationController(rootViewController: routeEntryViewController)
+        navigationController.modalPresentationStyle = .formSheet
+        navigationController.preferredContentSize = CGSize(width: 540, height: 520)
+        if let sheet = navigationController.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(navigationController, animated: true)
+    }
+
+    private func refreshAfterRoutingChange() {
+        tunnelViewModel = TunnelViewModel(tunnelConfiguration: tunnel.tunnelConfiguration)
+        loadSections()
+        loadVisibleFields()
+        tableView.reloadData()
     }
 
     private func interfaceCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {

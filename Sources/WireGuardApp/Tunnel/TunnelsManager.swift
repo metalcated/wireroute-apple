@@ -449,6 +449,7 @@ class TunnelsManager {
 
     func setRoutingMode(
         _ mode: TunnelRouteMode,
+        enteredSplitRoutes: String? = nil,
         on tunnel: TunnelContainer,
         completionHandler: @escaping @MainActor @Sendable (WireGuardAppError?) -> Void
     ) {
@@ -464,7 +465,8 @@ class TunnelsManager {
             update = try TunnelRoutingController.makeUpdate(
                 configuration: tunnelConfiguration,
                 mode: mode,
-                storedSplitAllowedIPs: tunnelProtocol.wireRouteSplitAllowedIPs
+                storedSplitAllowedIPs: tunnelProtocol.wireRouteSplitAllowedIPs,
+                enteredSplitRoutes: enteredSplitRoutes
             )
         } catch let error as WireGuardAppError {
             completionHandler(error)

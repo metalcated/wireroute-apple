@@ -70,6 +70,15 @@ public struct RoutePrefix: Hashable, Sendable {
         prefixLength == 0
     }
 
+    public static func parseList(_ value: String) throws -> [RoutePrefix] {
+        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
+        let notations = value.components(separatedBy: separators).filter { !$0.isEmpty }
+        var seen = Set<RoutePrefix>()
+        return try notations
+            .map(RoutePrefix.init)
+            .filter { seen.insert($0).inserted }
+    }
+
     static func defaultRoute(for family: IPFamily) -> RoutePrefix {
         switch family {
         case .ipv4:

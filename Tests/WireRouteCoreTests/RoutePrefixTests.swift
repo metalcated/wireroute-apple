@@ -28,4 +28,18 @@ final class RoutePrefixTests: XCTestCase {
 
         XCTAssertEqual(decoded, route)
     }
+
+    func testParsesRouteListAndPreservesFirstOccurrenceOrder() throws {
+        let routes = try RoutePrefix.parseList("192.168.0.0/16, 10.0.0.0/8\n192.168.0.0/16;2001:db8::/32")
+
+        XCTAssertEqual(routes.map(\.notation), [
+            "192.168.0.0/16",
+            "10.0.0.0/8",
+            "2001:db8::/32"
+        ])
+    }
+
+    func testEmptyRouteListParsesAsEmpty() throws {
+        XCTAssertEqual(try RoutePrefix.parseList("  \n, ; "), [])
+    }
 }

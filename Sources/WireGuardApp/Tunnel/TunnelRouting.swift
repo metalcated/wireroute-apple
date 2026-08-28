@@ -7,6 +7,9 @@ enum TunnelRoutingError: WireGuardAppError, Sendable {
     case profileHasNoTunnelAddress
     case ambiguousFullTunnelPeer
     case invalidStoredRoutes
+    case emptyEnteredRoutes
+    case invalidEnteredRoutes
+    case enteredRoutesContainDefaultRoute
 
     var alertText: AlertText {
         switch self {
@@ -18,6 +21,12 @@ enum TunnelRoutingError: WireGuardAppError, Sendable {
             return (tr("alertRoutingMultiplePeersTitle"), tr("alertRoutingMultiplePeersMessage"))
         case .invalidStoredRoutes:
             return (tr("alertRoutingInvalidRoutesTitle"), tr("alertRoutingInvalidRoutesMessage"))
+        case .emptyEnteredRoutes:
+            return (tr("alertRoutingEmptyEnteredRoutesTitle"), tr("alertRoutingEmptyEnteredRoutesMessage"))
+        case .invalidEnteredRoutes:
+            return (tr("alertRoutingInvalidEnteredRoutesTitle"), tr("alertRoutingInvalidEnteredRoutesMessage"))
+        case .enteredRoutesContainDefaultRoute:
+            return (tr("alertRoutingDefaultEnteredRouteTitle"), tr("alertRoutingDefaultEnteredRouteMessage"))
         }
     }
 }
@@ -45,12 +54,34 @@ enum TunnelRoutingController {
     static func makeUpdate(
         configuration: TunnelConfiguration,
         mode: TunnelRouteMode,
-        storedSplitAllowedIPs: [String: [String]]?
+        storedSplitAllowedIPs: [String: [String]]?,
+        enteredSplitRoutes: String? = nil
     ) throws -> TunnelRoutingUpdate {
-        let splitAllowedIPs = try splitRoutes(
+        guard enteredSplitRoutes == nil || mode == .split else {
+            throw TunnelRoutingError.invalidEnteredRoutes
+        }
+        var splitAllowedIPs = try splitRoutes(
             configuration: configuration,
             storedSplitAllowedIPs: storedSplitAllowedIPs
         )
+        if let enteredSplitRoutes {
+            let routes: [RoutePrefix]
+            do {
+                routes = try RoutePrefix.parseList(enteredSplitRoutes)
+            } catch {
+                throw TunnelRoutingError.invalidEnteredRoutes
+            }
+            guard !routes.isEmpty else {
+                throw TunnelRoutingError.emptyEnteredRoutes
+            }
+            guard !routes.contains(where: \.isDefaultRoute) else {
+                throw TunnelRoutingError.enteredRoutesContainDefaultRoute
+            }
+
+            let gatewayPeerIndex = try fullTunnelGatewayPeerIndex(in: configuration.peers)
+            let gatewayPublicKey = configuration.peers[gatewayPeerIndex].publicKey.base64Key
+            splitAllowedIPs[gatewayPublicKey] = routes.map(\.notation)
+        }
         let interfaceAddresses = try configuration.interface.addresses.map(validatedRoutePrefix)
         let capabilities = ProfileNetworkCapabilities(interfaceAddresses: interfaceAddresses)
         let allSplitRoutes = try splitAllowedIPs.values.flatMap { try $0.map(RoutePrefix.init) }
