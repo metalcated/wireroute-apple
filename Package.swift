@@ -38,7 +38,7 @@ let package = Package(
             linkerSettings: [.linkedLibrary("wg-go")]
         ),
         .target(name: "WireRouteCore"),
-        .target(name: "RouterOSKit"),
+        .target(name: "RouterOSKit", dependencies: ["WireRouteCore"]),
         .testTarget(name: "WireRouteCoreTests", dependencies: ["WireRouteCore"]),
         .testTarget(name: "RouterOSKitTests", dependencies: ["RouterOSKit"])
     ]

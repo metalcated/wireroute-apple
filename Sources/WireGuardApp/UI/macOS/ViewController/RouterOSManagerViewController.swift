@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: MIT
 
 import Cocoa
+import UniformTypeIdentifiers
 
 @MainActor
 final class RouterOSManagerViewController: NSViewController {
+    private struct ConnectedContext: Sendable {
+        let baseURL: URL
+        let credentials: RouterOSCredentials
+    }
+
     private enum DiscoveryRow {
         case interface(RouterOSWireGuardInterface)
         case peer(RouterOSWireGuardPeer)
@@ -61,11 +67,16 @@ final class RouterOSManagerViewController: NSViewController {
     private let usernameField = NSTextField()
     private let passwordField = NSSecureTextField()
     private let connectButton = NSButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
+    private let addPeerButton = NSButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
     private let progressIndicator = NSProgressIndicator()
     private let messageLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSReadOnlyMessage"))
     private let summaryLabel = NSTextField(labelWithString: tr("macRouterOSNotConnected"))
+    private let emptyStateLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSEmptyDiscovery"))
     private let tableView = NSTableView()
     private var rows = [DiscoveryRow]()
+    private var interfaces = [RouterOSWireGuardInterface]()
+    private var peers = [RouterOSWireGuardPeer]()
+    private var connectedContext: ConnectedContext?
     private var connectionTask: Task<Void, Never>?
 
     override func loadView() {
@@ -101,6 +112,17 @@ final class RouterOSManagerViewController: NSViewController {
         messageLabel.font = .systemFont(ofSize: 12)
 
         summaryLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        summaryLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        addPeerButton.target = self
+        addPeerButton.action = #selector(addPeerClicked)
+        addPeerButton.bezelStyle = .rounded
+        addPeerButton.controlSize = .large
+        addPeerButton.isEnabled = false
+        addPeerButton.setContentHuggingPriority(.required, for: .horizontal)
+        let summaryRow = NSStackView(views: [summaryLabel, addPeerButton])
+        summaryRow.orientation = .horizontal
+        summaryRow.alignment = .centerY
+        summaryRow.spacing = 12
 
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -108,8 +130,18 @@ final class RouterOSManagerViewController: NSViewController {
         scrollView.borderType = .noBorder
         configureTableView()
         scrollView.documentView = tableView
+        emptyStateLabel.alignment = .center
+        emptyStateLabel.textColor = .tertiaryLabelColor
+        emptyStateLabel.font = .systemFont(ofSize: 13)
+        scrollView.addSubview(emptyStateLabel)
+        emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            emptyStateLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+            emptyStateLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
+            emptyStateLabel.widthAnchor.constraint(lessThanOrEqualTo: scrollView.widthAnchor, constant: -80)
+        ])
 
-        let contentStack = NSStackView(views: [headerRow, subtitleLabel, connectionCard, messageLabel, summaryLabel, scrollView])
+        let contentStack = NSStackView(views: [headerRow, subtitleLabel, connectionCard, messageLabel, summaryRow, scrollView])
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 12
@@ -129,7 +161,7 @@ final class RouterOSManagerViewController: NSViewController {
             readOnlyBadge.heightAnchor.constraint(equalToConstant: 24),
             connectionCard.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             messageLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
-            summaryLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
+            summaryRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             scrollView.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 210)
         ])
@@ -157,6 +189,7 @@ final class RouterOSManagerViewController: NSViewController {
         for field in [urlField, usernameField, passwordField] {
             field.controlSize = .large
             field.font = .systemFont(ofSize: 14)
+            field.delegate = self
         }
 
         connectButton.target = self
@@ -201,7 +234,7 @@ final class RouterOSManagerViewController: NSViewController {
         tableView.dataSource = self
         tableView.delegate = self
         tableView.headerView = NSTableHeaderView()
-        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.usesAlternatingRowBackgroundColors = false
         tableView.rowHeight = 30
         tableView.intercellSpacing = NSSize(width: 8, height: 2)
 
@@ -234,6 +267,7 @@ final class RouterOSManagerViewController: NSViewController {
 
     @objc private func connectClicked() {
         connectionTask?.cancel()
+        invalidateDiscovery()
         messageLabel.textColor = .secondaryLabelColor
         messageLabel.stringValue = tr("macRouterOSConnecting")
 
@@ -265,8 +299,12 @@ final class RouterOSManagerViewController: NSViewController {
                 let (interfaces, peers) = try await (interfacesRequest, peersRequest)
                 guard !Task.isCancelled else { return }
 
+                self.interfaces = interfaces
+                self.peers = peers
+                connectedContext = ConnectedContext(baseURL: url, credentials: credentials)
                 rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
-                tableView.reloadData()
+                reloadDiscoveryTable()
+                addPeerButton.isEnabled = !interfaces.isEmpty
                 summaryLabel.stringValue = tr(
                     format: "macRouterOSDiscoverySummary (%d,%d)",
                     interfaces.count,
@@ -284,6 +322,7 @@ final class RouterOSManagerViewController: NSViewController {
             } catch is CancellationError {
                 return
             } catch {
+                connectedContext = nil
                 showError(error.localizedDescription)
             }
             setConnecting(false)
@@ -295,6 +334,7 @@ final class RouterOSManagerViewController: NSViewController {
         urlField.isEnabled = !isConnecting
         usernameField.isEnabled = !isConnecting
         passwordField.isEnabled = !isConnecting
+        addPeerButton.isEnabled = !isConnecting && connectedContext != nil && !interfaces.isEmpty
         if isConnecting {
             progressIndicator.startAnimation(nil)
         } else {
@@ -306,6 +346,160 @@ final class RouterOSManagerViewController: NSViewController {
         messageLabel.stringValue = message
         messageLabel.textColor = .systemRed
         setConnecting(false)
+    }
+
+    private func invalidateDiscovery() {
+        connectedContext = nil
+        interfaces = []
+        peers = []
+        rows = []
+        reloadDiscoveryTable()
+        summaryLabel.stringValue = tr("macRouterOSNotConnected")
+        addPeerButton.isEnabled = false
+    }
+
+    @objc private func addPeerClicked() {
+        guard connectedContext != nil, !interfaces.isEmpty else { return }
+        let setupViewController = RouterOSPeerSetupViewController(
+            interfaces: interfaces,
+            existingPeers: peers
+        )
+        setupViewController.onCancel = { [weak self, weak setupViewController] in
+            guard let self, let setupViewController else { return }
+            dismiss(setupViewController)
+        }
+        setupViewController.onCreate = { [weak self, weak setupViewController] proposal in
+            guard let self, let setupViewController else { return }
+            dismiss(setupViewController)
+            createPeer(proposal)
+        }
+        presentAsSheet(setupViewController)
+    }
+
+    private func createPeer(_ proposal: RouterOSPeerSetupViewController.Proposal) {
+        guard let connectedContext else { return }
+        connectionTask?.cancel()
+        messageLabel.textColor = .secondaryLabelColor
+        messageLabel.stringValue = tr("macRouterOSAddingPeer")
+        setConnecting(true)
+
+        connectionTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let client = try RouterOSClient<URLSessionRouterOSHTTPTransport>(
+                    baseURL: connectedContext.baseURL,
+                    credentials: connectedContext.credentials
+                )
+                let createdPeer = try await client.createWireGuardPeer(proposal.peerCreation)
+                guard !Task.isCancelled else { return }
+
+                peers.append(createdPeer)
+                rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
+                reloadDiscoveryTable()
+                summaryLabel.stringValue = tr(
+                    format: "macRouterOSDiscoverySummary (%d,%d)",
+                    interfaces.count,
+                    peers.count
+                )
+                messageLabel.stringValue = tr("macRouterOSPeerAdded")
+                messageLabel.textColor = .systemGreen
+                setConnecting(false)
+                showConfigurationHandoff(proposal.clientConfiguration)
+            } catch is CancellationError {
+                return
+            } catch {
+                if error as? RouterOSClientError == .writeOutcomeUncertain {
+                    invalidateDiscovery()
+                    showError(error.localizedDescription)
+                    showConfigurationHandoff(
+                        proposal.clientConfiguration,
+                        title: tr("macRouterOSWriteUncertainTitle"),
+                        message: tr("macRouterOSWriteUncertainMessage")
+                    )
+                } else {
+                    showError(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func showConfigurationHandoff(
+        _ configuration: WireGuardClientConfiguration,
+        title: String = tr("macRouterOSPeerAddedTitle"),
+        message: String = tr("macRouterOSPeerAddedMessage")
+    ) {
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: tr("macRouterOSSaveConfiguration"))
+        alert.addButton(withTitle: tr("macRouterOSCopyConfiguration"))
+        alert.addButton(withTitle: tr("macRouterOSDone"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            switch response {
+            case .alertFirstButtonReturn:
+                self?.saveConfiguration(configuration)
+            case .alertSecondButtonReturn:
+                Self.copyConfiguration(configuration)
+            default:
+                break
+            }
+        }
+    }
+
+    private func saveConfiguration(_ configuration: WireGuardClientConfiguration) {
+        guard let window = view.window else { return }
+        let panel = NSSavePanel()
+        panel.prompt = tr("macRouterOSSave")
+        panel.nameFieldStringValue = "\(Self.safeFilename(configuration.name)).conf"
+        panel.allowedContentTypes = [UTType(filenameExtension: "conf") ?? .plainText]
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try Data(configuration.wgQuickConfiguration.utf8).write(to: url, options: .atomic)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600],
+                    ofItemAtPath: url.path
+                )
+            } catch {
+                self?.showConfigurationRecoveryError(error, configuration: configuration)
+            }
+        }
+    }
+
+    private func showConfigurationRecoveryError(
+        _ error: Error,
+        configuration: WireGuardClientConfiguration
+    ) {
+        guard let window = view.window else { return }
+        let alert = NSAlert(error: error)
+        alert.messageText = tr("macRouterOSSaveFailedTitle")
+        alert.informativeText = tr("macRouterOSSaveFailedMessage")
+        alert.addButton(withTitle: tr("macRouterOSCopyConfiguration"))
+        alert.addButton(withTitle: tr("macRouterOSDone"))
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn {
+                Self.copyConfiguration(configuration)
+            }
+        }
+    }
+
+    private static func copyConfiguration(_ configuration: WireGuardClientConfiguration) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(configuration.wgQuickConfiguration, forType: .string)
+    }
+
+    private static func safeFilename(_ value: String) -> String {
+        let forbidden = CharacterSet(charactersIn: "/:\0")
+        let sanitized = value.components(separatedBy: forbidden).joined(separator: "-")
+        return sanitized.isEmpty ? "WireRoute-Peer" : sanitized
+    }
+
+    private func reloadDiscoveryTable() {
+        tableView.usesAlternatingRowBackgroundColors = !rows.isEmpty
+        emptyStateLabel.isHidden = !rows.isEmpty
+        tableView.reloadData()
     }
 }
 
@@ -348,5 +542,14 @@ extension RouterOSManagerViewController: NSTableViewDataSource, NSTableViewDeleg
             label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
         ])
         return cell
+    }
+}
+
+extension RouterOSManagerViewController: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard connectedContext != nil else { return }
+        invalidateDiscovery()
+        messageLabel.stringValue = tr("macRouterOSReconnectRequired")
+        messageLabel.textColor = .secondaryLabelColor
     }
 }

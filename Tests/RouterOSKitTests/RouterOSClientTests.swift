@@ -155,6 +155,136 @@ final class RouterOSClientTests: XCTestCase {
             )
         }
     }
+
+    func testCreatesWireGuardPeerUsingRouterOSStringPayload() async throws {
+        let publicKey = Data(repeating: 7, count: 32).base64EncodedString()
+        let payload = Data("""
+        {
+          ".id": "*B",
+          "interface": "wg-remote",
+          "name": "iPhone 12 Dev",
+          "comment": "WireRoute mobile",
+          "public-key": "\(publicKey)",
+          "allowed-address": "10.255.100.10/32",
+          "persistent-keepalive": "25s",
+          "disabled": "false",
+          "dynamic": "false",
+          "responder": "true"
+        }
+        """.utf8)
+        let transport = StubTransport(data: payload, statusCode: 201)
+        let client = try RouterOSClient(
+            baseURL: URL(string: "https://router.example")!,
+            credentials: RouterOSCredentials(username: "writer", password: "secret"),
+            transport: transport
+        )
+        let creation = try RouterOSPeerCreation(
+            interfaceName: "wg-remote",
+            name: "iPhone 12 Dev",
+            comment: "WireRoute mobile",
+            publicKey: publicKey,
+            clientAddress: "10.255.100.10/32"
+        )
+
+        let createdPeer = try await client.createWireGuardPeer(creation)
+
+        XCTAssertEqual(createdPeer.id, "*B")
+        XCTAssertEqual(createdPeer.name, "iPhone 12 Dev")
+        let capturedRequest = await transport.lastRequest()
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.httpMethod, "PUT")
+        XCTAssertEqual(request.url?.path, "/rest/interface/wireguard/peers")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let body = try XCTUnwrap(request.httpBody)
+        let bodyObject = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+        XCTAssertEqual(
+            bodyObject,
+            [
+                "interface": "wg-remote",
+                "name": "iPhone 12 Dev",
+                "comment": "WireRoute mobile",
+                "public-key": publicKey,
+                "allowed-address": "10.255.100.10/32",
+                "persistent-keepalive": "25s",
+                "responder": "true"
+            ]
+        )
+    }
+
+    func testTreatsInvalidSuccessfulCreateResponseAsUncertainOutcome() async throws {
+        let publicKey = Data(repeating: 8, count: 32).base64EncodedString()
+        let client = try RouterOSClient(
+            baseURL: URL(string: "https://router.example")!,
+            credentials: RouterOSCredentials(username: "writer", password: "secret"),
+            transport: StubTransport(data: Data("created".utf8), statusCode: 201)
+        )
+        let creation = try RouterOSPeerCreation(
+            interfaceName: "wg-remote",
+            name: "iPhone",
+            publicKey: publicKey,
+            clientAddress: "10.255.100.10/32"
+        )
+
+        do {
+            _ = try await client.createWireGuardPeer(creation)
+            XCTFail("Expected an uncertain write outcome")
+        } catch let error as RouterOSClientError {
+            XCTAssertEqual(error, .writeOutcomeUncertain)
+        }
+    }
+
+    func testTreatsServerFailureAfterCreateRequestAsUncertainOutcome() async throws {
+        let publicKey = Data(repeating: 9, count: 32).base64EncodedString()
+        let client = try RouterOSClient(
+            baseURL: URL(string: "https://router.example")!,
+            credentials: RouterOSCredentials(username: "writer", password: "secret"),
+            transport: StubTransport(
+                data: Data(#"{"error":500,"message":"Internal error"}"#.utf8),
+                statusCode: 500
+            )
+        )
+        let creation = try RouterOSPeerCreation(
+            interfaceName: "wg-remote",
+            name: "iPhone",
+            publicKey: publicKey,
+            clientAddress: "10.255.100.10/32"
+        )
+
+        do {
+            _ = try await client.createWireGuardPeer(creation)
+            XCTFail("Expected an uncertain write outcome")
+        } catch let error as RouterOSClientError {
+            XCTAssertEqual(error, .writeOutcomeUncertain)
+        }
+    }
+
+    func testSurfacesDefinitiveClientFailureWhenCreateIsRejected() async throws {
+        let publicKey = Data(repeating: 10, count: 32).base64EncodedString()
+        let client = try RouterOSClient(
+            baseURL: URL(string: "https://router.example")!,
+            credentials: RouterOSCredentials(username: "writer", password: "secret"),
+            transport: StubTransport(
+                data: Data(#"{"error":400,"message":"Bad Request","detail":"invalid allowed-address"}"#.utf8),
+                statusCode: 400
+            )
+        )
+        let creation = try RouterOSPeerCreation(
+            interfaceName: "wg-remote",
+            name: "iPhone",
+            publicKey: publicKey,
+            clientAddress: "10.255.100.10/32"
+        )
+
+        do {
+            _ = try await client.createWireGuardPeer(creation)
+            XCTFail("Expected RouterOS to reject the create request")
+        } catch let error as RouterOSClientError {
+            XCTAssertEqual(
+                error,
+                .httpStatus(code: 400, message: "Bad Request", detail: "invalid allowed-address")
+            )
+        }
+    }
 }
 
 private actor StubTransport: RouterOSHTTPTransport {

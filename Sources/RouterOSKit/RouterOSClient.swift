@@ -9,6 +9,7 @@ public enum RouterOSClientError: Error, Equatable, LocalizedError, Sendable {
     case invalidResponse
     case httpStatus(code: Int, message: String?, detail: String?)
     case invalidPayload
+    case writeOutcomeUncertain
 
     public var errorDescription: String? {
         switch self {
@@ -26,6 +27,8 @@ public enum RouterOSClientError: Error, Equatable, LocalizedError, Sendable {
                 .joined(separator: " ")
         case .invalidPayload:
             return "RouterOS returned data in an unexpected format."
+        case .writeOutcomeUncertain:
+            return "WireRoute could not confirm whether RouterOS added the peer. Reconnect and inspect the peer list before trying again."
         }
     }
 }
@@ -113,6 +116,29 @@ public struct RouterOSClient<Transport: RouterOSHTTPTransport>: Sendable {
         try await get(pathComponents: ["interface", "wireguard", "peers"])
     }
 
+    public func createWireGuardPeer(_ peer: RouterOSPeerCreation) async throws -> RouterOSWireGuardPeer {
+        let url = ["interface", "wireguard", "peers"].reduce(restBaseURL) { url, component in
+            url.appendingPathComponent(component)
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(authorizationHeader, forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(peer.requestPayload)
+        do {
+            return try await decodeResponse(for: request)
+        } catch let error as RouterOSClientError {
+            if case .httpStatus(let code, _, _) = error,
+               (400 ..< 500).contains(code), code != 408 {
+                throw error
+            }
+            throw RouterOSClientError.writeOutcomeUncertain
+        } catch {
+            throw RouterOSClientError.writeOutcomeUncertain
+        }
+    }
+
     private func get<Response: Decodable>(pathComponents: [String]) async throws -> Response {
         let url = pathComponents.reduce(restBaseURL) { url, component in
             url.appendingPathComponent(component)
@@ -122,6 +148,10 @@ public struct RouterOSClient<Transport: RouterOSHTTPTransport>: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(authorizationHeader, forHTTPHeaderField: "Authorization")
 
+        return try await decodeResponse(for: request)
+    }
+
+    private func decodeResponse<Response: Decodable>(for request: URLRequest) async throws -> Response {
         let (data, response) = try await transport.data(for: request)
         guard (200 ..< 300).contains(response.statusCode) else {
             let routerError = try? JSONDecoder().decode(RouterOSErrorResponse.self, from: data)

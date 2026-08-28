@@ -21,6 +21,8 @@
 		C0DE10000000000000000012 /* RouterOSModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000002 /* RouterOSModels.swift */; };
 		C0DE10000000000000000013 /* RouterOSCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000003 /* RouterOSCredentialStore.swift */; };
 		C0DE10000000000000000014 /* RouterOSManagerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000004 /* RouterOSManagerViewController.swift */; };
+		C0DE10000000000000000015 /* RouterOSProvisioning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000005 /* RouterOSProvisioning.swift */; };
+		C0DE10000000000000000016 /* RouterOSPeerSetupViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000006 /* RouterOSPeerSetupViewController.swift */; };
 		58233BCF2591F842002060A8 /* NotificationToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58233BCE2591F842002060A8 /* NotificationToken.swift */; };
 		58233BD02591F842002060A8 /* NotificationToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58233BCE2591F842002060A8 /* NotificationToken.swift */; };
 		585B105A2577E293004F691E /* InterfaceConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 585B10462577E293004F691E /* InterfaceConfiguration.swift */; };
@@ -305,6 +307,8 @@
 		C0DE10000000000000000002 /* RouterOSModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterOSModels.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000003 /* RouterOSCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterOSCredentialStore.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000004 /* RouterOSManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterOSManagerViewController.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000005 /* RouterOSProvisioning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterOSProvisioning.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000006 /* RouterOSPeerSetupViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterOSPeerSetupViewController.swift; sourceTree = "<group>"; };
 		58233BCE2591F842002060A8 /* NotificationToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationToken.swift; sourceTree = "<group>"; };
 		585B10462577E293004F691E /* InterfaceConfiguration.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = InterfaceConfiguration.swift; sourceTree = "<group>"; };
 		585B10472577E293004F691E /* PeerConfiguration.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PeerConfiguration.swift; sourceTree = "<group>"; };
@@ -520,6 +524,7 @@
 			children = (
 				C0DE10000000000000000001 /* RouterOSClient.swift */,
 				C0DE10000000000000000002 /* RouterOSModels.swift */,
+				C0DE10000000000000000005 /* RouterOSProvisioning.swift */,
 			);
 			name = RouterOSKit;
 			path = Sources/RouterOSKit;
@@ -754,6 +759,7 @@
 			isa = PBXGroup;
 			children = (
 				C0DE10000000000000000004 /* RouterOSManagerViewController.swift */,
+				C0DE10000000000000000006 /* RouterOSPeerSetupViewController.swift */,
 				6FBA104521D7EBFA0051C35F /* TunnelsListTableViewController.swift */,
 				6F4DD16D21DBEA0700690EAE /* ManageTunnelsRootViewController.swift */,
 				6FDB3C3A21DCF47400A0C0BF /* TunnelDetailTableViewController.swift */,
@@ -1354,6 +1360,8 @@
 				C0DE10000000000000000012 /* RouterOSModels.swift in Sources */,
 				C0DE10000000000000000013 /* RouterOSCredentialStore.swift in Sources */,
 				C0DE10000000000000000014 /* RouterOSManagerViewController.swift in Sources */,
+				C0DE10000000000000000015 /* RouterOSProvisioning.swift in Sources */,
+				C0DE10000000000000000016 /* RouterOSPeerSetupViewController.swift in Sources */,
 				58233BD02591F842002060A8 /* NotificationToken.swift in Sources */,
 				6FBA101521D613F90051C35F /* Application.swift in Sources */,
 				6FB1BDCC21D50F5300A991BF /* TunnelsManager.swift in Sources */,
