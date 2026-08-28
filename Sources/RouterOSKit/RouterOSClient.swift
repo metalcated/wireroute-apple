@@ -139,6 +139,10 @@ public struct RouterOSClient<Transport: RouterOSHTTPTransport>: Sendable {
         try await get(pathComponents: ["interface", "wireguard", "peers"])
     }
 
+    public func ipAddresses() async throws -> [RouterOSIPAddress] {
+        try await get(pathComponents: ["ip", "address"])
+    }
+
     public func createWireGuardPeer(_ peer: RouterOSPeerCreation) async throws -> RouterOSWireGuardPeer {
         let url = ["interface", "wireguard", "peers"].reduce(restBaseURL) { url, component in
             url.appendingPathComponent(component)

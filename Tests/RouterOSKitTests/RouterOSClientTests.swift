@@ -134,6 +134,45 @@ final class RouterOSClientTests: XCTestCase {
         XCTAssertEqual(request.url?.path, "/rest/interface/wireguard/peers")
     }
 
+    func testDiscoversRouterIPAddresses() async throws {
+        let payload = Data("""
+        [
+          {
+            ".id": "*C",
+            "address": "203.0.114.18/24",
+            "network": "203.0.114.0",
+            "interface": "ether1",
+            "actual-interface": "ether1",
+            "disabled": "false",
+            "dynamic": "true",
+            "invalid": "false"
+          }
+        ]
+        """.utf8)
+        let transport = StubTransport(data: payload, statusCode: 200)
+        let client = try RouterOSClient(
+            baseURL: URL(string: "https://router.example")!,
+            credentials: RouterOSCredentials(username: "reader", password: "secret"),
+            transport: transport
+        )
+
+        let addresses = try await client.ipAddresses()
+        let address = try XCTUnwrap(addresses.first)
+
+        XCTAssertEqual(address.id, "*C")
+        XCTAssertEqual(address.address, "203.0.114.18/24")
+        XCTAssertEqual(address.network, "203.0.114.0")
+        XCTAssertEqual(address.interfaceName, "ether1")
+        XCTAssertEqual(address.actualInterfaceName, "ether1")
+        XCTAssertFalse(address.isDisabled)
+        XCTAssertTrue(address.isDynamic)
+        XCTAssertFalse(address.isInvalid)
+
+        let capturedRequest = await transport.lastRequest()
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.url?.path, "/rest/ip/address")
+    }
+
     func testSurfacesRouterOSErrorWithoutLeakingResponseData() async throws {
         let payload = Data("""
         {"error":401,"message":"Unauthorized","detail":"invalid credentials"}

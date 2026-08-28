@@ -19,6 +19,7 @@ public enum RouterOSProvisioningError: Error, Equatable, LocalizedError, Sendabl
     case invalidEndpoint
     case invalidEndpointPort
     case missingClientRoutes
+    case invalidClientRoute(String)
     case invalidDNSServer(String)
 
     public var errorDescription: String? {
@@ -45,9 +46,126 @@ public enum RouterOSProvisioningError: Error, Equatable, LocalizedError, Sendabl
             return "The endpoint port must be between 1 and 65,535."
         case .missingClientRoutes:
             return "Choose at least one route for the client profile."
+        case .invalidClientRoute(let value):
+            return "\(value) is not a valid client route."
         case .invalidDNSServer(let value):
             return "\(value) is not a valid DNS server address."
         }
+    }
+}
+
+public struct RouterOSPublicEndpointSuggestion: Equatable, Sendable {
+    public let address: String
+
+    public static func discover(from addresses: [RouterOSIPAddress]) -> Self? {
+        let candidates = Set(addresses.compactMap { address -> String? in
+            guard !address.isDisabled, !address.isInvalid,
+                  let prefix = try? RoutePrefix(address.address),
+                  prefix.family == .ipv4,
+                  let ipv4Address = IPv4Address(prefix.address),
+                  Self.isPublic(ipv4Address) else {
+                return nil
+            }
+            return ipv4Address.debugDescription
+        })
+        guard candidates.count == 1, let candidate = candidates.first else { return nil }
+        return Self(address: candidate)
+    }
+
+    private static func isPublic(_ address: IPv4Address) -> Bool {
+        let bytes = [UInt8](address.rawValue)
+        guard bytes.count == 4 else { return false }
+        switch (bytes[0], bytes[1], bytes[2]) {
+        case (0, _, _), (10, _, _), (127, _, _):
+            return false
+        case (100, 64 ... 127, _):
+            return false
+        case (169, 254, _):
+            return false
+        case (172, 16 ... 31, _):
+            return false
+        case (192, 0, 0), (192, 0, 2), (192, 168, _):
+            return false
+        case (198, 18 ... 19, _), (198, 51, 100), (203, 0, 113):
+            return false
+        case (224 ... 255, _, _):
+            return false
+        default:
+            return true
+        }
+    }
+}
+
+public struct RouterOSPeerDefaults: Equatable, Sendable {
+    public let endpointAddress: String?
+    public let dnsServers: [String]
+    public let splitRoutes: [RoutePrefix]
+    public let persistentKeepalive: UInt16
+
+    public static var standard: Self {
+        Self(
+            endpointAddress: nil,
+            dnsServers: [],
+            splitRoutes: [RoutePrefix](),
+            persistentKeepalive: UInt16(25)
+        )
+    }
+
+    private init(
+        endpointAddress: String?,
+        dnsServers: [String],
+        splitRoutes: [RoutePrefix],
+        persistentKeepalive: UInt16
+    ) {
+        self.endpointAddress = endpointAddress
+        self.dnsServers = dnsServers
+        self.splitRoutes = splitRoutes
+        self.persistentKeepalive = persistentKeepalive
+    }
+
+    public init(
+        endpointAddress: String?,
+        dnsServers: [String],
+        splitRoutes: [String],
+        persistentKeepalive: Int = 25
+    ) throws {
+        let trimmedEndpoint = endpointAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedEndpoint: String?
+        if let trimmedEndpoint, !trimmedEndpoint.isEmpty {
+            guard let endpoint = WireGuardClientConfiguration.normalizedEndpointAddress(trimmedEndpoint) else {
+                throw RouterOSProvisioningError.invalidEndpoint
+            }
+            normalizedEndpoint = endpoint
+        } else {
+            normalizedEndpoint = nil
+        }
+
+        var normalizedDNSServers = [String]()
+        for dnsServer in dnsServers {
+            guard let address = WireGuardClientConfiguration.normalizedIPAddress(dnsServer) else {
+                throw RouterOSProvisioningError.invalidDNSServer(dnsServer)
+            }
+            normalizedDNSServers.append(address)
+        }
+
+        var parsedRoutes = [RoutePrefix]()
+        for route in splitRoutes {
+            do {
+                parsedRoutes.append(try RoutePrefix(route))
+            } catch {
+                throw RouterOSProvisioningError.invalidClientRoute(route)
+            }
+        }
+        guard (0 ... Int(UInt16.max)).contains(persistentKeepalive) else {
+            throw RouterOSProvisioningError.invalidPersistentKeepalive
+        }
+
+        self.init(
+            endpointAddress: normalizedEndpoint,
+            dnsServers: normalizedDNSServers,
+            splitRoutes: parsedRoutes,
+            persistentKeepalive: UInt16(persistentKeepalive)
+        )
     }
 }
 
@@ -266,13 +384,7 @@ public struct WireGuardClientConfiguration: Equatable, Sendable {
 
         var normalizedDNSServers = [String]()
         for dnsServer in dnsServers {
-            let value = dnsServer.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalizedAddress: String
-            if let address = IPv4Address(value) {
-                normalizedAddress = address.debugDescription
-            } else if let address = IPv6Address(value) {
-                normalizedAddress = address.debugDescription
-            } else {
+            guard let normalizedAddress = Self.normalizedIPAddress(dnsServer) else {
                 throw RouterOSProvisioningError.invalidDNSServer(dnsServer)
             }
             normalizedDNSServers.append(normalizedAddress)
@@ -312,7 +424,18 @@ public struct WireGuardClientConfiguration: Equatable, Sendable {
         ]).joined(separator: "\n")
     }
 
-    private static func normalizedEndpointAddress(_ value: String) -> String? {
+    fileprivate static func normalizedIPAddress(_ value: String) -> String? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let address = IPv4Address(value) {
+            return address.debugDescription
+        }
+        if let address = IPv6Address(value) {
+            return address.debugDescription
+        }
+        return nil
+    }
+
+    fileprivate static func normalizedEndpointAddress(_ value: String) -> String? {
         let unwrappedValue: String
         if value.hasPrefix("[") && value.hasSuffix("]") {
             unwrappedValue = String(value.dropFirst().dropLast())

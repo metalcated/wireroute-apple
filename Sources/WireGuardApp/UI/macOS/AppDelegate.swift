@@ -15,6 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var manageTunnelsRootVC: ManageTunnelsRootViewController?
     var manageTunnelsWindowObject: NSWindow?
     var routerOSWindowObject: NSWindow?
+    var routerOSSettingsWindowObject: NSWindow?
     var onAppDeactivation: (() -> Void)?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -221,6 +222,22 @@ extension AppDelegate {
         }
         setDockIconAndMainMenuVisibility(isVisible: true) { [weak routerOSWindowObject] in
             routerOSWindowObject?.makeKeyAndOrderFront(self)
+        }
+    }
+
+    @objc func showRouterOSSettings() {
+        if routerOSSettingsWindowObject == nil {
+            let viewController = RouterOSSettingsViewController()
+            let window = NSWindow(contentViewController: viewController)
+            window.title = tr("macRouterOSSettingsWindowTitle")
+            window.styleMask = [.titled, .closable]
+            window.setContentSize(NSSize(width: 650, height: 480))
+            window.setFrameAutosaveName(NSWindow.FrameAutosaveName("RouterOSSettingsWindow"))
+            window.isReleasedWhenClosed = false
+            routerOSSettingsWindowObject = window
+        }
+        setDockIconAndMainMenuVisibility(isVisible: true) { [weak routerOSSettingsWindowObject] in
+            routerOSSettingsWindowObject?.makeKeyAndOrderFront(self)
         }
     }
 }

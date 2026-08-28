@@ -120,6 +120,40 @@ public struct RouterOSWireGuardPeer: Decodable, Equatable, Identifiable, Sendabl
     }
 }
 
+public struct RouterOSIPAddress: Decodable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let address: String
+    public let network: String?
+    public let interfaceName: String
+    public let actualInterfaceName: String?
+    public let isDisabled: Bool
+    public let isDynamic: Bool
+    public let isInvalid: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id = ".id"
+        case address
+        case network
+        case interfaceName = "interface"
+        case actualInterfaceName = "actual-interface"
+        case disabled
+        case dynamic
+        case invalid
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        address = try container.decode(String.self, forKey: .address)
+        network = container.routerOSString(forKey: .network)
+        interfaceName = try container.decode(String.self, forKey: .interfaceName)
+        actualInterfaceName = container.routerOSString(forKey: .actualInterfaceName)
+        isDisabled = container.routerOSBoolean(forKey: .disabled) ?? false
+        isDynamic = container.routerOSBoolean(forKey: .dynamic) ?? false
+        isInvalid = container.routerOSBoolean(forKey: .invalid) ?? false
+    }
+}
+
 private extension KeyedDecodingContainer {
     func routerOSString(forKey key: Key) -> String? {
         if let value = try? decode(String.self, forKey: key) {

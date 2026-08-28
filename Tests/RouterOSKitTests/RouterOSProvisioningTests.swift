@@ -165,6 +165,72 @@ final class RouterOSProvisioningTests: XCTestCase {
         )
     }
 
+    func testSuggestsOnlyOneUsablePublicRouterAddress() throws {
+        let addresses = try [
+            makeAddress(address: "192.168.80.33/16", interfaceName: "bridge"),
+            makeAddress(address: "8.8.8.8/24", interfaceName: "ether1"),
+            makeAddress(address: "8.8.8.8/32", interfaceName: "loopback", dynamic: true),
+            makeAddress(address: "9.9.9.9/24", interfaceName: "ether2", disabled: true)
+        ]
+
+        let suggestion = RouterOSPublicEndpointSuggestion.discover(from: addresses)
+
+        XCTAssertEqual(suggestion?.address, "8.8.8.8")
+    }
+
+    func testDoesNotGuessPublicEndpointFromPrivateOrMultiplePublicAddresses() throws {
+        let privateAddresses = try [
+            makeAddress(address: "10.0.0.1/8", interfaceName: "bridge"),
+            makeAddress(address: "100.64.0.10/10", interfaceName: "lte1"),
+            makeAddress(address: "203.0.113.10/24", interfaceName: "test")
+        ]
+        let multiplePublicAddresses = try [
+            makeAddress(address: "8.8.8.8/24", interfaceName: "ether1"),
+            makeAddress(address: "9.9.9.9/24", interfaceName: "ether2")
+        ]
+
+        XCTAssertNil(RouterOSPublicEndpointSuggestion.discover(from: privateAddresses))
+        XCTAssertNil(RouterOSPublicEndpointSuggestion.discover(from: multiplePublicAddresses))
+    }
+
+    func testValidatesAndNormalizesPeerDefaults() throws {
+        let peerDefaults = try RouterOSPeerDefaults(
+            endpointAddress: " vpn.example.com ",
+            dnsServers: [" 192.0.2.53 ", "2001:4860:4860::8888"],
+            splitRoutes: ["192.168.0.0/16", "10.255.0.0/16"],
+            persistentKeepalive: 30
+        )
+
+        XCTAssertEqual(peerDefaults.endpointAddress, "vpn.example.com")
+        XCTAssertEqual(peerDefaults.dnsServers, ["192.0.2.53", "2001:4860:4860::8888"])
+        XCTAssertEqual(peerDefaults.splitRoutes.map(\.notation), ["192.168.0.0/16", "10.255.0.0/16"])
+        XCTAssertEqual(peerDefaults.persistentKeepalive, 30)
+    }
+
+    func testRejectsInvalidPeerDefaults() {
+        XCTAssertThrowsError(
+            try RouterOSPeerDefaults(
+                endpointAddress: "https://vpn.example.com",
+                dnsServers: [],
+                splitRoutes: [],
+                persistentKeepalive: 25
+            )
+        ) { error in
+            XCTAssertEqual(error as? RouterOSProvisioningError, .invalidEndpoint)
+        }
+
+        XCTAssertThrowsError(
+            try RouterOSPeerDefaults(
+                endpointAddress: nil,
+                dnsServers: [],
+                splitRoutes: ["not-a-route"],
+                persistentKeepalive: 25
+            )
+        ) { error in
+            XCTAssertEqual(error as? RouterOSProvisioningError, .invalidClientRoute("not-a-route"))
+        }
+    }
+
     func testRejectsNonHostClientAddressesAndInvalidDNS() {
         XCTAssertThrowsError(
             try RouterOSPeerCreation(
@@ -245,5 +311,27 @@ final class RouterOSProvisioningTests: XCTestCase {
         }
         """.utf8)
         return try JSONDecoder().decode(RouterOSWireGuardPeer.self, from: data)
+    }
+
+    private func makeAddress(
+        address: String,
+        interfaceName: String,
+        disabled: Bool = false,
+        dynamic: Bool = false,
+        invalid: Bool = false
+    ) throws -> RouterOSIPAddress {
+        let data = Data("""
+        {
+          ".id": "*C",
+          "address": "\(address)",
+          "network": "0.0.0.0",
+          "interface": "\(interfaceName)",
+          "actual-interface": "\(interfaceName)",
+          "disabled": "\(disabled)",
+          "dynamic": "\(dynamic)",
+          "invalid": "\(invalid)"
+        }
+        """.utf8)
+        return try JSONDecoder().decode(RouterOSIPAddress.self, from: data)
     }
 }

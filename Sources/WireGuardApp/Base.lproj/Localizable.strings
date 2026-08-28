@@ -311,6 +311,7 @@
 "macMenuAddEmptyTunnel" = "Add Empty Tunnel…";
 "macMenuViewLog" = "View Log";
 "macMenuRouterOSManager" = "RouterOS Peer Manager…";
+"macMenuSettings" = "Settings…";
 "macMenuExportTunnels" = "Export Tunnels to Zip…";
 "macMenuAbout" = "About WireRoute";
 "macMenuQuit" = "Quit WireRoute";
@@ -344,6 +345,7 @@
 "macRouterOSTitle" = "RouterOS Peer Manager";
 "macRouterOSSubtitle" = "Discover WireGuard interfaces and peers before creating a client profile.";
 "macRouterOSReadOnlyBadge" = "GUARDED";
+"macRouterOSSettings" = "Settings…";
 "macRouterOSReadOnlyMessage" = "Discovery is read-only. Adding one peer requires a separate review and confirmation.";
 "macRouterOSNotConnected" = "Not connected";
 "macRouterOSEmptyDiscovery" = "Connect to securely discover WireGuard interfaces and peers.";
@@ -388,7 +390,7 @@
 "macRouterOSNeverConnected" = "No handshake";
 "macRouterOSSetUpPeer" = "Set Up Peer…";
 "macRouterOSSetupTitle" = "Set Up a Device";
-"macRouterOSSetupSubtitle" = "WireRoute generates a fresh key pair locally, suggests the next available client address, and lets you review the exact change.";
+"macRouterOSSetupSubtitle" = "WireRoute generates a fresh key pair locally, suggests safe values from RouterOS, prefills your defaults, and lets you review the exact change.";
 "macRouterOSInterface" = "Interface";
 "macRouterOSPeerName" = "Device name";
 "macRouterOSPeerNamePlaceholder" = "iPhone 12 Dev";
@@ -398,8 +400,14 @@
 "macRouterOSClientAddressManual" = "Custom address. WireRoute will check it against peers on the selected interface.";
 "macRouterOSClientAddressUnavailable (%@)" = "No clear next IPv4 /32 was found on %@. Enter an address manually.";
 "macRouterOSEndpoint" = "Public endpoint / port";
+"macRouterOSEndpointPlaceholder" = "vpn.example.com";
+"macRouterOSEndpointSaved" = "Using your saved preferred endpoint. You can edit it for this device.";
+"macRouterOSEndpointDiscovered" = "Suggested from the router's single public IPv4 address. You can edit it.";
+"macRouterOSEndpointUnavailable" = "No single public IPv4 address was found. Enter the public hostname or address manually.";
 "macRouterOSDNS" = "DNS servers";
+"macRouterOSDNSPlaceholder" = "IPv4 or IPv6 addresses, separated by commas";
 "macRouterOSRoutes" = "Client routes";
+"macRouterOSRoutesPlaceholder" = "Networks or destinations, separated by commas";
 "macRouterOSKeepalive" = "Keepalive";
 "macRouterOSSeconds" = "seconds";
 "macRouterOSRouteModeSplit" = "Split";
@@ -424,6 +432,16 @@
 "macRouterOSSave" = "Save";
 "macRouterOSSaveFailedTitle" = "Peer Added, Save Failed";
 "macRouterOSSaveFailedMessage" = "The RouterOS peer already exists, but the client configuration could not be saved. Copy it now so the generated private key is not lost.";
+"macRouterOSSettingsWindowTitle" = "WireRoute Settings";
+"macRouterOSSettingsTitle" = "Peer Defaults";
+"macRouterOSSettingsSubtitle" = "Prefill new RouterOS client profiles without changing the router. Every value remains editable during setup.";
+"macRouterOSPreferredEndpoint" = "Preferred endpoint";
+"macRouterOSDefaultSplitRoutes" = "Split tunnel routes";
+"macRouterOSSettingsEndpointHelp" = "Optional. Leave blank to use one public IPv4 address discovered from RouterOS when the choice is unambiguous.";
+"macRouterOSSettingsDNSHelp" = "Optional DNS addresses to include in new client profiles.";
+"macRouterOSSettingsRoutesHelp" = "Optional routes to prefill when Split mode is selected.";
+"macRouterOSRestoreDefaults" = "Restore Defaults";
+"macRouterOSSaveDefaults" = "Save Defaults";
 
 "macDeleteTunnelConfirmationAlertMessage (%@)" = "Are you sure you want to delete ‘%@’?";
 "macDeleteMultipleTunnelsConfirmationAlertMessage (%d)" = "Are you sure you want to delete %d tunnels?";

@@ -130,6 +130,9 @@ class StatusMenu: NSMenu {
         let routerOSItem = NSMenuItem(title: tr("macMenuRouterOSManager"), action: #selector(AppDelegate.showRouterOSManager), keyEquivalent: "")
         routerOSItem.target = NSApp.delegate
         addItem(routerOSItem)
+        let settingsItem = NSMenuItem(title: tr("macMenuSettings"), action: #selector(AppDelegate.showRouterOSSettings), keyEquivalent: "")
+        settingsItem.target = NSApp.delegate
+        addItem(settingsItem)
     }
 
     func addApplicationItems() {

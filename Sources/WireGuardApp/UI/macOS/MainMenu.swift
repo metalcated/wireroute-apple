@@ -33,6 +33,15 @@ class MainMenu: NSMenu {
 
         menu.addItem(NSMenuItem.separator())
 
+        let settingsMenuItem = menu.addItem(
+            withTitle: tr("macMenuSettings"),
+            action: #selector(AppDelegate.showRouterOSSettings),
+            keyEquivalent: ","
+        )
+        settingsMenuItem.target = NSApp.delegate
+
+        menu.addItem(NSMenuItem.separator())
+
         menu.addItem(withTitle: tr("macMenuViewLog"),
                      action: #selector(TunnelsListTableViewController.handleViewLogAction), keyEquivalent: "")
 

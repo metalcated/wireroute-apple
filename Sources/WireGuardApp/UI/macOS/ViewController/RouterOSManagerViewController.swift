@@ -68,6 +68,7 @@ final class RouterOSManagerViewController: NSViewController {
     private let usernameField = NSTextField()
     private let passwordField = NSSecureTextField()
     private let connectButton = NSButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
+    private let settingsButton = NSButton(title: tr("macRouterOSSettings"), target: nil, action: nil)
     private let addPeerButton = NSButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
     private let progressIndicator = NSProgressIndicator()
     private let messageLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSReadOnlyMessage"))
@@ -77,6 +78,7 @@ final class RouterOSManagerViewController: NSViewController {
     private var rows = [DiscoveryRow]()
     private var interfaces = [RouterOSWireGuardInterface]()
     private var peers = [RouterOSWireGuardPeer]()
+    private var publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?
     private var connectedContext: ConnectedContext?
     private var connectionTask: Task<Void, Never>?
 
@@ -111,7 +113,15 @@ final class RouterOSManagerViewController: NSViewController {
             readOnlyBadge.heightAnchor.constraint(equalToConstant: 24)
         ])
 
-        let headerRow = NSStackView(views: [titleLabel, readOnlyBadge])
+        settingsButton.target = self
+        settingsButton.action = #selector(settingsClicked)
+        settingsButton.bezelStyle = .rounded
+        settingsButton.controlSize = .regular
+        settingsButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        let headerSpacer = NSView()
+        headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let headerRow = NSStackView(views: [titleLabel, readOnlyBadge, headerSpacer, settingsButton])
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
         headerRow.spacing = 12
@@ -180,6 +190,7 @@ final class RouterOSManagerViewController: NSViewController {
             contentStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
             contentStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -24),
             connectionCard.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
+            headerRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             messageLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             summaryRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             tableContainer.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
@@ -322,11 +333,19 @@ final class RouterOSManagerViewController: NSViewController {
                 )
                 async let interfacesRequest = client.wireGuardInterfaces()
                 async let peersRequest = client.wireGuardPeers()
-                let (interfaces, peers) = try await (interfacesRequest, peersRequest)
+                async let addressesRequest = try? client.ipAddresses()
+                let (interfaces, peers, addresses) = try await (
+                    interfacesRequest,
+                    peersRequest,
+                    addressesRequest
+                )
                 guard !Task.isCancelled else { return }
 
                 self.interfaces = interfaces
                 self.peers = peers
+                publicEndpointSuggestion = RouterOSPublicEndpointSuggestion.discover(
+                    from: addresses ?? []
+                )
                 connectedContext = ConnectedContext(
                     baseURL: url,
                     credentials: credentials,
@@ -524,6 +543,7 @@ final class RouterOSManagerViewController: NSViewController {
         connectedContext = nil
         interfaces = []
         peers = []
+        publicEndpointSuggestion = nil
         rows = []
         reloadDiscoveryTable()
         summaryLabel.stringValue = tr("macRouterOSNotConnected")
@@ -534,7 +554,9 @@ final class RouterOSManagerViewController: NSViewController {
         guard connectedContext != nil, !interfaces.isEmpty else { return }
         let setupViewController = RouterOSPeerSetupViewController(
             interfaces: interfaces,
-            existingPeers: peers
+            existingPeers: peers,
+            publicEndpointSuggestion: publicEndpointSuggestion,
+            peerDefaults: RouterOSPeerDefaultsStore.load()
         )
         setupViewController.onCancel = { [weak self, weak setupViewController] in
             guard let self, let setupViewController else { return }
@@ -546,6 +568,10 @@ final class RouterOSManagerViewController: NSViewController {
             createPeer(proposal)
         }
         presentAsSheet(setupViewController)
+    }
+
+    @objc private func settingsClicked() {
+        (NSApp.delegate as? AppDelegate)?.showRouterOSSettings()
     }
 
     private func createPeer(_ proposal: RouterOSPeerSetupViewController.Proposal) {
@@ -724,5 +750,247 @@ extension RouterOSManagerViewController: NSTextFieldDelegate {
         invalidateDiscovery()
         messageLabel.stringValue = tr("macRouterOSReconnectRequired")
         messageLabel.textColor = .secondaryLabelColor
+    }
+}
+
+@MainActor
+enum RouterOSPeerDefaultsStore {
+    private enum Key {
+        static let endpointAddress = "WireRoute.RouterOSPeerDefaults.endpointAddress"
+        static let dnsServers = "WireRoute.RouterOSPeerDefaults.dnsServers"
+        static let splitRoutes = "WireRoute.RouterOSPeerDefaults.splitRoutes"
+        static let persistentKeepalive = "WireRoute.RouterOSPeerDefaults.persistentKeepalive"
+    }
+
+    static func load(from defaults: UserDefaults = .standard) -> RouterOSPeerDefaults {
+        let keepalive = defaults.object(forKey: Key.persistentKeepalive) == nil
+            ? 25
+            : defaults.integer(forKey: Key.persistentKeepalive)
+        return (try? RouterOSPeerDefaults(
+            endpointAddress: defaults.string(forKey: Key.endpointAddress),
+            dnsServers: defaults.stringArray(forKey: Key.dnsServers) ?? [],
+            splitRoutes: defaults.stringArray(forKey: Key.splitRoutes) ?? [],
+            persistentKeepalive: keepalive
+        )) ?? .standard
+    }
+
+    static func save(_ peerDefaults: RouterOSPeerDefaults, to defaults: UserDefaults = .standard) {
+        if let endpointAddress = peerDefaults.endpointAddress {
+            defaults.set(endpointAddress, forKey: Key.endpointAddress)
+        } else {
+            defaults.removeObject(forKey: Key.endpointAddress)
+        }
+        defaults.set(peerDefaults.dnsServers, forKey: Key.dnsServers)
+        defaults.set(peerDefaults.splitRoutes.map(\.notation), forKey: Key.splitRoutes)
+        defaults.set(Int(peerDefaults.persistentKeepalive), forKey: Key.persistentKeepalive)
+    }
+}
+
+@MainActor
+final class RouterOSSettingsViewController: NSViewController {
+    private let endpointField = NSTextField()
+    private let dnsField = NSTextField()
+    private let routesField = NSTextField()
+    private let keepaliveField = NSTextField()
+    private let errorLabel = NSTextField(wrappingLabelWithString: "")
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        loadStoredDefaults()
+        errorLabel.isHidden = true
+    }
+
+    override func loadView() {
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+
+        let titleLabel = NSTextField(labelWithString: tr("macRouterOSSettingsTitle"))
+        titleLabel.font = .systemFont(ofSize: 25, weight: .bold)
+        let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSSettingsSubtitle"))
+        subtitleLabel.font = .systemFont(ofSize: 13)
+        subtitleLabel.textColor = .secondaryLabelColor
+
+        configureFields()
+        let form = makeForm()
+
+        let restoreButton = NSButton(
+            title: tr("macRouterOSRestoreDefaults"),
+            target: self,
+            action: #selector(restoreDefaultsClicked)
+        )
+        restoreButton.bezelStyle = .rounded
+        let cancelButton = NSButton(
+            title: tr("macRouterOSCancel"),
+            target: self,
+            action: #selector(cancelClicked)
+        )
+        cancelButton.bezelStyle = .rounded
+        let saveButton = NSButton(
+            title: tr("macRouterOSSaveDefaults"),
+            target: self,
+            action: #selector(saveClicked)
+        )
+        saveButton.bezelStyle = .rounded
+        saveButton.keyEquivalent = "\r"
+
+        errorLabel.textColor = .systemRed
+        errorLabel.font = .systemFont(ofSize: 12)
+        errorLabel.isHidden = true
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let buttonRow = NSStackView(views: [restoreButton, spacer, cancelButton, saveButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 10
+
+        let stack = NSStackView(views: [titleLabel, subtitleLabel, form, errorLabel, buttonRow])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.setCustomSpacing(4, after: titleLabel)
+        stack.setCustomSpacing(20, after: subtitleLabel)
+        stack.setCustomSpacing(16, after: form)
+
+        view.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 26),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -26),
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -22),
+            subtitleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            form.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            errorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            buttonRow.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        ])
+
+        self.view = view
+    }
+
+    private func configureFields() {
+        endpointField.placeholderString = tr("macRouterOSEndpointPlaceholder")
+        dnsField.placeholderString = tr("macRouterOSDNSPlaceholder")
+        routesField.placeholderString = tr("macRouterOSRoutesPlaceholder")
+        keepaliveField.alignment = .right
+        for field in [endpointField, dnsField, routesField, keepaliveField] {
+            field.controlSize = .large
+            field.font = .systemFont(ofSize: 14)
+        }
+        loadStoredDefaults()
+    }
+
+    private func loadStoredDefaults() {
+        let peerDefaults = RouterOSPeerDefaultsStore.load()
+        endpointField.stringValue = peerDefaults.endpointAddress ?? ""
+        dnsField.stringValue = peerDefaults.dnsServers.joined(separator: ", ")
+        routesField.stringValue = peerDefaults.splitRoutes.map(\.notation).joined(separator: ", ")
+        keepaliveField.integerValue = Int(peerDefaults.persistentKeepalive)
+    }
+
+    private func makeForm() -> NSView {
+        let card = NSView()
+        card.wantsLayer = true
+        card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        card.layer?.cornerRadius = 14
+        card.layer?.cornerCurve = .continuous
+        card.layer?.borderColor = NSColor.separatorColor.cgColor
+        card.layer?.borderWidth = 1
+
+        let endpointStack = valueStack(
+            field: endpointField,
+            help: tr("macRouterOSSettingsEndpointHelp")
+        )
+        let dnsStack = valueStack(field: dnsField, help: tr("macRouterOSSettingsDNSHelp"))
+        let routesStack = valueStack(field: routesField, help: tr("macRouterOSSettingsRoutesHelp"))
+        let keepaliveRow = NSStackView(views: [keepaliveField, NSTextField(labelWithString: tr("macRouterOSSeconds"))])
+        keepaliveRow.orientation = .horizontal
+        keepaliveRow.alignment = .centerY
+        keepaliveRow.spacing = 7
+        keepaliveField.widthAnchor.constraint(equalToConstant: 86).isActive = true
+
+        let grid = NSGridView(views: [
+            [fieldLabel(tr("macRouterOSPreferredEndpoint")), endpointStack],
+            [fieldLabel(tr("macRouterOSDNS")), dnsStack],
+            [fieldLabel(tr("macRouterOSDefaultSplitRoutes")), routesStack],
+            [fieldLabel(tr("macRouterOSKeepalive")), keepaliveRow]
+        ])
+        grid.rowSpacing = 14
+        grid.columnSpacing = 15
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .fill
+        for rowIndex in 0 ... 2 {
+            grid.row(at: rowIndex).yPlacement = .top
+        }
+
+        card.addSubview(grid)
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            grid.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            grid.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
+            grid.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
+            endpointField.widthAnchor.constraint(greaterThanOrEqualToConstant: 380)
+        ])
+        return card
+    }
+
+    private func valueStack(field: NSTextField, help: String) -> NSStackView {
+        let helpLabel = NSTextField(wrappingLabelWithString: help)
+        helpLabel.font = .systemFont(ofSize: 11)
+        helpLabel.textColor = .secondaryLabelColor
+        let stack = NSStackView(views: [field, helpLabel])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 4
+        field.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        helpLabel.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        return stack
+    }
+
+    private func fieldLabel(_ value: String) -> NSTextField {
+        let label = NSTextField(labelWithString: value)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        return label
+    }
+
+    @objc private func restoreDefaultsClicked() {
+        endpointField.stringValue = ""
+        dnsField.stringValue = ""
+        routesField.stringValue = ""
+        keepaliveField.integerValue = Int(RouterOSPeerDefaults.standard.persistentKeepalive)
+        errorLabel.isHidden = true
+    }
+
+    @objc private func cancelClicked() {
+        view.window?.performClose(nil)
+    }
+
+    @objc private func saveClicked() {
+        do {
+            guard let persistentKeepalive = Int(
+                keepaliveField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            ) else {
+                throw RouterOSProvisioningError.invalidPersistentKeepalive
+            }
+            let peerDefaults = try RouterOSPeerDefaults(
+                endpointAddress: endpointField.stringValue,
+                dnsServers: Self.splitValues(dnsField.stringValue),
+                splitRoutes: Self.splitValues(routesField.stringValue),
+                persistentKeepalive: persistentKeepalive
+            )
+            RouterOSPeerDefaultsStore.save(peerDefaults)
+            errorLabel.isHidden = true
+            view.window?.performClose(nil)
+        } catch {
+            errorLabel.stringValue = error.localizedDescription
+            errorLabel.isHidden = false
+        }
+    }
+
+    private static func splitValues(_ value: String) -> [String] {
+        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
+        return value.components(separatedBy: separators).filter { !$0.isEmpty }
     }
 }

@@ -14,6 +14,8 @@ final class RouterOSPeerSetupViewController: NSViewController {
 
     private let interfaces: [RouterOSWireGuardInterface]
     private let existingPeers: [RouterOSWireGuardPeer]
+    private let publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?
+    private let peerDefaults: RouterOSPeerDefaults
     private let clientPrivateKey: String
     private let clientPublicKey: String
 
@@ -23,6 +25,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let clientAddressHelpLabel = NSTextField(wrappingLabelWithString: "")
     private let endpointField = NSTextField()
     private let endpointPortField = NSTextField()
+    private let endpointHelpLabel = NSTextField(wrappingLabelWithString: "")
     private let dnsField = NSTextField()
     private let routeModeControl = NSSegmentedControl(
         labels: [tr("macRouterOSRouteModeSplit"), tr("macRouterOSRouteModeFull")],
@@ -36,14 +39,21 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let reviewButton = NSButton(title: tr("macRouterOSReviewPeer"), target: nil, action: nil)
     private var lastSuggestedClientAddress: String?
 
-    init(interfaces: [RouterOSWireGuardInterface], existingPeers: [RouterOSWireGuardPeer]) {
+    init(
+        interfaces: [RouterOSWireGuardInterface],
+        existingPeers: [RouterOSWireGuardPeer],
+        publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?,
+        peerDefaults: RouterOSPeerDefaults
+    ) {
         self.interfaces = interfaces
         self.existingPeers = existingPeers
+        self.publicEndpointSuggestion = publicEndpointSuggestion
+        self.peerDefaults = peerDefaults
         let privateKey = PrivateKey()
         clientPrivateKey = privateKey.base64Key
         clientPublicKey = privateKey.publicKey.base64Key
         super.init(nibName: nil, bundle: nil)
-        preferredContentSize = NSSize(width: 700, height: 680)
+        preferredContentSize = NSSize(width: 700, height: 710)
     }
 
     required init?(coder: NSCoder) {
@@ -123,9 +133,22 @@ final class RouterOSPeerSetupViewController: NSViewController {
         clientAddressHelpLabel.font = .systemFont(ofSize: 11)
         clientAddressHelpLabel.textColor = .secondaryLabelColor
         clientAddressHelpLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        endpointField.placeholderString = "vpn.example.com"
-        dnsField.placeholderString = "192.168.80.45, 192.168.80.46"
-        keepaliveField.stringValue = "25"
+        endpointField.placeholderString = tr("macRouterOSEndpointPlaceholder")
+        endpointHelpLabel.font = .systemFont(ofSize: 11)
+        endpointHelpLabel.textColor = .secondaryLabelColor
+        endpointHelpLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        if let endpointAddress = peerDefaults.endpointAddress {
+            endpointField.stringValue = endpointAddress
+            endpointHelpLabel.stringValue = tr("macRouterOSEndpointSaved")
+        } else if let publicEndpointSuggestion {
+            endpointField.stringValue = publicEndpointSuggestion.address
+            endpointHelpLabel.stringValue = tr("macRouterOSEndpointDiscovered")
+        } else {
+            endpointHelpLabel.stringValue = tr("macRouterOSEndpointUnavailable")
+        }
+        dnsField.placeholderString = tr("macRouterOSDNSPlaceholder")
+        dnsField.stringValue = peerDefaults.dnsServers.joined(separator: ", ")
+        keepaliveField.integerValue = Int(peerDefaults.persistentKeepalive)
         routeModeControl.selectedSegment = 0
         routeModeControl.target = self
         routeModeControl.action = #selector(routeModeChanged)
@@ -142,7 +165,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         routesTextView.isAutomaticQuoteSubstitutionEnabled = false
         routesTextView.isAutomaticDashSubstitutionEnabled = false
         routesTextView.textContainerInset = NSSize(width: 8, height: 7)
-        routesTextView.string = ""
+        routesTextView.string = peerDefaults.splitRoutes.map(\.notation).joined(separator: ", ")
         updateEndpointPort()
         updateClientAddressSuggestion()
         updateRouteMode()
@@ -161,6 +184,13 @@ final class RouterOSPeerSetupViewController: NSViewController {
         endpointRow.orientation = .horizontal
         endpointRow.spacing = 8
         endpointPortField.widthAnchor.constraint(equalToConstant: 86).isActive = true
+
+        let endpointStack = NSStackView(views: [endpointRow, endpointHelpLabel])
+        endpointStack.orientation = .vertical
+        endpointStack.alignment = .leading
+        endpointStack.spacing = 4
+        endpointRow.widthAnchor.constraint(equalTo: endpointStack.widthAnchor).isActive = true
+        endpointHelpLabel.widthAnchor.constraint(equalTo: endpointStack.widthAnchor).isActive = true
 
         let clientAddressStack = NSStackView(views: [clientAddressField, clientAddressHelpLabel])
         clientAddressStack.orientation = .vertical
@@ -191,7 +221,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
             [label(tr("macRouterOSInterface")), interfacePopup],
             [label(tr("macRouterOSPeerName")), nameField],
             [label(tr("macRouterOSClientAddress")), clientAddressStack],
-            [label(tr("macRouterOSEndpoint")), endpointRow],
+            [label(tr("macRouterOSEndpoint")), endpointStack],
             [label(tr("macRouterOSDNS")), dnsField],
             [label(tr("macRouterOSRoutes")), routeStack],
             [label(tr("macRouterOSKeepalive")), keepaliveRow]
