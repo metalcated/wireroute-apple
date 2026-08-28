@@ -20,6 +20,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let interfacePopup = NSPopUpButton()
     private let nameField = NSTextField()
     private let clientAddressField = NSTextField()
+    private let clientAddressHelpLabel = NSTextField(wrappingLabelWithString: "")
     private let endpointField = NSTextField()
     private let endpointPortField = NSTextField()
     private let dnsField = NSTextField()
@@ -33,6 +34,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let keepaliveField = NSTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private let reviewButton = NSButton(title: tr("macRouterOSReviewPeer"), target: nil, action: nil)
+    private var lastSuggestedClientAddress: String?
 
     init(interfaces: [RouterOSWireGuardInterface], existingPeers: [RouterOSWireGuardPeer]) {
         self.interfaces = interfaces
@@ -41,7 +43,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         clientPrivateKey = privateKey.base64Key
         clientPublicKey = privateKey.publicKey.base64Key
         super.init(nibName: nil, bundle: nil)
-        preferredContentSize = NSSize(width: 700, height: 650)
+        preferredContentSize = NSSize(width: 700, height: 680)
     }
 
     required init?(coder: NSCoder) {
@@ -116,7 +118,11 @@ final class RouterOSPeerSetupViewController: NSViewController {
         interfacePopup.action = #selector(interfaceChanged)
 
         nameField.placeholderString = tr("macRouterOSPeerNamePlaceholder")
-        clientAddressField.placeholderString = "10.255.100.10/32"
+        clientAddressField.placeholderString = tr("macRouterOSClientAddressPlaceholder")
+        clientAddressField.delegate = self
+        clientAddressHelpLabel.font = .systemFont(ofSize: 11)
+        clientAddressHelpLabel.textColor = .secondaryLabelColor
+        clientAddressHelpLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         endpointField.placeholderString = "vpn.example.com"
         dnsField.placeholderString = "192.168.80.45, 192.168.80.46"
         keepaliveField.stringValue = "25"
@@ -138,6 +144,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         routesTextView.textContainerInset = NSSize(width: 8, height: 7)
         routesTextView.string = ""
         updateEndpointPort()
+        updateClientAddressSuggestion()
         updateRouteMode()
     }
 
@@ -154,6 +161,13 @@ final class RouterOSPeerSetupViewController: NSViewController {
         endpointRow.orientation = .horizontal
         endpointRow.spacing = 8
         endpointPortField.widthAnchor.constraint(equalToConstant: 86).isActive = true
+
+        let clientAddressStack = NSStackView(views: [clientAddressField, clientAddressHelpLabel])
+        clientAddressStack.orientation = .vertical
+        clientAddressStack.alignment = .leading
+        clientAddressStack.spacing = 4
+        clientAddressField.widthAnchor.constraint(equalTo: clientAddressStack.widthAnchor).isActive = true
+        clientAddressHelpLabel.widthAnchor.constraint(equalTo: clientAddressStack.widthAnchor).isActive = true
 
         let routesScrollView = NSScrollView()
         routesScrollView.borderType = .bezelBorder
@@ -176,7 +190,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         let grid = NSGridView(views: [
             [label(tr("macRouterOSInterface")), interfacePopup],
             [label(tr("macRouterOSPeerName")), nameField],
-            [label(tr("macRouterOSClientAddress")), clientAddressField],
+            [label(tr("macRouterOSClientAddress")), clientAddressStack],
             [label(tr("macRouterOSEndpoint")), endpointRow],
             [label(tr("macRouterOSDNS")), dnsField],
             [label(tr("macRouterOSRoutes")), routeStack],
@@ -208,6 +222,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
 
     @objc private func interfaceChanged() {
         updateEndpointPort()
+        updateClientAddressSuggestion()
     }
 
     @objc private func routeModeChanged() {
@@ -221,6 +236,45 @@ final class RouterOSPeerSetupViewController: NSViewController {
             return
         }
         endpointPortField.integerValue = port
+    }
+
+    private func updateClientAddressSuggestion() {
+        let currentAddress = clientAddressField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard currentAddress.isEmpty || currentAddress == lastSuggestedClientAddress else {
+            showManualClientAddressHelp()
+            return
+        }
+        guard interfaces.indices.contains(interfacePopup.indexOfSelectedItem) else {
+            clientAddressField.stringValue = ""
+            lastSuggestedClientAddress = nil
+            clientAddressHelpLabel.stringValue = ""
+            return
+        }
+
+        let interfaceName = interfaces[interfacePopup.indexOfSelectedItem].name
+        guard let suggestion = RouterOSClientAddressSuggestion.discover(
+            for: interfaceName,
+            existingPeers: existingPeers
+        ) else {
+            clientAddressField.stringValue = ""
+            lastSuggestedClientAddress = nil
+            clientAddressHelpLabel.stringValue = tr(
+                format: "macRouterOSClientAddressUnavailable (%@)",
+                interfaceName
+            )
+            return
+        }
+
+        clientAddressField.stringValue = suggestion.address.notation
+        lastSuggestedClientAddress = suggestion.address.notation
+        clientAddressHelpLabel.stringValue = tr(
+            format: "macRouterOSClientAddressSuggested (%@)",
+            interfaceName
+        )
+    }
+
+    private func showManualClientAddressHelp() {
+        clientAddressHelpLabel.stringValue = tr("macRouterOSClientAddressManual")
     }
 
     private func updateRouteMode() {
@@ -319,5 +373,15 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private static func splitValues(_ value: String) -> [String] {
         let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
         return value.components(separatedBy: separators).filter { !$0.isEmpty }
+    }
+}
+
+extension RouterOSPeerSetupViewController: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField, field === clientAddressField,
+              field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) != lastSuggestedClientAddress else {
+            return
+        }
+        showManualClientAddressHelp()
     }
 }

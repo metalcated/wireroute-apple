@@ -51,6 +51,45 @@ public enum RouterOSProvisioningError: Error, Equatable, LocalizedError, Sendabl
     }
 }
 
+public struct RouterOSClientAddressSuggestion: Equatable, Sendable {
+    public let address: RoutePrefix
+    public let sourceAddressCount: Int
+
+    public static func discover(
+        for interfaceName: String,
+        existingPeers: [RouterOSWireGuardPeer]
+    ) -> Self? {
+        let peersOnInterface = existingPeers.filter { $0.interfaceName == interfaceName }
+        let existingPrefixes = peersOnInterface
+            .flatMap(\.allowedAddresses)
+            .compactMap { try? RoutePrefix($0) }
+
+        var uniqueHostAddresses = Set<Data>()
+        for prefix in existingPrefixes where prefix.family == .ipv4 && prefix.prefixLength == 32 {
+            guard let address = IPv4Address(prefix.address) else { continue }
+            uniqueHostAddresses.insert(address.rawValue)
+        }
+
+        let pools = Dictionary(grouping: uniqueHostAddresses) { Data($0.prefix(3)) }
+        guard let largestPoolSize = pools.values.map(\.count).max() else { return nil }
+        let largestPools = pools.values.filter { $0.count == largestPoolSize }
+        guard largestPools.count == 1, let pool = largestPools.first,
+              let highestHost = pool.compactMap(\.last).max(), highestHost < 254,
+              var candidateBytes = pool.first else {
+            return nil
+        }
+
+        candidateBytes[3] = highestHost + 1
+        guard let candidateAddress = IPv4Address(candidateBytes),
+              let candidate = try? RoutePrefix("\(candidateAddress.debugDescription)/32"),
+              !existingPrefixes.contains(where: { RouterOSPeerCreation.overlaps(candidate, $0) }) else {
+            return nil
+        }
+
+        return Self(address: candidate, sourceAddressCount: pool.count)
+    }
+}
+
 public struct RouterOSPeerCreation: Equatable, Sendable {
     public let interfaceName: String
     public let name: String
@@ -133,7 +172,7 @@ public struct RouterOSPeerCreation: Equatable, Sendable {
         return data.base64EncodedString() == value
     }
 
-    private static func overlaps(_ lhs: RoutePrefix, _ rhs: RoutePrefix) -> Bool {
+    fileprivate static func overlaps(_ lhs: RoutePrefix, _ rhs: RoutePrefix) -> Bool {
         guard lhs.family == rhs.family,
               let lhsBytes = addressBytes(lhs.address, family: lhs.family),
               let rhsBytes = addressBytes(rhs.address, family: rhs.family) else {

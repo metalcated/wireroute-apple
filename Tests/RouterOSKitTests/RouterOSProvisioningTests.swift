@@ -104,6 +104,67 @@ final class RouterOSProvisioningTests: XCTestCase {
         )
     }
 
+    func testSuggestsNextIPv4HostAddressFromSelectedInterface() throws {
+        let peers = try [
+            makePeer(
+                interfaceName: "wg-remote",
+                publicKey: Data(repeating: 4, count: 32).base64EncodedString(),
+                allowedAddress: "10.255.100.10/32,192.168.0.0/16"
+            ),
+            makePeer(
+                interfaceName: "wg-remote",
+                publicKey: Data(repeating: 5, count: 32).base64EncodedString(),
+                allowedAddress: "10.255.100.12/32"
+            ),
+            makePeer(
+                interfaceName: "wg-other",
+                publicKey: Data(repeating: 6, count: 32).base64EncodedString(),
+                allowedAddress: "10.255.100.250/32"
+            )
+        ]
+
+        let suggestion = RouterOSClientAddressSuggestion.discover(
+            for: "wg-remote",
+            existingPeers: peers
+        )
+
+        XCTAssertEqual(suggestion?.address.notation, "10.255.100.13/32")
+        XCTAssertEqual(suggestion?.sourceAddressCount, 2)
+    }
+
+    func testDoesNotGuessWhenClientAddressPoolsAreAmbiguousOrExhausted() throws {
+        let ambiguousPeers = try [
+            makePeer(
+                interfaceName: "wg-remote",
+                publicKey: Data(repeating: 4, count: 32).base64EncodedString(),
+                allowedAddress: "10.255.100.10/32"
+            ),
+            makePeer(
+                interfaceName: "wg-remote",
+                publicKey: Data(repeating: 5, count: 32).base64EncodedString(),
+                allowedAddress: "10.255.101.10/32"
+            )
+        ]
+        let exhaustedPeer = try makePeer(
+            interfaceName: "wg-remote",
+            publicKey: Data(repeating: 6, count: 32).base64EncodedString(),
+            allowedAddress: "10.255.100.254/32"
+        )
+
+        XCTAssertNil(
+            RouterOSClientAddressSuggestion.discover(
+                for: "wg-remote",
+                existingPeers: ambiguousPeers
+            )
+        )
+        XCTAssertNil(
+            RouterOSClientAddressSuggestion.discover(
+                for: "wg-remote",
+                existingPeers: [exhaustedPeer]
+            )
+        )
+    }
+
     func testRejectsNonHostClientAddressesAndInvalidDNS() {
         XCTAssertThrowsError(
             try RouterOSPeerCreation(

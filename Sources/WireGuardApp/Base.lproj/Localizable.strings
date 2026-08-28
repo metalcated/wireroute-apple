@@ -388,11 +388,15 @@
 "macRouterOSNeverConnected" = "No handshake";
 "macRouterOSSetUpPeer" = "Set Up Peer…";
 "macRouterOSSetupTitle" = "Set Up a Device";
-"macRouterOSSetupSubtitle" = "WireRoute generates a fresh key pair locally. Enter the network values explicitly, then review the exact change.";
+"macRouterOSSetupSubtitle" = "WireRoute generates a fresh key pair locally, suggests the next available client address, and lets you review the exact change.";
 "macRouterOSInterface" = "Interface";
 "macRouterOSPeerName" = "Device name";
 "macRouterOSPeerNamePlaceholder" = "iPhone 12 Dev";
 "macRouterOSClientAddress" = "Client address";
+"macRouterOSClientAddressPlaceholder" = "IPv4 /32 or IPv6 /128";
+"macRouterOSClientAddressSuggested (%@)" = "Suggested from client addresses already assigned on %@. You can edit it.";
+"macRouterOSClientAddressManual" = "Custom address. WireRoute will check it against peers on the selected interface.";
+"macRouterOSClientAddressUnavailable (%@)" = "No clear next IPv4 /32 was found on %@. Enter an address manually.";
 "macRouterOSEndpoint" = "Public endpoint / port";
 "macRouterOSDNS" = "DNS servers";
 "macRouterOSRoutes" = "Client routes";
