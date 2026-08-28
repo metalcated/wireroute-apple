@@ -17,6 +17,10 @@
 		C0DE00000000000000000023 /* TunnelRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000003 /* TunnelRoutingPolicy.swift */; };
 		C0DE00000000000000000024 /* RoutingPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000004 /* RoutingPlan.swift */; };
 		C0DE00000000000000000025 /* TunnelRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000005 /* TunnelRouting.swift */; };
+		C0DE10000000000000000011 /* RouterOSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000001 /* RouterOSClient.swift */; };
+		C0DE10000000000000000012 /* RouterOSModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000002 /* RouterOSModels.swift */; };
+		C0DE10000000000000000013 /* RouterOSCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000003 /* RouterOSCredentialStore.swift */; };
+		C0DE10000000000000000014 /* RouterOSManagerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000004 /* RouterOSManagerViewController.swift */; };
 		58233BCF2591F842002060A8 /* NotificationToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58233BCE2591F842002060A8 /* NotificationToken.swift */; };
 		58233BD02591F842002060A8 /* NotificationToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58233BCE2591F842002060A8 /* NotificationToken.swift */; };
 		585B105A2577E293004F691E /* InterfaceConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 585B10462577E293004F691E /* InterfaceConfiguration.swift */; };
@@ -297,6 +301,10 @@
 		C0DE00000000000000000003 /* TunnelRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelRoutingPolicy.swift; sourceTree = "<group>"; };
 		C0DE00000000000000000004 /* RoutingPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutingPlan.swift; sourceTree = "<group>"; };
 		C0DE00000000000000000005 /* TunnelRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelRouting.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000001 /* RouterOSClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterOSClient.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000002 /* RouterOSModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterOSModels.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000003 /* RouterOSCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterOSCredentialStore.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000004 /* RouterOSManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouterOSManagerViewController.swift; sourceTree = "<group>"; };
 		58233BCE2591F842002060A8 /* NotificationToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationToken.swift; sourceTree = "<group>"; };
 		585B10462577E293004F691E /* InterfaceConfiguration.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = InterfaceConfiguration.swift; sourceTree = "<group>"; };
 		585B10472577E293004F691E /* PeerConfiguration.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PeerConfiguration.swift; sourceTree = "<group>"; };
@@ -507,6 +515,16 @@
 			path = Sources/WireRouteCore;
 			sourceTree = "<group>";
 		};
+		C0DE10000000000000000021 /* RouterOSKit */ = {
+			isa = PBXGroup;
+			children = (
+				C0DE10000000000000000001 /* RouterOSClient.swift */,
+				C0DE10000000000000000002 /* RouterOSModels.swift */,
+			);
+			name = RouterOSKit;
+			path = Sources/RouterOSKit;
+			sourceTree = "<group>";
+		};
 		585B10452577E293004F691E /* WireGuardKit */ = {
 			isa = PBXGroup;
 			children = (
@@ -713,6 +731,7 @@
 				6FBA104421D7EA750051C35F /* ViewController */,
 				6FBA101321D613F30051C35F /* Application.swift */,
 				6FB1BD5F21D2607A00A991BF /* AppDelegate.swift */,
+				C0DE10000000000000000003 /* RouterOSCredentialStore.swift */,
 				6F89E17921EDEB0E00C97BB9 /* StatusItemController.swift */,
 				6FBA101621D655340051C35F /* StatusMenu.swift */,
 				6F3E02E8228000F6001FE7E3 /* MainMenu.swift */,
@@ -734,6 +753,7 @@
 		6FBA104421D7EA750051C35F /* ViewController */ = {
 			isa = PBXGroup;
 			children = (
+				C0DE10000000000000000004 /* RouterOSManagerViewController.swift */,
 				6FBA104521D7EBFA0051C35F /* TunnelsListTableViewController.swift */,
 				6F4DD16D21DBEA0700690EAE /* ManageTunnelsRootViewController.swift */,
 				6FDB3C3A21DCF47400A0C0BF /* TunnelDetailTableViewController.swift */,
@@ -796,6 +816,7 @@
 				6FF4AC16211EC46F002C96EB /* WireGuardApp */,
 				6F5D0C1B218352EF000F85AD /* WireGuardNetworkExtension */,
 				C0DE00000000000000000031 /* WireRouteCore */,
+				C0DE10000000000000000021 /* RouterOSKit */,
 				585B10452577E293004F691E /* WireGuardKit */,
 				585B10532577E293004F691E /* WireGuardKitC */,
 				6FF4AC15211EC46F002C96EB /* Products */,
@@ -1329,6 +1350,10 @@
 				C0DE00000000000000000023 /* TunnelRoutingPolicy.swift in Sources */,
 				C0DE00000000000000000024 /* RoutingPlan.swift in Sources */,
 				C0DE00000000000000000025 /* TunnelRouting.swift in Sources */,
+				C0DE10000000000000000011 /* RouterOSClient.swift in Sources */,
+				C0DE10000000000000000012 /* RouterOSModels.swift in Sources */,
+				C0DE10000000000000000013 /* RouterOSCredentialStore.swift in Sources */,
+				C0DE10000000000000000014 /* RouterOSManagerViewController.swift in Sources */,
 				58233BD02591F842002060A8 /* NotificationToken.swift in Sources */,
 				6FBA101521D613F90051C35F /* Application.swift in Sources */,
 				6FB1BDCC21D50F5300A991BF /* TunnelsManager.swift in Sources */,

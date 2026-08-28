@@ -36,6 +36,14 @@ class MainMenu: NSMenu {
         menu.addItem(withTitle: tr("macMenuViewLog"),
                      action: #selector(TunnelsListTableViewController.handleViewLogAction), keyEquivalent: "")
 
+        let routerOSMenuItem = menu.addItem(
+            withTitle: tr("macMenuRouterOSManager"),
+            action: #selector(AppDelegate.showRouterOSManager),
+            keyEquivalent: "r"
+        )
+        routerOSMenuItem.keyEquivalentModifierMask = [.command, .shift]
+        routerOSMenuItem.target = NSApp.delegate
+
         menu.addItem(NSMenuItem.separator())
 
         let hideMenuItem = menu.addItem(withTitle: tr("macMenuHideApp"),

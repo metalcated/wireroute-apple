@@ -127,6 +127,9 @@ class StatusMenu: NSMenu {
         let importItem = NSMenuItem(title: tr("macMenuImportTunnels"), action: #selector(importTunnelsClicked), keyEquivalent: "")
         importItem.target = self
         addItem(importItem)
+        let routerOSItem = NSMenuItem(title: tr("macMenuRouterOSManager"), action: #selector(AppDelegate.showRouterOSManager), keyEquivalent: "")
+        routerOSItem.target = NSApp.delegate
+        addItem(routerOSItem)
     }
 
     func addApplicationItems() {

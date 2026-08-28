@@ -310,6 +310,7 @@
 "macMenuImportTunnels" = "Import Tunnel(s) from File…";
 "macMenuAddEmptyTunnel" = "Add Empty Tunnel…";
 "macMenuViewLog" = "View Log";
+"macMenuRouterOSManager" = "RouterOS Peer Manager…";
 "macMenuExportTunnels" = "Export Tunnels to Zip…";
 "macMenuAbout" = "About WireRoute";
 "macMenuQuit" = "Quit WireRoute";
@@ -339,6 +340,36 @@
 // Mac manage tunnels window
 
 "macWindowTitleManageTunnels" = "Manage WireRoute Tunnels";
+"macRouterOSWindowTitle" = "RouterOS Peer Manager";
+"macRouterOSTitle" = "RouterOS Peer Manager";
+"macRouterOSSubtitle" = "Discover WireGuard interfaces and peers before creating a client profile.";
+"macRouterOSReadOnlyBadge" = "READ ONLY";
+"macRouterOSReadOnlyMessage" = "This panel only reads RouterOS. It cannot add, change, or remove peers.";
+"macRouterOSNotConnected" = "Not connected";
+"macRouterOSAddress" = "Router address";
+"macRouterOSUsername" = "Username";
+"macRouterOSPassword" = "Password";
+"macRouterOSUsernamePlaceholder" = "Read-only RouterOS user";
+"macRouterOSPasswordPlaceholder" = "Stored in Keychain after connecting";
+"macRouterOSConnect" = "Connect";
+"macRouterOSConnecting" = "Connecting securely…";
+"macRouterOSConnectedReadOnly" = "Connected securely in read-only mode.";
+"macRouterOSConnectedCredentialWarning" = "Connected, but WireRoute could not save these credentials in Keychain.";
+"macRouterOSCredentialStoreUnavailable" = "RouterOS credentials are unavailable in Keychain.";
+"macRouterOSDiscoverySummary (%d,%d)" = "%d WireGuard interfaces • %d peers";
+"macRouterOSColumnType" = "Type";
+"macRouterOSColumnName" = "Name";
+"macRouterOSColumnInterface" = "Interface / Port";
+"macRouterOSColumnStatus" = "Status";
+"macRouterOSInterfaceType" = "Interface";
+"macRouterOSPeerType" = "Peer";
+"macRouterOSUnnamedPeer" = "Unnamed peer";
+"macRouterOSListenPort (%d)" = "Port %d";
+"macRouterOSDisabled" = "Disabled";
+"macRouterOSRunning" = "Running";
+"macRouterOSStopped" = "Stopped";
+"macRouterOSLastHandshake (%@)" = "Handshake %@ ago";
+"macRouterOSNeverConnected" = "No handshake";
 
 "macDeleteTunnelConfirmationAlertMessage (%@)" = "Are you sure you want to delete ‘%@’?";
 "macDeleteMultipleTunnelsConfirmationAlertMessage (%d)" = "Are you sure you want to delete %d tunnels?";
