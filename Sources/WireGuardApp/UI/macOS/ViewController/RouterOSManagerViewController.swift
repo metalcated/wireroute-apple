@@ -8,6 +8,7 @@ final class RouterOSManagerViewController: NSViewController {
     private struct ConnectedContext: Sendable {
         let baseURL: URL
         let credentials: RouterOSCredentials
+        let trustedCertificate: RouterOSServerCertificate?
     }
 
     private enum DiscoveryRow {
@@ -281,6 +282,10 @@ final class RouterOSManagerViewController: NSViewController {
             username: usernameField.stringValue,
             password: passwordField.stringValue
         )
+        connect(to: url, storedConnection: storedConnection)
+    }
+
+    private func connect(to url: URL, storedConnection: RouterOSStoredConnection) {
         let credentials = RouterOSCredentials(
             username: storedConnection.username,
             password: storedConnection.password
@@ -290,9 +295,11 @@ final class RouterOSManagerViewController: NSViewController {
         connectionTask = Task { [weak self] in
             guard let self else { return }
             do {
+                let trustedCertificate = try RouterOSCertificateStore.load(for: url)
                 let client = try RouterOSClient<URLSessionRouterOSHTTPTransport>(
                     baseURL: url,
-                    credentials: credentials
+                    credentials: credentials,
+                    trustedCertificate: trustedCertificate
                 )
                 async let interfacesRequest = client.wireGuardInterfaces()
                 async let peersRequest = client.wireGuardPeers()
@@ -301,7 +308,11 @@ final class RouterOSManagerViewController: NSViewController {
 
                 self.interfaces = interfaces
                 self.peers = peers
-                connectedContext = ConnectedContext(baseURL: url, credentials: credentials)
+                connectedContext = ConnectedContext(
+                    baseURL: url,
+                    credentials: credentials,
+                    trustedCertificate: trustedCertificate
+                )
                 rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
                 reloadDiscoveryTable()
                 addPeerButton.isEnabled = !interfaces.isEmpty
@@ -320,6 +331,15 @@ final class RouterOSManagerViewController: NSViewController {
                     messageLabel.textColor = .systemOrange
                 }
             } catch is CancellationError {
+                return
+            } catch let certificateError as RouterOSTLSCertificateError {
+                connectedContext = nil
+                setConnecting(false)
+                presentCertificateReview(
+                    certificateError,
+                    routerURL: url,
+                    storedConnection: storedConnection
+                )
                 return
             } catch {
                 connectedContext = nil
@@ -346,6 +366,139 @@ final class RouterOSManagerViewController: NSViewController {
         messageLabel.stringValue = message
         messageLabel.textColor = .systemRed
         setConnecting(false)
+    }
+
+    private func presentCertificateReview(
+        _ error: RouterOSTLSCertificateError,
+        routerURL: URL,
+        storedConnection: RouterOSStoredConnection
+    ) {
+        guard let window = view.window else {
+            showError(error.localizedDescription)
+            return
+        }
+
+        let certificate: RouterOSServerCertificate
+        let expectedFingerprint: String?
+        let isReplacement: Bool
+        let alert = NSAlert()
+        switch error {
+        case .untrusted(let received):
+            certificate = received
+            expectedFingerprint = nil
+            isReplacement = false
+            alert.alertStyle = .warning
+            alert.messageText = tr("macRouterOSCertificateUntrustedTitle")
+            alert.informativeText = tr("macRouterOSCertificateUntrustedMessage")
+        case .changed(let expected, let received):
+            certificate = received
+            expectedFingerprint = expected
+            isReplacement = true
+            alert.alertStyle = .critical
+            alert.messageText = tr("macRouterOSCertificateChangedTitle")
+            alert.informativeText = tr("macRouterOSCertificateChangedMessage")
+        }
+
+        messageLabel.stringValue = error.localizedDescription
+        messageLabel.textColor = .systemOrange
+        alert.accessoryView = certificateDetailsView(
+            certificate,
+            expectedFingerprint: expectedFingerprint
+        )
+
+        let trustButton = alert.addButton(
+            withTitle: tr(
+                isReplacement
+                    ? "macRouterOSReplaceCertificateAndConnect"
+                    : "macRouterOSTrustCertificateAndConnect"
+            )
+        )
+        trustButton.hasDestructiveAction = isReplacement
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            guard response == .alertFirstButtonReturn else {
+                messageLabel.stringValue = tr("macRouterOSCertificateNotTrusted")
+                messageLabel.textColor = .secondaryLabelColor
+                return
+            }
+            do {
+                try RouterOSCertificateStore.save(certificate, for: routerURL)
+                messageLabel.stringValue = tr("macRouterOSCertificateTrustedConnecting")
+                messageLabel.textColor = .secondaryLabelColor
+                connect(to: routerURL, storedConnection: storedConnection)
+            } catch {
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func certificateDetailsView(
+        _ certificate: RouterOSServerCertificate,
+        expectedFingerprint: String?
+    ) -> NSView {
+        var rows = [[NSView]]()
+        rows.append([
+            certificateDetailLabel(tr("macRouterOSCertificateRouter")),
+            certificateDetailValue("\(certificate.host):\(certificate.port)")
+        ])
+        rows.append([
+            certificateDetailLabel(tr("macRouterOSCertificateName")),
+            certificateDetailValue(
+                certificate.subjectSummary ?? tr("macRouterOSCertificateUnnamed")
+            )
+        ])
+        if let expectedFingerprint {
+            rows.append([
+                certificateDetailLabel(tr("macRouterOSCertificatePreviouslyTrusted")),
+                certificateDetailValue(expectedFingerprint, isFingerprint: true)
+            ])
+        }
+        rows.append([
+            certificateDetailLabel(tr("macRouterOSCertificatePresented")),
+            certificateDetailValue(certificate.fingerprintSHA256, isFingerprint: true)
+        ])
+
+        let containerHeight: CGFloat = expectedFingerprint == nil ? 104 : 146
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: containerHeight))
+        let grid = NSGridView(views: rows)
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        grid.rowSpacing = 9
+        grid.columnSpacing = 14
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 0).width = 120
+        grid.column(at: 1).xPlacement = .fill
+        grid.column(at: 1).width = 360
+        container.addSubview(grid)
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            grid.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            grid.topAnchor.constraint(equalTo: container.topAnchor),
+            grid.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor)
+        ])
+        return container
+    }
+
+    private func certificateDetailLabel(_ value: String) -> NSTextField {
+        let label = NSTextField(labelWithString: value)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        return label
+    }
+
+    private func certificateDetailValue(
+        _ value: String,
+        isFingerprint: Bool = false
+    ) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: value)
+        label.font = isFingerprint
+            ? .monospacedSystemFont(ofSize: 11, weight: .medium)
+            : .systemFont(ofSize: 12)
+        label.lineBreakMode = isFingerprint ? .byCharWrapping : .byTruncatingTail
+        label.maximumNumberOfLines = isFingerprint ? 0 : 1
+        label.isSelectable = isFingerprint
+        return label
     }
 
     private func invalidateDiscovery() {
@@ -388,7 +541,8 @@ final class RouterOSManagerViewController: NSViewController {
             do {
                 let client = try RouterOSClient<URLSessionRouterOSHTTPTransport>(
                     baseURL: connectedContext.baseURL,
-                    credentials: connectedContext.credentials
+                    credentials: connectedContext.credentials,
+                    trustedCertificate: connectedContext.trustedCertificate
                 )
                 let createdPeer = try await client.createWireGuardPeer(proposal.peerCreation)
                 guard !Task.isCancelled else { return }

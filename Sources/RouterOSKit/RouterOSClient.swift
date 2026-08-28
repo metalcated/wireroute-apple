@@ -39,29 +39,40 @@ public protocol RouterOSHTTPTransport: Sendable {
 
 public struct URLSessionRouterOSHTTPTransport: RouterOSHTTPTransport {
     private let session: URLSession
+    private let trustDelegate: RouterOSTrustDelegate?
 
-    public init() {
+    public init(trustedCertificate: RouterOSServerCertificate? = nil) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let trustDelegate = RouterOSTrustDelegate(trustedCertificate: trustedCertificate)
+        self.trustDelegate = trustDelegate
         session = URLSession(
             configuration: configuration,
-            delegate: RouterOSNoRedirectDelegate(),
+            delegate: trustDelegate,
             delegateQueue: nil
         )
     }
 
     public init(session: URLSession) {
         self.session = session
+        trustDelegate = nil
     }
 
     public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await session.data(for: request)
-        guard let response = response as? HTTPURLResponse else {
-            throw RouterOSClientError.invalidResponse
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let response = response as? HTTPURLResponse else {
+                throw RouterOSClientError.invalidResponse
+            }
+            return (data, response)
+        } catch {
+            if let certificateFailure = trustDelegate?.certificateFailure() {
+                throw certificateFailure
+            }
+            throw error
         }
-        return (data, response)
     }
 }
 
@@ -171,11 +182,15 @@ public struct RouterOSClient<Transport: RouterOSHTTPTransport>: Sendable {
 }
 
 public extension RouterOSClient where Transport == URLSessionRouterOSHTTPTransport {
-    init(baseURL: URL, credentials: RouterOSCredentials) throws {
+    init(
+        baseURL: URL,
+        credentials: RouterOSCredentials,
+        trustedCertificate: RouterOSServerCertificate? = nil
+    ) throws {
         try self.init(
             baseURL: baseURL,
             credentials: credentials,
-            transport: URLSessionRouterOSHTTPTransport()
+            transport: URLSessionRouterOSHTTPTransport(trustedCertificate: trustedCertificate)
         )
     }
 }
@@ -183,16 +198,4 @@ public extension RouterOSClient where Transport == URLSessionRouterOSHTTPTranspo
 private struct RouterOSErrorResponse: Decodable {
     let message: String?
     let detail: String?
-}
-
-private final class RouterOSNoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
-        completionHandler: @escaping (URLRequest?) -> Void
-    ) {
-        completionHandler(nil)
-    }
 }
