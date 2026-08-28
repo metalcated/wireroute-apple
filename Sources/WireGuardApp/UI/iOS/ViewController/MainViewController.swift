@@ -36,7 +36,7 @@ class MainViewController: UISplitViewController {
         delegate = self
 
         // On iPad, always show both masterVC and detailVC, even in portrait mode, like the Settings app
-        preferredDisplayMode = .allVisible
+        preferredDisplayMode = .oneBesideSecondary
 
         // Create the tunnels manager, and when it's ready, inform tunnelsListVC
         TunnelsManager.create { [weak self] result in

@@ -74,6 +74,7 @@ class KeyValueCell: UITableViewCell {
     var observationToken: AnyObject?
 
     private var textFieldValueOnBeginEditing: String = ""
+    private lazy var editMenuInteraction = UIEditMenuInteraction(delegate: nil)
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -112,6 +113,7 @@ class KeyValueCell: UITableViewCell {
 
         let gestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(handleTapGesture(_:)))
         addGestureRecognizer(gestureRecognizer)
+        addInteraction(editMenuInteraction)
         isUserInteractionEnabled = true
 
         configureForContentSize()
@@ -159,12 +161,10 @@ class KeyValueCell: UITableViewCell {
         }
         guard recognizer.state == .recognized else { return }
 
-        if let recognizerView = recognizer.view,
-            let recognizerSuperView = recognizerView.superview, recognizerView.becomeFirstResponder() {
-            let menuController = UIMenuController.shared
-            menuController.setTargetRect(detailTextLabel?.frame ?? recognizerView.frame, in: detailTextLabel?.superview ?? recognizerSuperView)
-            menuController.setMenuVisible(true, animated: true)
-        }
+        guard becomeFirstResponder() else { return }
+
+        let configuration = UIEditMenuConfiguration(identifier: nil, sourcePoint: recognizer.location(in: self))
+        editMenuInteraction.presentEditMenu(with: configuration)
     }
 
     override var canBecomeFirstResponder: Bool {

@@ -18,6 +18,7 @@ class QRScanViewController: UIViewController {
     var captureSession: AVCaptureSession? = AVCaptureSession()
     let metadataOutput = AVCaptureMetadataOutput()
     var previewLayer: AVCaptureVideoPreviewLayer?
+    var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -59,6 +60,7 @@ class QRScanViewController: UIViewController {
         previewLayer.videoGravity = .resizeAspectFill
         view.layer.insertSublayer(previewLayer, at: 0)
         self.previewLayer = previewLayer
+        rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: videoCaptureDevice, previewLayer: previewLayer)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -80,26 +82,10 @@ class QRScanViewController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        if let connection = previewLayer?.connection {
-            let currentDevice = UIDevice.current
-            let orientation = currentDevice.orientation
-            let previewLayerConnection = connection
-
-            if previewLayerConnection.isVideoOrientationSupported {
-                switch orientation {
-                case .portrait:
-                    previewLayerConnection.videoOrientation = .portrait
-                case .landscapeRight:
-                    previewLayerConnection.videoOrientation = .landscapeLeft
-                case .landscapeLeft:
-                    previewLayerConnection.videoOrientation = .landscapeRight
-                case .portraitUpsideDown:
-                    previewLayerConnection.videoOrientation = .portraitUpsideDown
-                default:
-                    previewLayerConnection.videoOrientation = .portrait
-
-                }
-            }
+        if let connection = previewLayer?.connection,
+           let rotationAngle = rotationCoordinator?.videoRotationAngleForHorizonLevelPreview,
+           connection.isVideoRotationAngleSupported(rotationAngle) {
+            connection.videoRotationAngle = rotationAngle
         }
 
         previewLayer?.frame = view.bounds

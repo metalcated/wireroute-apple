@@ -2,7 +2,7 @@
 // Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
 
 import UIKit
-import MobileCoreServices
+import UniformTypeIdentifiers
 import UserNotifications
 
 class TunnelsListTableViewController: UIViewController {
@@ -184,8 +184,11 @@ class TunnelsListTableViewController: UIViewController {
     }
 
     func presentViewControllerForFileImport() {
-        let documentTypes = ["com.wireguard.config.quick", String(kUTTypeText), String(kUTTypeZipArchive)]
-        let filePicker = UIDocumentPickerViewController(documentTypes: documentTypes, in: .import)
+        let wireGuardConfigurationType = UTType(importedAs: "com.wireguard.config.quick")
+        let filePicker = UIDocumentPickerViewController(
+            forOpeningContentTypes: [wireGuardConfigurationType, .plainText, .zip],
+            asCopy: true
+        )
         filePicker.delegate = self
         present(filePicker, animated: true)
     }
