@@ -104,6 +104,121 @@ final class RouterOSProvisioningTests: XCTestCase {
         )
     }
 
+    func testValidatesExistingPeerConfigurationIdentity() throws {
+        let peer = try makePeer(
+            interfaceName: "wg-remote",
+            publicKey: clientPublicKey,
+            allowedAddress: "10.255.100.10/32,192.168.0.0/16"
+        )
+        let interface = try makeInterface(
+            name: "wg-remote",
+            publicKey: serverPublicKey
+        )
+
+        XCTAssertNoThrow(
+            try RouterOSExistingPeerImportValidator.validate(
+                peer: peer,
+                interfaces: [interface],
+                clientPublicKey: clientPublicKey,
+                clientAddresses: ["10.255.100.10/24"],
+                serverPublicKeys: [serverPublicKey]
+            )
+        )
+    }
+
+    func testRejectsExistingPeerConfigurationIdentityMismatches() throws {
+        let peer = try makePeer(
+            interfaceName: "wg-remote",
+            publicKey: clientPublicKey,
+            allowedAddress: "10.255.100.10/32"
+        )
+        let interface = try makeInterface(
+            name: "wg-remote",
+            publicKey: serverPublicKey
+        )
+
+        XCTAssertThrowsError(
+            try RouterOSExistingPeerImportValidator.validate(
+                peer: peer,
+                interfaces: [interface],
+                clientPublicKey: Data(repeating: 9, count: 32).base64EncodedString(),
+                clientAddresses: ["10.255.100.10/32"],
+                serverPublicKeys: [serverPublicKey]
+            )
+        ) { error in
+            XCTAssertEqual(error as? RouterOSExistingPeerImportError, .clientPublicKeyMismatch)
+        }
+
+        XCTAssertThrowsError(
+            try RouterOSExistingPeerImportValidator.validate(
+                peer: peer,
+                interfaces: [interface],
+                clientPublicKey: clientPublicKey,
+                clientAddresses: ["10.255.100.10/32"],
+                serverPublicKeys: [Data(repeating: 8, count: 32).base64EncodedString()]
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? RouterOSExistingPeerImportError,
+                .serverPublicKeyMismatch("wg-remote")
+            )
+        }
+
+        XCTAssertThrowsError(
+            try RouterOSExistingPeerImportValidator.validate(
+                peer: peer,
+                interfaces: [interface],
+                clientPublicKey: clientPublicKey,
+                clientAddresses: ["10.255.100.11/32"],
+                serverPublicKeys: [serverPublicKey]
+            )
+        ) { error in
+            XCTAssertEqual(error as? RouterOSExistingPeerImportError, .clientAddressMismatch)
+        }
+
+        XCTAssertThrowsError(
+            try RouterOSExistingPeerImportValidator.validate(
+                peer: peer,
+                interfaces: [],
+                clientPublicKey: clientPublicKey,
+                clientAddresses: ["10.255.100.10/32"],
+                serverPublicKeys: [serverPublicKey]
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? RouterOSExistingPeerImportError,
+                .missingInterface("wg-remote")
+            )
+        }
+
+        XCTAssertThrowsError(
+            try RouterOSExistingPeerImportValidator.validate(
+                peer: peer,
+                interfaces: [interface],
+                clientPublicKey: clientPublicKey,
+                clientAddresses: ["10.255.100.10/32"],
+                serverPublicKeys: [serverPublicKey, serverPublicKey]
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? RouterOSExistingPeerImportError,
+                .expectedSingleServerPeer
+            )
+        }
+
+        XCTAssertThrowsError(
+            try RouterOSExistingPeerImportValidator.validate(
+                peer: peer,
+                interfaces: [interface],
+                clientPublicKey: clientPublicKey,
+                clientAddresses: [],
+                serverPublicKeys: [serverPublicKey]
+            )
+        ) { error in
+            XCTAssertEqual(error as? RouterOSExistingPeerImportError, .missingClientAddress)
+        }
+    }
+
     func testSuggestsNextIPv4HostAddressFromSelectedInterface() throws {
         let peers = try [
             makePeer(
@@ -311,6 +426,23 @@ final class RouterOSProvisioningTests: XCTestCase {
         }
         """.utf8)
         return try JSONDecoder().decode(RouterOSWireGuardPeer.self, from: data)
+    }
+
+    private func makeInterface(
+        name: String,
+        publicKey: String
+    ) throws -> RouterOSWireGuardInterface {
+        let data = Data("""
+        {
+          ".id": "*B",
+          "name": "\(name)",
+          "listen-port": "51824",
+          "public-key": "\(publicKey)",
+          "disabled": "false",
+          "running": "true"
+        }
+        """.utf8)
+        return try JSONDecoder().decode(RouterOSWireGuardInterface.self, from: data)
     }
 
     private func makeAddress(

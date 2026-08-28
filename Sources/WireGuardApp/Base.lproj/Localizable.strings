@@ -389,6 +389,15 @@
 "macRouterOSLastHandshake (%@)" = "Handshake %@ ago";
 "macRouterOSNeverConnected" = "No handshake";
 "macRouterOSSetUpPeer" = "Set Up Peer…";
+"macRouterOSImportExistingPeer" = "Import Existing Peer…";
+"macRouterOSImportExistingPeerHelp" = "Select a RouterOS peer, then import its saved private client configuration. RouterOS will not be changed.";
+"macRouterOSChooseConfiguration" = "Choose Configuration";
+"macRouterOSExistingPeerDefaultName" = "RouterOS Peer";
+"macRouterOSExistingPeerMismatchTitle" = "Configuration Does Not Match Peer";
+"macRouterOSExistingPeerAlreadyImported (%@)" = "This RouterOS peer is already available in WireRoute as %@.";
+"macRouterOSExistingPeerDuplicateName (%@)" = "A WireRoute profile named ‘%@’ already exists but uses a different client key. Rename the configuration file and try again.";
+"macRouterOSImportingExistingPeer" = "Configuration verified. Importing the existing peer into WireRoute…";
+"macRouterOSExistingPeerImported (%@)" = "Existing RouterOS peer imported as %@.";
 "macRouterOSSetupTitle" = "Set Up a Device";
 "macRouterOSSetupSubtitle" = "WireRoute generates a fresh key pair locally, suggests safe values from RouterOS, prefills your defaults, and lets you review the exact change.";
 "macRouterOSInterface" = "Interface";

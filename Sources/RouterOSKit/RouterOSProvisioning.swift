@@ -54,6 +54,72 @@ public enum RouterOSProvisioningError: Error, Equatable, LocalizedError, Sendabl
     }
 }
 
+public enum RouterOSExistingPeerImportError: Error, Equatable, LocalizedError, Sendable {
+    case clientPublicKeyMismatch
+    case missingInterface(String)
+    case expectedSingleServerPeer
+    case serverPublicKeyMismatch(String)
+    case missingClientAddress
+    case clientAddressMismatch
+
+    public var errorDescription: String? {
+        switch self {
+        case .clientPublicKeyMismatch:
+            return "The selected configuration uses a different client private key than this RouterOS peer."
+        case .missingInterface(let interfaceName):
+            return "RouterOS interface \(interfaceName) is not available in the current discovery results."
+        case .expectedSingleServerPeer:
+            return "The selected configuration must contain exactly one WireGuard peer."
+        case .serverPublicKeyMismatch(let interfaceName):
+            return "The configuration's server public key does not match RouterOS interface \(interfaceName)."
+        case .missingClientAddress:
+            return "The selected configuration does not contain a client IP address."
+        case .clientAddressMismatch:
+            return "None of the configuration's client IP addresses belong to this RouterOS peer's allowed addresses."
+        }
+    }
+}
+
+public struct RouterOSExistingPeerImportValidator {
+    public static func validate(
+        peer: RouterOSWireGuardPeer,
+        interfaces: [RouterOSWireGuardInterface],
+        clientPublicKey: String,
+        clientAddresses: [String],
+        serverPublicKeys: [String]
+    ) throws {
+        guard clientPublicKey == peer.publicKey else {
+            throw RouterOSExistingPeerImportError.clientPublicKeyMismatch
+        }
+        guard let interface = interfaces.first(where: { $0.name == peer.interfaceName }) else {
+            throw RouterOSExistingPeerImportError.missingInterface(peer.interfaceName)
+        }
+        guard serverPublicKeys.count == 1 else {
+            throw RouterOSExistingPeerImportError.expectedSingleServerPeer
+        }
+        guard serverPublicKeys[0] == interface.publicKey else {
+            throw RouterOSExistingPeerImportError.serverPublicKeyMismatch(interface.name)
+        }
+
+        let importedHostAddresses = clientAddresses.compactMap { value -> RoutePrefix? in
+            guard let prefix = try? RoutePrefix(value) else { return nil }
+            let hostPrefixLength = prefix.family == .ipv4 ? 32 : 128
+            return try? RoutePrefix("\(prefix.address)/\(hostPrefixLength)")
+        }
+        guard !importedHostAddresses.isEmpty else {
+            throw RouterOSExistingPeerImportError.missingClientAddress
+        }
+        let routerAllowedAddresses = peer.allowedAddresses.compactMap { try? RoutePrefix($0) }
+        guard importedHostAddresses.contains(where: { importedAddress in
+            routerAllowedAddresses.contains(where: { allowedAddress in
+                RouterOSPeerCreation.overlaps(importedAddress, allowedAddress)
+            })
+        }) else {
+            throw RouterOSExistingPeerImportError.clientAddressMismatch
+        }
+    }
+}
+
 public struct RouterOSPublicEndpointSuggestion: Equatable, Sendable {
     public let address: String
 

@@ -71,6 +71,7 @@ final class RouterOSManagerViewController: NSViewController {
     private let connectButton = NSButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
     private let settingsButton = NSButton(title: tr("macRouterOSSettings"), target: nil, action: nil)
     private let addPeerButton = NSButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
+    private let importPeerButton = NSButton(title: tr("macRouterOSImportExistingPeer"), target: nil, action: nil)
     private let progressIndicator = NSProgressIndicator()
     private let messageLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSReadOnlyMessage"))
     private let summaryLabel = NSTextField(labelWithString: tr("macRouterOSNotConnected"))
@@ -82,6 +83,7 @@ final class RouterOSManagerViewController: NSViewController {
     private var publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?
     private var connectedContext: ConnectedContext?
     private var connectionTask: Task<Void, Never>?
+    private var isBusy = false
 
     init(tunnelsManager: TunnelsManager) {
         self.tunnelsManager = tunnelsManager
@@ -152,7 +154,14 @@ final class RouterOSManagerViewController: NSViewController {
         addPeerButton.controlSize = .large
         addPeerButton.isEnabled = false
         addPeerButton.setContentHuggingPriority(.required, for: .horizontal)
-        let summaryRow = NSStackView(views: [summaryLabel, addPeerButton])
+        importPeerButton.target = self
+        importPeerButton.action = #selector(importExistingPeerClicked)
+        importPeerButton.bezelStyle = .rounded
+        importPeerButton.controlSize = .large
+        importPeerButton.isEnabled = false
+        importPeerButton.toolTip = tr("macRouterOSImportExistingPeerHelp")
+        importPeerButton.setContentHuggingPriority(.required, for: .horizontal)
+        let summaryRow = NSStackView(views: [summaryLabel, importPeerButton, addPeerButton])
         summaryRow.orientation = .horizontal
         summaryRow.alignment = .centerY
         summaryRow.spacing = 12
@@ -398,11 +407,13 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     private func setConnecting(_ isConnecting: Bool) {
+        isBusy = isConnecting
         connectButton.isEnabled = !isConnecting
         urlField.isEnabled = !isConnecting
         usernameField.isEnabled = !isConnecting
         passwordField.isEnabled = !isConnecting
         addPeerButton.isEnabled = !isConnecting && connectedContext != nil && !interfaces.isEmpty
+        updateImportPeerButtonState()
         if isConnecting {
             progressIndicator.startAnimation(nil)
         } else {
@@ -558,6 +569,19 @@ final class RouterOSManagerViewController: NSViewController {
         reloadDiscoveryTable()
         summaryLabel.stringValue = tr("macRouterOSNotConnected")
         addPeerButton.isEnabled = false
+        importPeerButton.isEnabled = false
+    }
+
+    private var selectedPeer: RouterOSWireGuardPeer? {
+        let selectedRow = tableView.selectedRow
+        guard rows.indices.contains(selectedRow), case .peer(let peer) = rows[selectedRow] else {
+            return nil
+        }
+        return peer
+    }
+
+    private func updateImportPeerButtonState() {
+        importPeerButton.isEnabled = !isBusy && connectedContext != nil && selectedPeer != nil
     }
 
     @objc private func addPeerClicked() {
@@ -579,6 +603,30 @@ final class RouterOSManagerViewController: NSViewController {
             createPeer(proposal)
         }
         presentAsSheet(setupViewController)
+    }
+
+    @objc private func importExistingPeerClicked() {
+        guard let peer = selectedPeer else { return }
+        if let tunnel = existingTunnel(matching: peer) {
+            messageLabel.stringValue = tr(
+                format: "macRouterOSExistingPeerAlreadyImported (%@)",
+                tunnel.name
+            )
+            messageLabel.textColor = .systemGreen
+            (NSApp.delegate as? AppDelegate)?.showManageTunnelsWindow(selecting: tunnel)
+            return
+        }
+        guard let window = view.window else { return }
+
+        let panel = NSOpenPanel()
+        panel.prompt = tr("macRouterOSChooseConfiguration")
+        panel.allowedContentTypes = [UTType(filenameExtension: "conf") ?? .plainText]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.importExistingPeer(peer, from: url)
+        }
     }
 
     @objc private func settingsClicked() {
@@ -708,6 +756,125 @@ final class RouterOSManagerViewController: NSViewController {
         }
     }
 
+    private func importExistingPeer(_ peer: RouterOSWireGuardPeer, from url: URL) {
+        let fileName = url.lastPathComponent
+        let fileBaseName = url.deletingPathExtension().lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let peerName = peer.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackName = peerName.flatMap { $0.isEmpty ? nil : $0 }
+            ?? tr("macRouterOSExistingPeerDefaultName")
+        let configurationName = fileBaseName.isEmpty
+            ? fallbackName
+            : fileBaseName
+
+        let fileContents: String
+        do {
+            fileContents = try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            showExistingPeerImportError(
+                title: tr("alertCantOpenInputConfFileTitle"),
+                message: error.localizedDescription
+            )
+            return
+        }
+
+        let tunnelConfiguration: TunnelConfiguration
+        do {
+            tunnelConfiguration = try TunnelConfiguration(
+                fromWgQuickConfig: fileContents,
+                called: configurationName
+            )
+        } catch let error as WireGuardAppError {
+            showExistingPeerImportError(
+                title: error.alertText.title,
+                message: error.alertText.message
+            )
+            return
+        } catch {
+            showExistingPeerImportError(
+                title: tr("alertBadConfigImportTitle"),
+                message: tr(format: "alertBadConfigImportMessage (%@)", fileName)
+            )
+            return
+        }
+
+        do {
+            try RouterOSExistingPeerImportValidator.validate(
+                peer: peer,
+                interfaces: interfaces,
+                clientPublicKey: tunnelConfiguration.interface.privateKey.publicKey.base64Key,
+                clientAddresses: tunnelConfiguration.interface.addresses.map(\.stringRepresentation),
+                serverPublicKeys: tunnelConfiguration.peers.map { $0.publicKey.base64Key }
+            )
+        } catch {
+            showExistingPeerImportError(
+                title: tr("macRouterOSExistingPeerMismatchTitle"),
+                message: error.localizedDescription
+            )
+            return
+        }
+
+        if let tunnel = existingTunnel(matching: peer) {
+            messageLabel.stringValue = tr(
+                format: "macRouterOSExistingPeerAlreadyImported (%@)",
+                tunnel.name
+            )
+            messageLabel.textColor = .systemGreen
+            (NSApp.delegate as? AppDelegate)?.showManageTunnelsWindow(selecting: tunnel)
+            return
+        }
+        guard tunnelsManager.tunnel(named: configurationName) == nil else {
+            showExistingPeerImportError(
+                title: tr("alertTunnelAlreadyExistsWithThatNameTitle"),
+                message: tr(
+                    format: "macRouterOSExistingPeerDuplicateName (%@)",
+                    configurationName
+                )
+            )
+            return
+        }
+
+        messageLabel.stringValue = tr("macRouterOSImportingExistingPeer")
+        messageLabel.textColor = .secondaryLabelColor
+        setConnecting(true)
+        tunnelsManager.add(tunnelConfiguration: tunnelConfiguration) { [weak self] result in
+            guard let self else { return }
+            setConnecting(false)
+            switch result {
+            case .success(let tunnel):
+                messageLabel.stringValue = tr(
+                    format: "macRouterOSExistingPeerImported (%@)",
+                    tunnel.name
+                )
+                messageLabel.textColor = .systemGreen
+                (NSApp.delegate as? AppDelegate)?.showManageTunnelsWindow(selecting: tunnel)
+            case .failure(let error):
+                showExistingPeerImportError(
+                    title: error.alertText.title,
+                    message: error.alertText.message
+                )
+            }
+        }
+    }
+
+    private func existingTunnel(matching peer: RouterOSWireGuardPeer) -> TunnelContainer? {
+        tunnelsManager.mapTunnels { $0 }.first { tunnel in
+            tunnel.tunnelConfiguration?.interface.privateKey.publicKey.base64Key == peer.publicKey
+        }
+    }
+
+    private func showExistingPeerImportError(title: String, message: String) {
+        messageLabel.stringValue = message
+        messageLabel.textColor = .systemRed
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: tr("macRouterOSDone"))
+        alert.beginSheetModal(for: window) { _ in }
+    }
+
     private func saveConfiguration(_ configuration: WireGuardClientConfiguration) {
         guard let window = view.window else { return }
         let panel = NSSavePanel()
@@ -760,6 +927,7 @@ final class RouterOSManagerViewController: NSViewController {
         tableView.usesAlternatingRowBackgroundColors = !rows.isEmpty
         emptyStateLabel.isHidden = !rows.isEmpty
         tableView.reloadData()
+        updateImportPeerButtonState()
     }
 }
 
@@ -786,6 +954,10 @@ extension RouterOSManagerViewController: NSTableViewDataSource, NSTableViewDeleg
             cell.textField?.stringValue = ""
         }
         return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        updateImportPeerButtonState()
     }
 
     private func makeCell(identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
