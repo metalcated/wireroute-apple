@@ -91,14 +91,25 @@ final class RouterOSManagerViewController: NSViewController {
         subtitleLabel.textColor = .secondaryLabelColor
         subtitleLabel.font = .systemFont(ofSize: 14)
 
-        let readOnlyBadge = NSTextField(labelWithString: tr("macRouterOSReadOnlyBadge"))
-        readOnlyBadge.font = .systemFont(ofSize: 11, weight: .semibold)
-        readOnlyBadge.textColor = .systemBlue
-        readOnlyBadge.alignment = .center
+        let readOnlyBadgeLabel = NSTextField(labelWithString: tr("macRouterOSReadOnlyBadge"))
+        readOnlyBadgeLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        readOnlyBadgeLabel.textColor = .systemBlue
+        readOnlyBadgeLabel.alignment = .center
+
+        let readOnlyBadge = NSView()
         readOnlyBadge.wantsLayer = true
         readOnlyBadge.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
         readOnlyBadge.layer?.cornerRadius = 7
         readOnlyBadge.layer?.cornerCurve = .continuous
+        readOnlyBadge.addSubview(readOnlyBadgeLabel)
+        readOnlyBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            readOnlyBadgeLabel.centerXAnchor.constraint(equalTo: readOnlyBadge.centerXAnchor),
+            readOnlyBadgeLabel.centerYAnchor.constraint(equalTo: readOnlyBadge.centerYAnchor),
+            readOnlyBadge.widthAnchor.constraint(equalTo: readOnlyBadgeLabel.widthAnchor, constant: 28),
+            readOnlyBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 90),
+            readOnlyBadge.heightAnchor.constraint(equalToConstant: 24)
+        ])
 
         let headerRow = NSStackView(views: [titleLabel, readOnlyBadge])
         headerRow.orientation = .horizontal
@@ -106,6 +117,7 @@ final class RouterOSManagerViewController: NSViewController {
         headerRow.spacing = 12
         titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         readOnlyBadge.setContentHuggingPriority(.required, for: .horizontal)
+        readOnlyBadge.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let connectionCard = makeConnectionCard()
 
@@ -167,8 +179,6 @@ final class RouterOSManagerViewController: NSViewController {
             contentStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
             contentStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
             contentStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -24),
-            readOnlyBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 86),
-            readOnlyBadge.heightAnchor.constraint(equalToConstant: 24),
             connectionCard.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             messageLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
             summaryRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
