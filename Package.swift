@@ -10,7 +10,8 @@ let package = Package(
     ],
     products: [
         .library(name: "WireGuardKit", targets: ["WireGuardKit"]),
-        .library(name: "WireRouteCore", targets: ["WireRouteCore"])
+        .library(name: "WireRouteCore", targets: ["WireRouteCore"]),
+        .library(name: "RouterOSKit", targets: ["RouterOSKit"])
     ],
     dependencies: [],
     targets: [
@@ -37,6 +38,8 @@ let package = Package(
             linkerSettings: [.linkedLibrary("wg-go")]
         ),
         .target(name: "WireRouteCore"),
-        .testTarget(name: "WireRouteCoreTests", dependencies: ["WireRouteCore"])
+        .target(name: "RouterOSKit"),
+        .testTarget(name: "WireRouteCoreTests", dependencies: ["WireRouteCore"]),
+        .testTarget(name: "RouterOSKitTests", dependencies: ["RouterOSKit"])
     ]
 )
