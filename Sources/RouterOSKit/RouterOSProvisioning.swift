@@ -37,13 +37,13 @@ public enum RouterOSProvisioningError: Error, Equatable, LocalizedError, Sendabl
         case .overlappingClientAddress(let address):
             return "The client address overlaps the existing RouterOS peer route \(address)."
         case .invalidPersistentKeepalive:
-            return "Persistent keepalive must be between 0 and 65,535 seconds."
+            return "Persistent keepalive must be between 0 and 65535 seconds."
         case .missingEndpoint:
             return "Enter the public hostname or address clients use to reach this router."
         case .invalidEndpoint:
             return "Enter only a public hostname or IP address, without a URL scheme, path, or port."
         case .invalidEndpointPort:
-            return "The endpoint port must be between 1 and 65,535."
+            return "The endpoint port must be between 1 and 65535."
         case .missingClientRoutes:
             return "Choose at least one route for the client profile."
         case .invalidClientRoute(let value):

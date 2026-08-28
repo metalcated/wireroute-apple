@@ -265,7 +265,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
             endpointPortField.stringValue = ""
             return
         }
-        endpointPortField.integerValue = port
+        endpointPortField.stringValue = String(port)
     }
 
     private func updateClientAddressSuggestion() {
