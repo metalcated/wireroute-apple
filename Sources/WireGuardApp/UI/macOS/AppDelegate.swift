@@ -209,8 +209,9 @@ extension AppDelegate {
     }
 
     @objc func showRouterOSManager() {
+        guard let tunnelsManager else { return }
         if routerOSWindowObject == nil {
-            let viewController = RouterOSManagerViewController()
+            let viewController = RouterOSManagerViewController(tunnelsManager: tunnelsManager)
             let window = NSWindow(contentViewController: viewController)
             window.title = tr("macRouterOSWindowTitle")
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -243,6 +244,12 @@ extension AppDelegate {
 }
 
 extension AppDelegate: StatusMenuWindowDelegate {
+    func showManageTunnelsWindow(selecting tunnel: TunnelContainer) {
+        showManageTunnelsWindow { [weak self] _ in
+            self?.manageTunnelsRootVC?.selectTunnel(tunnel)
+        }
+    }
+
     func showManageTunnelsWindow(completion: ((NSWindow?) -> Void)?) {
         guard let tunnelsManager = tunnelsManager else {
             completion?(nil)

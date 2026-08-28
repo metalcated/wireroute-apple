@@ -20,6 +20,11 @@ class ManageTunnelsRootViewController: NSViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func selectTunnel(_ tunnel: TunnelContainer) {
+        loadViewIfNeeded()
+        tunnelsListVC?.selectTunnel(tunnel)
+    }
+
     override func loadView() {
         view = NSView()
 

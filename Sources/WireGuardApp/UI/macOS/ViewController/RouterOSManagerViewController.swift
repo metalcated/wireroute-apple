@@ -65,6 +65,7 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     private let urlField = NSTextField()
+    private let tunnelsManager: TunnelsManager
     private let usernameField = NSTextField()
     private let passwordField = NSSecureTextField()
     private let connectButton = NSButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
@@ -81,6 +82,15 @@ final class RouterOSManagerViewController: NSViewController {
     private var publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?
     private var connectedContext: ConnectedContext?
     private var connectionTask: Task<Void, Never>?
+
+    init(tunnelsManager: TunnelsManager) {
+        self.tunnelsManager = tunnelsManager
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     override func loadView() {
         let view = NSView()
@@ -555,6 +565,7 @@ final class RouterOSManagerViewController: NSViewController {
         let setupViewController = RouterOSPeerSetupViewController(
             interfaces: interfaces,
             existingPeers: peers,
+            existingTunnelNames: Set(tunnelsManager.mapTunnels { $0.name }),
             publicEndpointSuggestion: publicEndpointSuggestion,
             peerDefaults: RouterOSPeerDefaultsStore.load()
         )
@@ -576,6 +587,27 @@ final class RouterOSManagerViewController: NSViewController {
 
     private func createPeer(_ proposal: RouterOSPeerSetupViewController.Proposal) {
         guard let connectedContext else { return }
+
+        let tunnelConfiguration: TunnelConfiguration
+        do {
+            tunnelConfiguration = try TunnelConfiguration(
+                fromWgQuickConfig: proposal.clientConfiguration.wgQuickConfiguration,
+                called: proposal.clientConfiguration.name
+            )
+        } catch {
+            showError(tr("macRouterOSGeneratedConfigurationInvalid"))
+            return
+        }
+        guard tunnelsManager.tunnel(named: proposal.clientConfiguration.name) == nil else {
+            showError(
+                tr(
+                    format: "macRouterOSDuplicateTunnelName (%@)",
+                    proposal.clientConfiguration.name
+                )
+            )
+            return
+        }
+
         connectionTask?.cancel()
         messageLabel.textColor = .secondaryLabelColor
         messageLabel.stringValue = tr("macRouterOSAddingPeer")
@@ -600,10 +632,12 @@ final class RouterOSManagerViewController: NSViewController {
                     interfaces.count,
                     peers.count
                 )
-                messageLabel.stringValue = tr("macRouterOSPeerAdded")
-                messageLabel.textColor = .systemGreen
-                setConnecting(false)
-                showConfigurationHandoff(proposal.clientConfiguration)
+                messageLabel.stringValue = tr("macRouterOSPeerImporting")
+                messageLabel.textColor = .secondaryLabelColor
+                importClientConfiguration(
+                    tunnelConfiguration,
+                    recoveryConfiguration: proposal.clientConfiguration
+                )
             } catch is CancellationError {
                 return
             } catch {
@@ -624,8 +658,8 @@ final class RouterOSManagerViewController: NSViewController {
 
     private func showConfigurationHandoff(
         _ configuration: WireGuardClientConfiguration,
-        title: String = tr("macRouterOSPeerAddedTitle"),
-        message: String = tr("macRouterOSPeerAddedMessage")
+        title: String,
+        message: String
     ) {
         guard let window = view.window else { return }
         let alert = NSAlert()
@@ -643,6 +677,33 @@ final class RouterOSManagerViewController: NSViewController {
                 Self.copyConfiguration(configuration)
             default:
                 break
+            }
+        }
+    }
+
+    private func importClientConfiguration(
+        _ tunnelConfiguration: TunnelConfiguration,
+        recoveryConfiguration: WireGuardClientConfiguration
+    ) {
+        tunnelsManager.add(tunnelConfiguration: tunnelConfiguration) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let tunnel):
+                messageLabel.stringValue = tr("macRouterOSPeerImported")
+                messageLabel.textColor = .systemGreen
+                setConnecting(false)
+                (NSApp.delegate as? AppDelegate)?.showManageTunnelsWindow(selecting: tunnel)
+            case .failure(let error):
+                setConnecting(false)
+                let recoveryMessage = [
+                    tr("macRouterOSImportFailedMessage"),
+                    error.alertText.message
+                ].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                showConfigurationHandoff(
+                    recoveryConfiguration,
+                    title: tr("macRouterOSImportFailedTitle"),
+                    message: recoveryMessage
+                )
             }
         }
     }

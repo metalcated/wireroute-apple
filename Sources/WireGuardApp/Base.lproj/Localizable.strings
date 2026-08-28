@@ -424,6 +424,12 @@
 "macRouterOSPeerAdded" = "Peer added to RouterOS.";
 "macRouterOSPeerAddedTitle" = "Peer Added";
 "macRouterOSPeerAddedMessage" = "The RouterOS peer is ready. Save or copy the matching private client configuration now; WireRoute never sends the private key to RouterOS.";
+"macRouterOSDuplicateTunnelName (%@)" = "A VPN profile named ‘%@’ already exists. Choose a different device name before adding the RouterOS peer.";
+"macRouterOSGeneratedConfigurationInvalid" = "WireRoute could not prepare the generated client profile. No RouterOS change was made.";
+"macRouterOSPeerImporting" = "Peer added to RouterOS. Importing the client profile into WireRoute…";
+"macRouterOSPeerImported" = "Peer added and imported into WireRoute.";
+"macRouterOSImportFailedTitle" = "Peer Added, Import Failed";
+"macRouterOSImportFailedMessage" = "The RouterOS peer exists, but WireRoute could not add the client profile. Save or copy this matching private configuration now so the generated private key is not lost.";
 "macRouterOSWriteUncertainTitle" = "Peer Status Needs Verification";
 "macRouterOSWriteUncertainMessage" = "RouterOS did not return a verifiable completion response. The peer may already exist. Save or copy this matching private configuration, then reconnect and inspect the peer list before trying again.";
 "macRouterOSSaveConfiguration" = "Save Configuration…";

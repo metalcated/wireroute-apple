@@ -4,6 +4,17 @@ import Cocoa
 
 @MainActor
 final class RouterOSPeerSetupViewController: NSViewController {
+    private enum SetupValidationError: LocalizedError {
+        case duplicateTunnelName(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .duplicateTunnelName(let name):
+                return tr(format: "macRouterOSDuplicateTunnelName (%@)", name)
+            }
+        }
+    }
+
     struct Proposal: Sendable {
         let peerCreation: RouterOSPeerCreation
         let clientConfiguration: WireGuardClientConfiguration
@@ -14,6 +25,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
 
     private let interfaces: [RouterOSWireGuardInterface]
     private let existingPeers: [RouterOSWireGuardPeer]
+    private let existingTunnelNames: Set<String>
     private let publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?
     private let peerDefaults: RouterOSPeerDefaults
     private let clientPrivateKey: String
@@ -42,11 +54,13 @@ final class RouterOSPeerSetupViewController: NSViewController {
     init(
         interfaces: [RouterOSWireGuardInterface],
         existingPeers: [RouterOSWireGuardPeer],
+        existingTunnelNames: Set<String>,
         publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?,
         peerDefaults: RouterOSPeerDefaults
     ) {
         self.interfaces = interfaces
         self.existingPeers = existingPeers
+        self.existingTunnelNames = existingTunnelNames
         self.publicEndpointSuggestion = publicEndpointSuggestion
         self.peerDefaults = peerDefaults
         let privateKey = PrivateKey()
@@ -357,6 +371,9 @@ final class RouterOSPeerSetupViewController: NSViewController {
             persistentKeepalive: persistentKeepalive,
             existingPeers: existingPeers
         )
+        guard !existingTunnelNames.contains(peerCreation.name) else {
+            throw SetupValidationError.duplicateTunnelName(peerCreation.name)
+        }
 
         let allowedIPs: [String]
         if routeModeControl.selectedSegment == 1 {

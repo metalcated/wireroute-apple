@@ -152,6 +152,11 @@ class TunnelsListTableViewController: NSViewController {
         return false
     }
 
+    func selectTunnel(_ tunnel: TunnelContainer) {
+        guard let tunnelIndex = tunnelsManager.index(of: tunnel) else { return }
+        selectTunnel(at: tunnelIndex)
+    }
+
     @objc func handleAddEmptyTunnelAction() {
         let tunnelEditVC = TunnelEditViewController(tunnelsManager: tunnelsManager, tunnel: nil)
         tunnelEditVC.delegate = self
