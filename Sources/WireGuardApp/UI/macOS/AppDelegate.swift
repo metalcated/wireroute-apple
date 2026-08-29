@@ -220,8 +220,8 @@ extension AppDelegate {
             let window = NSWindow(contentViewController: viewController)
             window.title = tr("macRouterOSSettingsWindowTitle")
             window.styleMask = [.titled, .closable]
-            window.setContentSize(NSSize(width: 650, height: 480))
-            window.setFrameAutosaveName(NSWindow.FrameAutosaveName("RouterOSSettingsWindow"))
+            window.setContentSize(NSSize(width: 670, height: 650))
+            window.setFrameAutosaveName(NSWindow.FrameAutosaveName("WireRouteSettingsWindow"))
             window.isReleasedWhenClosed = false
             routerOSSettingsWindowObject = window
         }

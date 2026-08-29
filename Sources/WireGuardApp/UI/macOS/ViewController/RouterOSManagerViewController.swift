@@ -1712,6 +1712,7 @@ enum RouterOSPeerDefaultsStore {
 
 @MainActor
 final class RouterOSSettingsViewController: NSViewController {
+    private let statusIconPopUp = NSPopUpButton()
     private let endpointField = NSTextField()
     private let dnsField = NSTextField()
     private let routesField = NSTextField()
@@ -1727,14 +1728,17 @@ final class RouterOSSettingsViewController: NSViewController {
     override func loadView() {
         let view = NSView()
 
-        let titleLabel = NSTextField(labelWithString: tr("macRouterOSSettingsTitle"))
+        let titleLabel = NSTextField(labelWithString: tr("macSettingsTitle"))
         titleLabel.font = .systemFont(ofSize: 25, weight: .bold)
-        let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSSettingsSubtitle"))
+        let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macSettingsSubtitle"))
         subtitleLabel.font = .systemFont(ofSize: 13)
         subtitleLabel.textColor = .secondaryLabelColor
 
         configureFields()
-        let form = makeForm()
+        let appearanceForm = makeAppearanceForm()
+        let peerDefaultsForm = makePeerDefaultsForm()
+        let appearanceTitle = sectionTitle(tr("macSettingsMenuBarTitle"))
+        let peerDefaultsTitle = sectionTitle(tr("macRouterOSSettingsTitle"))
 
         let restoreButton = NSButton(
             title: tr("macRouterOSRestoreDefaults"),
@@ -1749,7 +1753,7 @@ final class RouterOSSettingsViewController: NSViewController {
         )
         cancelButton.bezelStyle = .rounded
         let saveButton = NSButton(
-            title: tr("macRouterOSSaveDefaults"),
+            title: tr("macSettingsSave"),
             target: self,
             action: #selector(saveClicked)
         )
@@ -1767,13 +1771,25 @@ final class RouterOSSettingsViewController: NSViewController {
         buttonRow.alignment = .centerY
         buttonRow.spacing = 10
 
-        let stack = NSStackView(views: [titleLabel, subtitleLabel, form, errorLabel, buttonRow])
+        let stack = NSStackView(views: [
+            titleLabel,
+            subtitleLabel,
+            appearanceTitle,
+            appearanceForm,
+            peerDefaultsTitle,
+            peerDefaultsForm,
+            errorLabel,
+            buttonRow
+        ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.setCustomSpacing(4, after: titleLabel)
         stack.setCustomSpacing(20, after: subtitleLabel)
-        stack.setCustomSpacing(16, after: form)
+        stack.setCustomSpacing(6, after: appearanceTitle)
+        stack.setCustomSpacing(18, after: appearanceForm)
+        stack.setCustomSpacing(6, after: peerDefaultsTitle)
+        stack.setCustomSpacing(16, after: peerDefaultsForm)
 
         view.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -1783,7 +1799,8 @@ final class RouterOSSettingsViewController: NSViewController {
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -22),
             subtitleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            form.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            appearanceForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            peerDefaultsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             errorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             buttonRow.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
@@ -1792,6 +1809,16 @@ final class RouterOSSettingsViewController: NSViewController {
     }
 
     private func configureFields() {
+        statusIconPopUp.removeAllItems()
+        for style in StatusItemIconStyle.allCases {
+            statusIconPopUp.addItem(withTitle: style.localizedTitle)
+            guard let item = statusIconPopUp.lastItem else { continue }
+            item.representedObject = style.rawValue
+            item.image = StatusItemController.previewImage(for: style)
+        }
+        statusIconPopUp.controlSize = .large
+        statusIconPopUp.font = .systemFont(ofSize: 14)
+
         endpointField.placeholderString = tr("macRouterOSEndpointPlaceholder")
         dnsField.placeholderString = tr("macRouterOSDNSPlaceholder")
         routesField.placeholderString = tr("macRouterOSRoutesPlaceholder")
@@ -1804,6 +1831,10 @@ final class RouterOSSettingsViewController: NSViewController {
     }
 
     private func loadStoredDefaults() {
+        let iconStyle = StatusItemIconPreference.load()
+        if let styleIndex = StatusItemIconStyle.allCases.firstIndex(of: iconStyle) {
+            statusIconPopUp.selectItem(at: styleIndex)
+        }
         let peerDefaults = RouterOSPeerDefaultsStore.load()
         endpointField.stringValue = peerDefaults.endpointAddress ?? ""
         dnsField.stringValue = peerDefaults.dnsServers.joined(separator: ", ")
@@ -1811,14 +1842,39 @@ final class RouterOSSettingsViewController: NSViewController {
         keepaliveField.integerValue = Int(peerDefaults.persistentKeepalive)
     }
 
-    private func makeForm() -> NSView {
-        let card = AppearanceAwareLayerView()
-        card.wantsLayer = true
-        card.adaptiveBackgroundColor = .controlBackgroundColor
-        card.adaptiveBorderColor = .separatorColor
-        card.layer?.cornerRadius = 14
-        card.layer?.cornerCurve = .continuous
-        card.layer?.borderWidth = 1
+    private func makeAppearanceForm() -> NSView {
+        let card = makeCard()
+        let helpLabel = NSTextField(wrappingLabelWithString: tr("macStatusIconHelp"))
+        helpLabel.font = .systemFont(ofSize: 11)
+        helpLabel.textColor = .secondaryLabelColor
+        let valueStack = NSStackView(views: [statusIconPopUp, helpLabel])
+        valueStack.orientation = .vertical
+        valueStack.alignment = .leading
+        valueStack.spacing = 4
+
+        let grid = NSGridView(views: [
+            [fieldLabel(tr("macStatusIconLabel")), valueStack]
+        ])
+        grid.columnSpacing = 15
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .fill
+        grid.row(at: 0).yPlacement = .top
+
+        card.addSubview(grid)
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            grid.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            grid.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            grid.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            statusIconPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 250),
+            helpLabel.widthAnchor.constraint(equalTo: valueStack.widthAnchor)
+        ])
+        return card
+    }
+
+    private func makePeerDefaultsForm() -> NSView {
+        let card = makeCard()
 
         let endpointStack = valueStack(
             field: endpointField,
@@ -1858,6 +1914,17 @@ final class RouterOSSettingsViewController: NSViewController {
         return card
     }
 
+    private func makeCard() -> AppearanceAwareLayerView {
+        let card = AppearanceAwareLayerView()
+        card.wantsLayer = true
+        card.adaptiveBackgroundColor = .controlBackgroundColor
+        card.adaptiveBorderColor = .separatorColor
+        card.layer?.cornerRadius = 14
+        card.layer?.cornerCurve = .continuous
+        card.layer?.borderWidth = 1
+        return card
+    }
+
     private func valueStack(field: NSTextField, help: String) -> NSStackView {
         let helpLabel = NSTextField(wrappingLabelWithString: help)
         helpLabel.font = .systemFont(ofSize: 11)
@@ -1877,11 +1944,19 @@ final class RouterOSSettingsViewController: NSViewController {
         return label
     }
 
+    private func sectionTitle(_ value: String) -> NSTextField {
+        let label = NSTextField(labelWithString: value)
+        label.font = .systemFont(ofSize: 14, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        return label
+    }
+
     @objc private func restoreDefaultsClicked() {
         endpointField.stringValue = ""
         dnsField.stringValue = ""
         routesField.stringValue = ""
         keepaliveField.integerValue = Int(RouterOSPeerDefaults.standard.persistentKeepalive)
+        statusIconPopUp.selectItem(at: StatusItemIconStyle.allCases.firstIndex(of: .adaptive) ?? 0)
         errorLabel.isHidden = true
     }
 
@@ -1903,6 +1978,13 @@ final class RouterOSSettingsViewController: NSViewController {
                 persistentKeepalive: persistentKeepalive
             )
             RouterOSPeerDefaultsStore.save(peerDefaults)
+            let selectedIndex = statusIconPopUp.indexOfSelectedItem
+            guard StatusItemIconStyle.allCases.indices.contains(selectedIndex) else {
+                return
+            }
+            let iconStyle = StatusItemIconStyle.allCases[selectedIndex]
+            StatusItemIconPreference.save(iconStyle)
+            (NSApp.delegate as? AppDelegate)?.statusItemController?.setIconStyle(iconStyle)
             errorLabel.isHidden = true
             view.window?.performClose(nil)
         } catch {
