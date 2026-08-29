@@ -2873,10 +2873,10 @@ final class RouterOSSettingsViewController: NSViewController {
         dnsField.stringValue = ""
         routesField.stringValue = ""
         keepaliveField.integerValue = Int(RouterOSPeerDefaults.standard.persistentKeepalive)
-        if let systemItem = appearancePopUp.itemArray.first(where: {
-            $0.representedObject as? String == WireRouteAppearance.system.rawValue
+        if let blueNordicItem = appearancePopUp.itemArray.first(where: {
+            $0.representedObject as? String == WireRouteAppearance.blueNordic.rawValue
         }) {
-            appearancePopUp.select(systemItem)
+            appearancePopUp.select(blueNordicItem)
         }
         statusIconPopUp.selectItem(at: StatusItemIconStyle.allCases.firstIndex(of: .adaptive) ?? 0)
         errorLabel.isHidden = true

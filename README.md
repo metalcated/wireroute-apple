@@ -8,6 +8,16 @@ The project currently contains the inherited iOS and macOS applications, their p
 
 WireRoute is intended to remain free and open source under the MIT License.
 
+## Activity monitoring
+
+WireRoute records per-profile connection activity in a local SQLite database inside the shared app container. The packet-tunnel extension samples WireGuard's local transfer counters while a tunnel is active, so history continues when the main app is not open.
+
+- Live download and upload rates are available on iOS and macOS.
+- Recent sessions include start time, duration, transferred bytes, and last-handshake status.
+- History retention can be set to 1, 7, or 30 days.
+- Completed history can be cleared per profile from an in-app confirmation modal.
+- Activity history does not store tunnel keys, endpoints, routes, or DNS settings and is never uploaded by WireRoute.
+
 ## Support, Privacy, and Legal
 
 - [Secure RouterOS WireGuard setup](ROUTEROS_SETUP.md)

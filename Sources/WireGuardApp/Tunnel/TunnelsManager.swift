@@ -393,6 +393,7 @@ class TunnelsManager {
     ) {
         let tunnelProviderManager = tunnel.tunnelProvider
         let protocolConfiguration = tunnelProviderManager.protocolConfiguration as? NETunnelProviderProtocol
+        let activityProfileIdentifier = tunnel.activityProfileIdentifier
         #if os(macOS)
         let shouldDestroyConfigurationReference = tunnel.isTunnelAvailableToUser
         #elseif os(iOS)
@@ -410,6 +411,13 @@ class TunnelsManager {
             }
             if shouldDestroyConfigurationReference {
                 protocolConfiguration?.destroyConfigurationReference()
+            }
+            do {
+                try WireRouteActivityStore().clearAllHistory(
+                    profileIdentifier: activityProfileIdentifier
+                )
+            } catch {
+                wg_log(.error, message: "Remove: Clearing activity history failed: \(error.localizedDescription)")
             }
             if let self, let index = self.tunnels.firstIndex(of: tunnel) {
                 self.tunnels.remove(at: index)
@@ -806,6 +814,13 @@ class TunnelContainer: NSObject {
             return .profile
         }
         return (try? tunnelProtocol.wireRouteDNSProtectionPolicy()) ?? .profile
+    }
+
+    var activityProfileIdentifier: UUID {
+        guard let tunnelProtocol = tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol else {
+            return WireRouteProfileIdentifier.derived(from: name)
+        }
+        return tunnelProtocol.wireRouteActivityProfileIdentifier
     }
 
     var onDemandOption: ActivateOnDemandOption {

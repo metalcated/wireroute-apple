@@ -1,6 +1,6 @@
 # WireRoute Privacy Policy
 
-Effective date: August 28, 2026
+Effective date: August 29, 2026
 
 This policy describes the data practices of the WireRoute applications for iOS and macOS.
 
@@ -17,12 +17,15 @@ WireRoute stores information needed to provide the features you choose:
 - Tunnel profiles, routing preferences, on-demand rules, endpoints, DNS servers, public keys, and sensitive tunnel configuration material
 - Sensitive tunnel configuration material in Apple Keychain and system-managed VPN preferences
 - Local diagnostic logs in the shared app container
+- Local per-profile connection activity, including session times, byte counts, transfer rates, and last-handshake times
 - Wi-Fi network names used for optional on-demand rules
 - On macOS, optional RouterOS connection details, credentials, trusted certificate pins, peer defaults, and recoverable client configuration material
 
 RouterOS passwords, trusted certificate data, and recoverable client configuration material are stored in Apple Keychain. Non-secret RouterOS peer defaults are stored in local application preferences.
 
 Diagnostic logs can contain network interface names, endpoint hostnames or addresses, public keys, handshake status, and error details. Logs stay on the device unless you explicitly export or share them.
+
+Activity history is written by the packet-tunnel extension to a local SQLite database in the shared app container. It does not contain tunnel keys, endpoints, routes, DNS settings, or packet contents. WireRoute does not upload activity history. You can choose a 1-day, 7-day, or 30-day retention period and clear completed history for an individual profile from its Activity screen.
 
 ## Camera and Wi-Fi Information
 
@@ -48,7 +51,8 @@ If you choose to contact the project through GitHub, the information you submit 
 
 ## Your Choices and Data Removal
 
-- Delete tunnel profiles in WireRoute when you no longer need them.
+- Delete tunnel profiles in WireRoute when you no longer need them. Deleting a profile also removes its local activity history.
+- Clear completed connection history from a profile's Activity screen and choose how long new history is retained.
 - Delete exported configuration and log files from the destination where you saved them.
 - On macOS, saved RouterOS credentials and certificate pins can be removed with Keychain Access. Search for WireRoute entries and review each item before deleting it.
 - Uninstalling the app removes its ordinary app container according to Apple platform behavior. Keychain items can persist independently and may need to be removed separately.

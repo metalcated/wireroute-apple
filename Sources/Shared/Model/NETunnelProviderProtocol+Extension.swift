@@ -9,6 +9,8 @@ private enum WireRouteProviderMetadataKey {
     static let splitAllowedIPs = "WireRouteSplitAllowedIPs"
     static let blockedAddressFamilies = "WireRouteBlockedAddressFamilies"
     static let dnsProtection = "WireRouteDNSProtection"
+    static let activityProfileIdentifier = "WireRouteActivityProfileIdentifier"
+    static let activityProfileName = "WireRouteActivityProfileName"
 }
 
 private enum WireRouteDNSProtectionMetadataKey {
@@ -54,6 +56,11 @@ extension NETunnelProviderProtocol {
         #endif
 
         synchronizeWireRouteRoutingMetadata(with: tunnelConfiguration)
+        synchronizeWireRouteActivityMetadata(
+            name: name,
+            tunnelConfiguration: tunnelConfiguration,
+            previouslyFrom: old
+        )
 
         let endpoints = tunnelConfiguration.peers.compactMap { $0.endpoint }
         if endpoints.count == 1 {
@@ -147,6 +154,42 @@ extension NETunnelProviderProtocol {
                 WireRouteDNSProtectionMetadataKey.bootstrapServers: policy.bootstrapServers
             ]
         }
+        providerConfiguration = metadata
+    }
+
+    var wireRouteActivityProfileIdentifier: UUID {
+        if let rawIdentifier = providerConfiguration?[WireRouteProviderMetadataKey.activityProfileIdentifier]
+            as? String,
+           let identifier = UUID(uuidString: rawIdentifier) {
+            return identifier
+        }
+        let stableValue = asTunnelConfiguration()?.interface.privateKey.publicKey.base64Key
+            ?? serverAddress
+            ?? "WireRoute"
+        return WireRouteProfileIdentifier.derived(from: stableValue)
+    }
+
+    var wireRouteActivityProfileName: String {
+        providerConfiguration?[WireRouteProviderMetadataKey.activityProfileName] as? String
+            ?? "WireRoute"
+    }
+
+    private func synchronizeWireRouteActivityMetadata(
+        name: String,
+        tunnelConfiguration: TunnelConfiguration,
+        previouslyFrom old: NEVPNProtocol?
+    ) {
+        var metadata = providerConfiguration ?? [:]
+        if metadata[WireRouteProviderMetadataKey.activityProfileIdentifier] == nil {
+            let oldStableValue = (old as? NETunnelProviderProtocol)?
+                .asTunnelConfiguration()?
+                .interface.privateKey.publicKey.base64Key
+            let stableValue = oldStableValue ?? tunnelConfiguration.interface.privateKey.publicKey.base64Key
+            metadata[WireRouteProviderMetadataKey.activityProfileIdentifier] = WireRouteProfileIdentifier
+                .derived(from: stableValue)
+                .uuidString
+        }
+        metadata[WireRouteProviderMetadataKey.activityProfileName] = name
         providerConfiguration = metadata
     }
 

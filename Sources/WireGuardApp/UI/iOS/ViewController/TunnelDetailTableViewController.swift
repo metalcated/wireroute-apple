@@ -538,6 +538,7 @@ class TunnelDetailTableViewController: UITableViewController {
 
     private enum Section {
         case status
+        case activity
         case routing
         case dnsProtection
         case interface
@@ -625,6 +626,7 @@ class TunnelDetailTableViewController: UITableViewController {
     private func loadSections() {
         sections.removeAll()
         sections.append(.status)
+        sections.append(.activity)
         sections.append(.routing)
         sections.append(.dnsProtection)
         sections.append(.interface)
@@ -822,6 +824,8 @@ extension TunnelDetailTableViewController {
         switch sections[section] {
         case .status:
             return 1
+        case .activity:
+            return 1
         case .routing:
             return 1
         case .dnsProtection:
@@ -841,6 +845,8 @@ extension TunnelDetailTableViewController {
         switch sections[section] {
         case .status:
             return tr("tunnelSectionTitleStatus")
+        case .activity:
+            return tr("activityTitle")
         case .routing:
             return tr("tunnelSectionTitleRouting")
         case .dnsProtection:
@@ -860,6 +866,11 @@ extension TunnelDetailTableViewController {
         switch sections[indexPath.section] {
         case .status:
             return statusCell(for: tableView, at: indexPath)
+        case .activity:
+            let cell: ChevronCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.message = tr("activityOpenMonitor")
+            cell.detailMessage = tr("activityOpenMonitorDescription")
+            return cell
         case .routing:
             return routingCell(for: tableView, at: indexPath)
         case .dnsProtection:
@@ -1154,6 +1165,9 @@ extension TunnelDetailTableViewController {
         if case .dnsProtection = sections[indexPath.section] {
             return indexPath
         }
+        if case .activity = sections[indexPath.section] {
+            return indexPath
+        }
         if case .onDemand = sections[indexPath.section],
             case .ssid = TunnelDetailTableViewController.onDemandFields[indexPath.row] {
             return indexPath
@@ -1164,6 +1178,11 @@ extension TunnelDetailTableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         if case .dnsProtection = sections[indexPath.section] {
             presentDNSProtection()
+        } else if case .activity = sections[indexPath.section] {
+            navigationController?.pushViewController(
+                ActivityMonitorViewController(tunnel: tunnel),
+                animated: true
+            )
         } else if case .onDemand = sections[indexPath.section],
             case .ssid = TunnelDetailTableViewController.onDemandFields[indexPath.row] {
             let ssidDetailVC = SSIDOptionDetailTableViewController(title: onDemandViewModel.ssidOption.localizedUIString, ssids: onDemandViewModel.selectedSSIDs)

@@ -23,7 +23,7 @@ enum WireRouteAppearancePreference {
     static func load(from defaults: UserDefaults = .standard) -> WireRouteAppearance {
         guard let rawValue = defaults.string(forKey: key),
               let appearance = WireRouteAppearance(rawValue: rawValue) else {
-            return .system
+            return .blueNordic
         }
         return appearance
     }

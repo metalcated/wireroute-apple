@@ -513,7 +513,7 @@
 "macSettingsThemeLabel" = "Theme";
 "macSettingsThemeSystem" = "System";
 "macSettingsThemeBlueNordic" = "Blue Nordic";
-"macSettingsThemeHelp" = "System follows macOS. Blue Nordic always uses a dark navy interface.";
+"macSettingsThemeHelp" = "Blue Nordic is the default dark navy interface. System follows macOS.";
 "macSettingsMenuBarIconLabel" = "Menu bar icon";
 "macSettingsMenuBarTitle" = "Menu Bar";
 "macSettingsSave" = "Save Changes";
@@ -716,6 +716,40 @@
 "dnsPresetGoogleDescription" = "General-purpose encrypted DNS.";
 "dnsPresetCustom" = "Custom";
 "dnsPresetCustomDescription" = "Enter any compatible HTTPS resolver endpoint.";
+
+// WireRoute activity monitor
+
+"activityTitle" = "Activity";
+"activityIntro" = "See live transfer rates and recent connection history for this profile. Activity stays on this device.";
+"activityOpenMonitor" = "Open Activity Monitor";
+"activityOpenMonitorDescription" = "Live traffic and connection history";
+"activityDownload" = "Download";
+"activityUpload" = "Upload";
+"activitySessionTotal" = "Session total";
+"activityLastHandshake" = "Last handshake";
+"activityRecentConnections" = "Recent connections";
+"activityHistoryButton" = "History…";
+"activityWaitingForTraffic" = "Connect this profile to begin recording traffic.";
+"activityRecordingDescription" = "Recording this connection in the private WireRoute app container.";
+"activityInactiveDescription" = "This profile is inactive. Previous connections remain available below.";
+"activityUnavailableDescription" = "Activity history is unavailable because the shared app container could not be opened.";
+"activityRecordingShort" = "Recording this connection";
+"activityInactiveShort" = "Previous connection activity";
+"activityUnavailableShort" = "Activity history unavailable";
+"activityNoHistory" = "No connection history yet.";
+"activityNoHandshake" = "No handshake";
+"activityLessThanMinute" = "<1m";
+"activityKeepHistory" = "Keep history";
+"activityRetentionOneDay" = "1 day";
+"activityRetentionSevenDays" = "7 days";
+"activityRetentionThirtyDays" = "30 days";
+"activityClearHistory" = "Clear previous activity…";
+"activityClearHistoryTitle" = "Clear previous activity?";
+"activityClearHistoryMessage" = "WireRoute will remove completed connection history for this profile. The current connection will continue recording.";
+"activityClear" = "Clear Activity";
+"activityCancel" = "Cancel";
+"activityDone" = "Done";
+"activityChartAccessibility" = "Download and upload transfer rates over the past hour";
 
 // Mac alert
 

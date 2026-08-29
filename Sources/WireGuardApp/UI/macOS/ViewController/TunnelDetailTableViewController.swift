@@ -646,6 +646,7 @@ class TunnelDetailTableViewController: NSViewController {
         label.textColor = .secondaryLabelColor
         return label
     }()
+    private lazy var activityDashboard = WireRouteActivityDashboardView(tunnel: tunnel)
 
     let tunnelsManager: TunnelsManager
     let tunnel: TunnelContainer
@@ -732,6 +733,10 @@ class TunnelDetailTableViewController: NSViewController {
         connectionButton.action = #selector(handleToggleActiveStatusAction)
         dnsProtectionButton.target = self
         dnsProtectionButton.action = #selector(dnsProtectionClicked)
+        activityDashboard.onOpenHistory = { [weak self] in
+            guard let self else { return }
+            self.presentAsSheet(ActivityMonitorViewController(tunnel: self.tunnel))
+        }
 
         let clipView = NSClipView()
         clipView.documentView = tableView
@@ -800,10 +805,12 @@ class TunnelDetailTableViewController: NSViewController {
 
         let containerView = NSView()
         containerView.addSubview(heroCard)
+        containerView.addSubview(activityDashboard)
         containerView.addSubview(technicalDetailsLabel)
         containerView.addSubview(box)
         containerView.addSubview(scrollView)
         heroCard.translatesAutoresizingMaskIntoConstraints = false
+        activityDashboard.translatesAutoresizingMaskIntoConstraints = false
         technicalDetailsLabel.translatesAutoresizingMaskIntoConstraints = false
         box.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -828,7 +835,10 @@ class TunnelDetailTableViewController: NSViewController {
             heroCard.topAnchor.constraint(equalTo: containerView.topAnchor),
             heroCard.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             heroCard.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            technicalDetailsLabel.topAnchor.constraint(equalTo: heroCard.bottomAnchor, constant: 18),
+            activityDashboard.topAnchor.constraint(equalTo: heroCard.bottomAnchor, constant: 14),
+            activityDashboard.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            activityDashboard.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            technicalDetailsLabel.topAnchor.constraint(equalTo: activityDashboard.bottomAnchor, constant: 18),
             technicalDetailsLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 4),
             box.topAnchor.constraint(equalTo: technicalDetailsLabel.bottomAnchor, constant: 8),
             box.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
@@ -842,11 +852,15 @@ class TunnelDetailTableViewController: NSViewController {
 
         NSLayoutConstraint.activate([
             containerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 500),
-            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 480)
+            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 700)
         ])
 
         view = containerView
         updateDashboard()
+        activityDashboard.update(
+            configuration: tunnel.tunnelConfiguration,
+            isActive: tunnel.status == .active
+        )
     }
 
     func updateTableViewModelRowsBySection() {
@@ -1054,6 +1068,11 @@ class TunnelDetailTableViewController: NSViewController {
 
     func applyTunnelConfiguration(tunnelConfiguration: TunnelConfiguration) {
         // Incorporates changes from tunnelConfiguation. Ignores any changes in peer ordering.
+
+        activityDashboard.update(
+            configuration: tunnelConfiguration,
+            isActive: tunnel.status == .active
+        )
 
         let tableView = self.tableView
 
