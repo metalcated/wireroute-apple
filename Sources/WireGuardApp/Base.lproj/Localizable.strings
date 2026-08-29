@@ -502,6 +502,12 @@
 "macRouterOSSettingsWindowTitle" = "WireRoute Settings";
 "macSettingsTitle" = "WireRoute Settings";
 "macSettingsSubtitle" = "Choose how WireRoute appears and prefill new RouterOS client profiles.";
+"macSettingsAppearanceTitle" = "Appearance";
+"macSettingsThemeLabel" = "Theme";
+"macSettingsThemeSystem" = "System";
+"macSettingsThemeBlueNordic" = "Blue Nordic";
+"macSettingsThemeHelp" = "System follows macOS. Blue Nordic always uses a dark navy interface.";
+"macSettingsMenuBarIconLabel" = "Menu bar icon";
 "macSettingsMenuBarTitle" = "Menu Bar";
 "macSettingsSave" = "Save Changes";
 "macStatusIconLabel" = "Icon";

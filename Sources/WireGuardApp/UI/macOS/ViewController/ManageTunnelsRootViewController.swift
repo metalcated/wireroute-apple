@@ -3,6 +3,115 @@
 
 import Cocoa
 
+enum WireRouteAppearance: String, CaseIterable {
+    case system
+    case blueNordic
+
+    var localizedTitle: String {
+        switch self {
+        case .system:
+            return tr("macSettingsThemeSystem")
+        case .blueNordic:
+            return tr("macSettingsThemeBlueNordic")
+        }
+    }
+}
+
+enum WireRouteAppearancePreference {
+    private static let key = "WireRoute.Appearance"
+
+    static func load(from defaults: UserDefaults = .standard) -> WireRouteAppearance {
+        guard let rawValue = defaults.string(forKey: key),
+              let appearance = WireRouteAppearance(rawValue: rawValue) else {
+            return .system
+        }
+        return appearance
+    }
+
+    static func save(_ appearance: WireRouteAppearance, to defaults: UserDefaults = .standard) {
+        defaults.set(appearance.rawValue, forKey: key)
+    }
+}
+
+extension Notification.Name {
+    static let wireRouteAppearanceDidChange = Notification.Name("WireRouteAppearanceDidChange")
+}
+
+@MainActor
+enum WireRouteTheme {
+    enum Surface {
+        case canvas
+        case sidebar
+        case surface
+        case raised
+    }
+
+    private(set) static var appearance = WireRouteAppearancePreference.load()
+
+    static var isBlueNordic: Bool {
+        return appearance == .blueNordic
+    }
+
+    static var accentColor: NSColor {
+        return isBlueNordic ? blueNordicPrimary : .systemBlue
+    }
+
+    static func applyStoredPreference() {
+        apply(WireRouteAppearancePreference.load(), persist: false)
+    }
+
+    static func apply(_ newAppearance: WireRouteAppearance, persist: Bool = true) {
+        appearance = newAppearance
+        if persist {
+            WireRouteAppearancePreference.save(newAppearance)
+        }
+        NSApp.appearance = isBlueNordic ? NSAppearance(named: .darkAqua) : nil
+        for window in NSApp.windows {
+            apply(to: window)
+        }
+        NotificationCenter.default.post(name: .wireRouteAppearanceDidChange, object: newAppearance)
+    }
+
+    static func apply(to window: NSWindow) {
+        window.backgroundColor = isBlueNordic ? color(for: .canvas) : .windowBackgroundColor
+        if let contentView = window.contentView {
+            refresh(contentView)
+        }
+    }
+
+    static func refresh(_ view: NSView) {
+        view.needsDisplay = true
+        view.needsLayout = true
+        for subview in view.subviews {
+            refresh(subview)
+        }
+    }
+
+    static func color(for surface: Surface) -> NSColor {
+        switch surface {
+        case .canvas:
+            return blueNordicCanvas
+        case .sidebar:
+            return blueNordicSidebar
+        case .surface:
+            return blueNordicSurface
+        case .raised:
+            return blueNordicRaised
+        }
+    }
+
+    static var borderColor: NSColor {
+        return blueNordicBorder
+    }
+
+    private static let blueNordicCanvas = NSColor(srgbRed: 0x11 / 255, green: 0x1b / 255, blue: 0x2a / 255, alpha: 1)
+    private static let blueNordicSidebar = NSColor(srgbRed: 0x10 / 255, green: 0x1a / 255, blue: 0x28 / 255, alpha: 1)
+    private static let blueNordicSurface = NSColor(srgbRed: 0x18 / 255, green: 0x26 / 255, blue: 0x38 / 255, alpha: 1)
+    private static let blueNordicRaised = NSColor(srgbRed: 0x21 / 255, green: 0x32 / 255, blue: 0x48 / 255, alpha: 1)
+    private static let blueNordicBorder = NSColor(srgbRed: 0x35 / 255, green: 0x4a / 255, blue: 0x62 / 255, alpha: 1)
+    private static let blueNordicPrimary = NSColor(srgbRed: 0x4c / 255, green: 0x83 / 255, blue: 0xf3 / 255, alpha: 1)
+}
+
 @MainActor
 final class AppearanceAwareLayerView: NSView {
     var adaptiveBackgroundColor: NSColor? {
@@ -62,7 +171,7 @@ final class AppearanceAwareLayerScrollView: NSScrollView {
 }
 
 @MainActor
-final class AppearanceAwareMaterialView: NSVisualEffectView {
+final class AppearanceAwareMaterialView: NSView {
     var adaptiveBorderColor: NSColor? {
         didSet { needsDisplay = true }
     }
@@ -70,12 +179,36 @@ final class AppearanceAwareMaterialView: NSVisualEffectView {
         didSet { needsDisplay = true }
     }
 
-    init(material: NSVisualEffectView.Material, blendingMode: NSVisualEffectView.BlendingMode) {
+    private let materialView = NSVisualEffectView()
+    private let nordicSurface: WireRouteTheme.Surface
+
+    init(
+        material: NSVisualEffectView.Material,
+        blendingMode: NSVisualEffectView.BlendingMode,
+        nordicSurface: WireRouteTheme.Surface = .surface
+    ) {
+        self.nordicSurface = nordicSurface
         super.init(frame: .zero)
-        self.material = material
-        self.blendingMode = blendingMode
-        state = .followsWindowActiveState
         wantsLayer = true
+
+        materialView.material = material
+        materialView.blendingMode = blendingMode
+        materialView.state = .followsWindowActiveState
+        addSubview(materialView)
+        materialView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            materialView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            materialView.topAnchor.constraint(equalTo: topAnchor),
+            materialView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
+        updateTheme()
     }
 
     required init?(coder: NSCoder) {
@@ -88,14 +221,30 @@ final class AppearanceAwareMaterialView: NSVisualEffectView {
 
     override func updateLayer() {
         super.updateLayer()
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.borderColor = adaptiveBorderColor?
+        if WireRouteTheme.isBlueNordic {
+            layer?.backgroundColor = WireRouteTheme.color(for: nordicSurface).cgColor
+            layer?.borderColor = WireRouteTheme.borderColor
                 .withAlphaComponent(adaptiveBorderAlpha).cgColor
+        } else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                layer?.borderColor = adaptiveBorderColor?
+                    .withAlphaComponent(adaptiveBorderAlpha).cgColor
+            }
         }
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        updateTheme()
+    }
+
+    @objc private func themeDidChange() {
+        updateTheme()
+    }
+
+    private func updateTheme() {
+        materialView.isHidden = WireRouteTheme.isBlueNordic
         needsDisplay = true
     }
 }
@@ -129,10 +278,11 @@ class ManageTunnelsRootViewController: NSViewController {
     }
 
     override func loadView() {
-        let backgroundView = NSVisualEffectView()
-        backgroundView.material = .underWindowBackground
-        backgroundView.blendingMode = .behindWindow
-        backgroundView.state = .followsWindowActiveState
+        let backgroundView = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
         view = backgroundView
 
         let horizontalSpacing: CGFloat = 22

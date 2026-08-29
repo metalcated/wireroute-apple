@@ -18,6 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var onAppDeactivation: (() -> Void)?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        WireRouteTheme.applyStoredPreference()
         // To workaround a possible AppKit bug that causes the main menu to become unresponsive sometimes
         // (especially when launched through Xcode) if we call setActivationPolicy(.regular) in
         // in applicationDidFinishLaunching, we set it to .prohibited here.
@@ -223,6 +224,7 @@ extension AppDelegate {
             window.setContentSize(NSSize(width: 670, height: 650))
             window.setFrameAutosaveName(NSWindow.FrameAutosaveName("WireRouteSettingsWindow"))
             window.isReleasedWhenClosed = false
+            WireRouteTheme.apply(to: window)
             routerOSSettingsWindowObject = window
         }
         setDockIconAndMainMenuVisibility(isVisible: true) { [weak routerOSSettingsWindowObject] in
@@ -251,6 +253,7 @@ extension AppDelegate: StatusMenuWindowDelegate {
             window.minSize = NSSize(width: 900, height: 580)
             window.titlebarAppearsTransparent = true
             window.setFrameAutosaveName(NSWindow.FrameAutosaveName("ManageTunnelsWindow")) // Auto-save window position and size
+            WireRouteTheme.apply(to: window)
             manageTunnelsWindowObject = window
             tunnelsTracker?.manageTunnelsRootVC = manageTunnelsRootVC
         }

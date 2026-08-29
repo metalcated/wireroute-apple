@@ -14,7 +14,7 @@ private final class ProfileTableRowView: NSTableRowView {
 
         let selectionRect = bounds.insetBy(dx: 0, dy: 2)
         let selectionPath = NSBezierPath(roundedRect: selectionRect, xRadius: 11, yRadius: 11)
-        let accentColor = NSColor.controlAccentColor
+        let accentColor = WireRouteTheme.accentColor
         let fillColor = isEmphasized
             ? accentColor.withAlphaComponent(0.18)
             : NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.42)
@@ -71,6 +71,13 @@ private final class SidebarActionButton: NSButton {
         trailingImageView.contentTintColor = .tertiaryLabelColor
         trailingImageView.imageScaling = .scaleProportionallyDown
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
+
         addSubview(leadingImageView)
         addSubview(buttonTitleLabel)
         addSubview(trailingImageView)
@@ -109,8 +116,8 @@ private final class SidebarActionButton: NSButton {
         let fillAlpha: CGFloat = isDestinationSelected ? 0.18 : (isPointerInside ? 0.17 : 0.10)
         let borderAlpha: CGFloat = isDestinationSelected ? 0.48 : (isPointerInside ? 0.48 : 0.30)
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(fillAlpha).cgColor
-            layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(borderAlpha).cgColor
+            layer?.backgroundColor = WireRouteTheme.accentColor.withAlphaComponent(fillAlpha).cgColor
+            layer?.borderColor = WireRouteTheme.accentColor.withAlphaComponent(borderAlpha).cgColor
         }
         layer?.borderWidth = 1
     }
@@ -121,10 +128,15 @@ private final class SidebarActionButton: NSButton {
         needsDisplay = true
     }
 
+    @objc private func themeDidChange() {
+        updateSymbolColors()
+        needsDisplay = true
+    }
+
     private func updateSymbolColors() {
         let isHighlighted = isDestinationSelected || isPointerInside
-        leadingImageView.contentTintColor = isHighlighted ? .systemBlue : .secondaryLabelColor
-        trailingImageView.contentTintColor = isHighlighted ? .systemBlue : .tertiaryLabelColor
+        leadingImageView.contentTintColor = isHighlighted ? WireRouteTheme.accentColor : .secondaryLabelColor
+        trailingImageView.contentTintColor = isHighlighted ? WireRouteTheme.accentColor : .tertiaryLabelColor
     }
 
     override func updateTrackingAreas() {
@@ -278,7 +290,11 @@ class TunnelsListTableViewController: NSViewController {
         buttonBar.spacing = 8
         buttonBar.distribution = .fillEqually
 
-        let containerView = AppearanceAwareMaterialView(material: .sidebar, blendingMode: .withinWindow)
+        let containerView = AppearanceAwareMaterialView(
+            material: .sidebar,
+            blendingMode: .withinWindow,
+            nordicSurface: .sidebar
+        )
         containerView.adaptiveBorderColor = .separatorColor
         containerView.adaptiveBorderAlpha = 0.45
         containerView.layer?.cornerRadius = 16

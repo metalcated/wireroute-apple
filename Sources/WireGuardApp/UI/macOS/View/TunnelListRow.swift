@@ -73,7 +73,7 @@ class TunnelListRow: NSView {
         label.drawsBackground = false
         label.alignment = .center
         label.font = .systemFont(ofSize: 10, weight: .semibold)
-        label.textColor = .systemBlue
+        label.textColor = WireRouteTheme.accentColor
         label.wantsLayer = true
         label.layer?.cornerRadius = 6
         label.layer?.cornerCurve = .continuous
@@ -88,6 +88,13 @@ class TunnelListRow: NSView {
 
     init() {
         super.init(frame: CGRect.zero)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
 
         let textStack = NSStackView(views: [nameLabel, detailLabel])
         textStack.orientation = .vertical
@@ -128,6 +135,10 @@ class TunnelListRow: NSView {
         updateRoutingModeAppearance()
     }
 
+    @objc private func themeDidChange() {
+        updateRoutingModeAppearance()
+    }
+
     static func image(for tunnel: TunnelContainer?) -> NSImage? {
         guard let tunnel = tunnel else { return nil }
         switch tunnel.status {
@@ -162,8 +173,9 @@ class TunnelListRow: NSView {
     }
 
     private func updateRoutingModeAppearance() {
+        routingModeLabel.textColor = WireRouteTheme.accentColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            routingModeLabel.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
+            routingModeLabel.layer?.backgroundColor = WireRouteTheme.accentColor.withAlphaComponent(0.12).cgColor
         }
     }
 

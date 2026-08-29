@@ -164,7 +164,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
             systemSymbolName: "lock.shield.fill",
             accessibilityDescription: tr("dnsProtectionTitle")
         )
-        iconView.contentTintColor = .systemBlue
+        iconView.contentTintColor = WireRouteTheme.accentColor
         iconView.imageScaling = .scaleProportionallyUpOrDown
 
         let titleLabel = NSTextField(labelWithString: tr("dnsProtectionTitle"))
@@ -467,7 +467,11 @@ class TunnelDetailTableViewController: NSViewController {
     }()
 
     private let heroCard: AppearanceAwareMaterialView = {
-        let box = AppearanceAwareMaterialView(material: .contentBackground, blendingMode: .withinWindow)
+        let box = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
         box.adaptiveBorderColor = .separatorColor
         box.adaptiveBorderAlpha = 0.65
         box.layer?.borderWidth = 1
@@ -477,7 +481,7 @@ class TunnelDetailTableViewController: NSViewController {
     }()
     private let identityImageView: NSImageView = {
         let imageView = NSImageView()
-        imageView.contentTintColor = .systemBlue
+        imageView.contentTintColor = WireRouteTheme.accentColor
         imageView.imageScaling = .scaleProportionallyUpOrDown
         return imageView
     }()
@@ -533,7 +537,7 @@ class TunnelDetailTableViewController: NSViewController {
     private let connectionButton: NSButton = {
         let button = NSButton(title: "", target: nil, action: nil)
         button.bezelStyle = .rounded
-        button.bezelColor = .systemBlue
+        button.bezelColor = WireRouteTheme.accentColor
         button.image = NSImage(
             systemSymbolName: "power",
             accessibilityDescription: tr("macToggleStatusButtonActivate")
@@ -576,6 +580,12 @@ class TunnelDetailTableViewController: NSViewController {
         tunnelViewModel = TunnelViewModel(tunnelConfiguration: tunnel.tunnelConfiguration)
         onDemandViewModel = ActivateOnDemandViewModel(tunnel: tunnel)
         super.init(nibName: nil, bundle: nil)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
         updateTableViewModelRowsBySection()
         updateTableViewModelRows()
         statusObservationToken = tunnel.observe(\TunnelContainer.status) { [weak self] _, _ in
@@ -604,6 +614,12 @@ class TunnelDetailTableViewController: NSViewController {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func themeDidChange() {
+        identityImageView.contentTintColor = WireRouteTheme.accentColor
+        connectionButton.bezelColor = WireRouteTheme.accentColor
+        view.needsDisplay = true
     }
 
     override func loadView() {
