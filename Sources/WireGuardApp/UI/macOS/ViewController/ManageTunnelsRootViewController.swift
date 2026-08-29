@@ -81,10 +81,7 @@ enum WireRouteTheme {
     }
 
     static func refresh(_ view: NSView) {
-        if let textField = view as? NSTextField, textField.isEditable {
-            textField.drawsBackground = true
-            textField.backgroundColor = isBlueNordic ? color(for: .inset) : .textBackgroundColor
-        }
+        (view as? WireRouteThemeField)?.updateWireRouteTheme()
         view.needsDisplay = true
         view.needsLayout = true
         for subview in view.subviews {
@@ -118,6 +115,199 @@ enum WireRouteTheme {
     private static let blueNordicRaised = NSColor(srgbRed: 0x21 / 255, green: 0x32 / 255, blue: 0x48 / 255, alpha: 1)
     private static let blueNordicBorder = NSColor(srgbRed: 0x35 / 255, green: 0x4a / 255, blue: 0x62 / 255, alpha: 1)
     private static let blueNordicPrimary = NSColor(srgbRed: 0x4c / 255, green: 0x83 / 255, blue: 0xf3 / 255, alpha: 1)
+}
+
+@MainActor
+private protocol WireRouteThemeField: AnyObject {
+    func updateWireRouteTheme()
+}
+
+@MainActor
+private enum WireRouteFieldStyle {
+    static func contentRect(for bounds: NSRect) -> NSRect {
+        return bounds.insetBy(dx: 10, dy: 4)
+    }
+
+    static func drawBackground(in bounds: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+        WireRouteTheme.color(for: .inset).setFill()
+        path.fill()
+        WireRouteTheme.borderColor.withAlphaComponent(0.85).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+}
+
+@MainActor
+private final class WireRouteTextFieldCell: NSTextFieldCell {
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        guard WireRouteTheme.isBlueNordic else {
+            return super.drawingRect(forBounds: rect)
+        }
+        return super.drawingRect(forBounds: WireRouteFieldStyle.contentRect(for: rect))
+    }
+
+    override func edit(
+        withFrame rect: NSRect,
+        in controlView: NSView,
+        editor textObj: NSText,
+        delegate: Any?,
+        event: NSEvent?
+    ) {
+        let frame = WireRouteTheme.isBlueNordic ? WireRouteFieldStyle.contentRect(for: rect) : rect
+        super.edit(withFrame: frame, in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(
+        withFrame rect: NSRect,
+        in controlView: NSView,
+        editor textObj: NSText,
+        delegate: Any?,
+        start selStart: Int,
+        length selLength: Int
+    ) {
+        let frame = WireRouteTheme.isBlueNordic ? WireRouteFieldStyle.contentRect(for: rect) : rect
+        super.select(
+            withFrame: frame,
+            in: controlView,
+            editor: textObj,
+            delegate: delegate,
+            start: selStart,
+            length: selLength
+        )
+    }
+}
+
+@MainActor
+private final class WireRouteSecureTextFieldCell: NSSecureTextFieldCell {
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        guard WireRouteTheme.isBlueNordic else {
+            return super.drawingRect(forBounds: rect)
+        }
+        return super.drawingRect(forBounds: WireRouteFieldStyle.contentRect(for: rect))
+    }
+
+    override func edit(
+        withFrame rect: NSRect,
+        in controlView: NSView,
+        editor textObj: NSText,
+        delegate: Any?,
+        event: NSEvent?
+    ) {
+        let frame = WireRouteTheme.isBlueNordic ? WireRouteFieldStyle.contentRect(for: rect) : rect
+        super.edit(withFrame: frame, in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(
+        withFrame rect: NSRect,
+        in controlView: NSView,
+        editor textObj: NSText,
+        delegate: Any?,
+        start selStart: Int,
+        length selLength: Int
+    ) {
+        let frame = WireRouteTheme.isBlueNordic ? WireRouteFieldStyle.contentRect(for: rect) : rect
+        super.select(
+            withFrame: frame,
+            in: controlView,
+            editor: textObj,
+            delegate: delegate,
+            start: selStart,
+            length: selLength
+        )
+    }
+}
+
+@MainActor
+final class WireRouteTextField: NSTextField, WireRouteThemeField {
+    convenience init() {
+        self.init(frame: .zero)
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        cell = WireRouteTextFieldCell(textCell: "")
+        configureThemeUpdates()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if WireRouteTheme.isBlueNordic {
+            WireRouteFieldStyle.drawBackground(in: bounds)
+        }
+        super.draw(dirtyRect)
+    }
+
+    func updateWireRouteTheme() {
+        isBordered = !WireRouteTheme.isBlueNordic
+        drawsBackground = !WireRouteTheme.isBlueNordic
+        backgroundColor = WireRouteTheme.isBlueNordic ? .clear : .textBackgroundColor
+        needsDisplay = true
+    }
+
+    @objc private func themeDidChange() {
+        updateWireRouteTheme()
+    }
+
+    private func configureThemeUpdates() {
+        focusRingType = .default
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
+        updateWireRouteTheme()
+    }
+}
+
+@MainActor
+final class WireRouteSecureTextField: NSSecureTextField, WireRouteThemeField {
+    convenience init() {
+        self.init(frame: .zero)
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        cell = WireRouteSecureTextFieldCell(textCell: "")
+        configureThemeUpdates()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if WireRouteTheme.isBlueNordic {
+            WireRouteFieldStyle.drawBackground(in: bounds)
+        }
+        super.draw(dirtyRect)
+    }
+
+    func updateWireRouteTheme() {
+        isBordered = !WireRouteTheme.isBlueNordic
+        drawsBackground = !WireRouteTheme.isBlueNordic
+        backgroundColor = WireRouteTheme.isBlueNordic ? .clear : .textBackgroundColor
+        needsDisplay = true
+    }
+
+    @objc private func themeDidChange() {
+        updateWireRouteTheme()
+    }
+
+    private func configureThemeUpdates() {
+        focusRingType = .default
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
+        updateWireRouteTheme()
+    }
 }
 
 @MainActor

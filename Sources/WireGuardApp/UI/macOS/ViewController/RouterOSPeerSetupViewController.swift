@@ -32,13 +32,13 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let clientPublicKey: String
 
     private let interfacePopup = NSPopUpButton()
-    private let nameField = NSTextField()
-    private let clientAddressField = NSTextField()
+    private let nameField = WireRouteTextField()
+    private let clientAddressField = WireRouteTextField()
     private let clientAddressHelpLabel = NSTextField(wrappingLabelWithString: "")
-    private let endpointField = NSTextField()
-    private let endpointPortField = NSTextField()
+    private let endpointField = WireRouteTextField()
+    private let endpointPortField = WireRouteTextField()
     private let endpointHelpLabel = NSTextField(wrappingLabelWithString: "")
-    private let dnsField = NSTextField()
+    private let dnsField = WireRouteTextField()
     private let routeModeControl = NSSegmentedControl(
         labels: [tr("macRouterOSRouteModeSplit"), tr("macRouterOSRouteModeFull")],
         trackingMode: .selectOne,
@@ -46,7 +46,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         action: nil
     )
     private let routesTextView = NSTextView()
-    private let keepaliveField = NSTextField()
+    private let keepaliveField = WireRouteTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private let reviewButton = NSButton(title: tr("macRouterOSReviewPeer"), target: nil, action: nil)
     private var lastSuggestedClientAddress: String?

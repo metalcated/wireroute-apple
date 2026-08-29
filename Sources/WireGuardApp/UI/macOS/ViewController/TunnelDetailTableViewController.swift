@@ -133,8 +133,8 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         label.textColor = .secondaryLabelColor
         return label
     }()
-    private let resolverURLField = NSTextField()
-    private let bootstrapServersField = NSTextField()
+    private let resolverURLField = WireRouteTextField()
+    private let bootstrapServersField = WireRouteTextField()
     private let resolverFieldsStack = NSStackView()
     private let errorLabel: NSTextField = {
         let label = NSTextField(wrappingLabelWithString: "")

@@ -140,10 +140,10 @@ final class RouterOSManagerViewController: NSViewController {
         }
     }
 
-    private let urlField = NSTextField()
+    private let urlField = WireRouteTextField()
     private let tunnelsManager: TunnelsManager
-    private let usernameField = NSTextField()
-    private let passwordField = NSSecureTextField()
+    private let usernameField = WireRouteTextField()
+    private let passwordField = WireRouteSecureTextField()
     private let connectButton = NSButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
     private let addPeerButton = NSButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
     private let importPeerButton = NSButton(title: tr("macRouterOSImportExistingPeer"), target: nil, action: nil)
@@ -1763,10 +1763,10 @@ enum RouterOSPeerDefaultsStore {
 final class RouterOSSettingsViewController: NSViewController {
     private let appearancePopUp = NSPopUpButton()
     private let statusIconPopUp = NSPopUpButton()
-    private let endpointField = NSTextField()
-    private let dnsField = NSTextField()
-    private let routesField = NSTextField()
-    private let keepaliveField = NSTextField()
+    private let endpointField = WireRouteTextField()
+    private let dnsField = WireRouteTextField()
+    private let routesField = WireRouteTextField()
+    private let keepaliveField = WireRouteTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
 
     override func viewWillAppear() {
