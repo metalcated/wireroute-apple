@@ -8,6 +8,7 @@ class ManageTunnelsRootViewController: NSViewController {
     let tunnelsManager: TunnelsManager
     var tunnelsListVC: TunnelsListTableViewController?
     var tunnelDetailVC: TunnelDetailTableViewController?
+    var routerOSManagerVC: RouterOSManagerViewController?
     let tunnelDetailContainerView = NSView()
     var tunnelDetailContentVC: NSViewController?
 
@@ -23,6 +24,11 @@ class ManageTunnelsRootViewController: NSViewController {
     func selectTunnel(_ tunnel: TunnelContainer) {
         loadViewIfNeeded()
         tunnelsListVC?.selectTunnel(tunnel)
+    }
+
+    func selectRouterOSManager() {
+        loadViewIfNeeded()
+        tunnelsListVC?.selectRouterOSManager()
     }
 
     override func loadView() {
@@ -84,6 +90,13 @@ class ManageTunnelsRootViewController: NSViewController {
 }
 
 extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegate {
+    func routerOSManagerSelected() {
+        let routerOSManagerVC = self.routerOSManagerVC ?? RouterOSManagerViewController(tunnelsManager: tunnelsManager)
+        self.routerOSManagerVC = routerOSManagerVC
+        setTunnelDetailContentVC(routerOSManagerVC)
+        tunnelDetailVC = nil
+    }
+
     func tunnelsSelected(tunnelIndices: [Int]) {
         assert(!tunnelIndices.isEmpty)
         if tunnelIndices.count == 1 {

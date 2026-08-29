@@ -30,7 +30,13 @@ private final class SidebarActionButton: NSButton {
     private var hoverTrackingArea: NSTrackingArea?
     private var isPointerInside = false {
         didSet {
-            trailingImageView.contentTintColor = isPointerInside ? .systemBlue : .tertiaryLabelColor
+            updateSymbolColors()
+            needsDisplay = true
+        }
+    }
+    var isDestinationSelected = false {
+        didSet {
+            updateSymbolColors()
             needsDisplay = true
         }
     }
@@ -96,9 +102,17 @@ private final class SidebarActionButton: NSButton {
         super.updateLayer()
         layer?.cornerRadius = 10
         layer?.cornerCurve = .continuous
-        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(isPointerInside ? 0.17 : 0.10).cgColor
-        layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(isPointerInside ? 0.48 : 0.30).cgColor
+        let fillAlpha: CGFloat = isDestinationSelected ? 0.18 : (isPointerInside ? 0.17 : 0.10)
+        let borderAlpha: CGFloat = isDestinationSelected ? 0.48 : (isPointerInside ? 0.48 : 0.30)
+        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(fillAlpha).cgColor
+        layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(borderAlpha).cgColor
         layer?.borderWidth = 1
+    }
+
+    private func updateSymbolColors() {
+        let isHighlighted = isDestinationSelected || isPointerInside
+        leadingImageView.contentTintColor = isHighlighted ? .systemBlue : .secondaryLabelColor
+        trailingImageView.contentTintColor = isHighlighted ? .systemBlue : .tertiaryLabelColor
     }
 
     override func updateTrackingAreas() {
@@ -127,6 +141,7 @@ private final class SidebarActionButton: NSButton {
 
 @MainActor
 protocol TunnelsListTableViewControllerDelegate: AnyObject {
+    func routerOSManagerSelected()
     func tunnelsSelected(tunnelIndices: [Int])
     func tunnelsListEmpty()
 }
@@ -136,6 +151,7 @@ class TunnelsListTableViewController: NSViewController {
     let tunnelsManager: TunnelsManager
     weak var delegate: TunnelsListTableViewControllerDelegate?
     var isRemovingTunnelsFromWithinTheApp = false
+    private var isRouterOSManagerSelected = false
 
     let tableView: NSTableView = {
         let tableView = NSTableView()
@@ -307,6 +323,16 @@ class TunnelsListTableViewController: NSViewController {
         selectTunnel(at: tunnelIndex)
     }
 
+    func selectRouterOSManager() {
+        loadViewIfNeeded()
+        isRouterOSManagerSelected = true
+        (routerOSButton as? SidebarActionButton)?.isDestinationSelected = true
+        tableView.allowsEmptySelection = true
+        tableView.deselectAll(nil)
+        actionButton.isEnabled = false
+        delegate?.routerOSManagerSelected()
+    }
+
     @objc func handleAddEmptyTunnelAction() {
         let tunnelEditVC = TunnelEditViewController(tunnelsManager: tunnelsManager, tunnel: nil)
         tunnelEditVC.delegate = self
@@ -318,7 +344,7 @@ class TunnelsListTableViewController: NSViewController {
     }
 
     @objc func handleRouterOSManagerAction() {
-        (NSApp.delegate as? AppDelegate)?.showRouterOSManager()
+        selectRouterOSManager()
     }
 
     @objc func handleRemoveTunnelAction() {
@@ -411,6 +437,10 @@ class TunnelsListTableViewController: NSViewController {
     @discardableResult
     private func selectTunnel(at index: Int) -> Bool {
         if index < tunnelsManager.numberOfTunnels() {
+            isRouterOSManagerSelected = false
+            (routerOSButton as? SidebarActionButton)?.isDestinationSelected = false
+            tableView.allowsEmptySelection = false
+            actionButton.isEnabled = true
             tableView.scrollRowToVisible(index)
             tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
             return true
@@ -456,7 +486,9 @@ extension TunnelsListTableViewController {
         let isSingleSelectedTunnelBeingRemoved = selectedIndices.contains(index) && selectedIndices.count == 1
         tableView.removeRows(at: IndexSet(integer: index), withAnimation: .slideLeft)
         if tunnelsManager.numberOfTunnels() == 0 {
-            delegate?.tunnelsListEmpty()
+            if !isRouterOSManagerSelected {
+                delegate?.tunnelsListEmpty()
+            }
         } else if !isRemovingTunnelsFromWithinTheApp && isSingleSelectedTunnelBeingRemoved {
             let newSelection = min(index, tunnelsManager.numberOfTunnels() - 1)
             tableView.selectRowIndexes(IndexSet(integer: newSelection), byExtendingSelection: false)
@@ -484,7 +516,11 @@ extension TunnelsListTableViewController: NSTableViewDelegate {
     func tableViewSelectionDidChange(_ notification: Notification) {
         let selectedTunnelIndices = tableView.selectedRowIndexes.sorted()
         if !selectedTunnelIndices.isEmpty {
-            delegate?.tunnelsSelected(tunnelIndices: tableView.selectedRowIndexes.sorted())
+            isRouterOSManagerSelected = false
+            (routerOSButton as? SidebarActionButton)?.isDestinationSelected = false
+            tableView.allowsEmptySelection = false
+            actionButton.isEnabled = true
+            delegate?.tunnelsSelected(tunnelIndices: selectedTunnelIndices)
         }
     }
 }

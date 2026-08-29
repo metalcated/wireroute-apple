@@ -14,7 +14,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var manageTunnelsRootVC: ManageTunnelsRootViewController?
     var manageTunnelsWindowObject: NSWindow?
-    var routerOSWindowObject: NSWindow?
     var routerOSSettingsWindowObject: NSWindow?
     var onAppDeactivation: (() -> Void)?
 
@@ -209,20 +208,9 @@ extension AppDelegate {
     }
 
     @objc func showRouterOSManager() {
-        guard let tunnelsManager else { return }
-        if routerOSWindowObject == nil {
-            let viewController = RouterOSManagerViewController(tunnelsManager: tunnelsManager)
-            let window = NSWindow(contentViewController: viewController)
-            window.title = tr("macRouterOSWindowTitle")
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 780, height: 620))
-            window.minSize = NSSize(width: 680, height: 520)
-            window.setFrameAutosaveName(NSWindow.FrameAutosaveName("RouterOSManagerWindow"))
-            window.isReleasedWhenClosed = false
-            routerOSWindowObject = window
-        }
-        setDockIconAndMainMenuVisibility(isVisible: true) { [weak routerOSWindowObject] in
-            routerOSWindowObject?.makeKeyAndOrderFront(self)
+        showManageTunnelsWindow { [weak self] window in
+            guard window != nil else { return }
+            self?.manageTunnelsRootVC?.selectRouterOSManager()
         }
     }
 
