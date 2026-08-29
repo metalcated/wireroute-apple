@@ -30,6 +30,8 @@
 	<string>NSApplication</string>
 	<key>LSBackgroundOnly</key>
 	<true/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
 	<key>com.wireguard.macos.app_id</key>
 	<string>$(APP_ID_MACOS)</string>
 	<key>com.wireguard.macos.app_group_id</key>
