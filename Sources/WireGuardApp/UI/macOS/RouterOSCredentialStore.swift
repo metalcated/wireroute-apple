@@ -9,6 +9,7 @@ struct RouterOSStoredConnection: Codable, Equatable, Identifiable, Sendable {
     var url: String
     var username: String
     var password: String
+    var defaultInterface: String? = nil
 }
 
 private struct LegacyRouterOSStoredConnection: Codable {

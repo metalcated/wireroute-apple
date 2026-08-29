@@ -537,6 +537,10 @@
 "macRouterOSConnectionEditorHelp" = "Name this router and enter its REST connection details. WireRoute stores the password only in Keychain.";
 "macRouterOSConnectionName" = "Name";
 "macRouterOSConnectionNamePlaceholder" = "Home Router";
+"macRouterOSDefaultInterface" = "Default interface";
+"macRouterOSDefaultInterfacePlaceholder" = "wg-remote";
+"macRouterOSDefaultInterfaceHelp" = "Optional. Enter the WireGuard interface to preselect when setting up a device. If it is unavailable, WireRoute selects an active interface.";
+"macRouterOSAutomatic" = "Automatic";
 "macRouterOSPasswordRequiredPlaceholder" = "Required; stored in Keychain";
 "macRouterOSPasswordKeepPlaceholder" = "Leave blank to keep the saved password";
 "macRouterOSSaveConnection" = "Save Connection";

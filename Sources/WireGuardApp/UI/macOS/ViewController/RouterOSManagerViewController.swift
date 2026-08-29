@@ -555,7 +555,11 @@ final class RouterOSManagerViewController: NSViewController {
         }
         for connection in savedConnections {
             let host = URL(string: connection.url)?.host ?? connection.url
-            connectionPopUp.addItem(withTitle: "\(connection.name) — \(host)")
+            let title = connection.name.compare(
+                host,
+                options: [.caseInsensitive, .diacriticInsensitive]
+            ) == .orderedSame ? connection.name : "\(connection.name) — \(host)"
+            connectionPopUp.addItem(withTitle: title)
             connectionPopUp.lastItem?.representedObject = connection.id.uuidString
         }
 
@@ -1357,13 +1361,17 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     @objc private func addPeerClicked() {
-        guard connectedContext != nil, !interfaces.isEmpty else { return }
+        guard let connectedContext, !interfaces.isEmpty else { return }
+        let defaultInterface = savedConnections.first {
+            $0.id == connectedContext.connectionID
+        }?.defaultInterface
         let setupViewController = RouterOSPeerSetupViewController(
             interfaces: interfaces,
             existingPeers: peers,
             existingTunnelNames: Set(tunnelsManager.mapTunnels { $0.name }),
             publicEndpointSuggestion: publicEndpointSuggestion,
-            peerDefaults: RouterOSPeerDefaultsStore.load()
+            peerDefaults: RouterOSPeerDefaultsStore.load(),
+            preferredInterfaceName: defaultInterface
         )
         setupViewController.onCancel = { [weak self, weak setupViewController] in
             guard let self, let setupViewController else { return }
@@ -1890,6 +1898,7 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
     private let addressField = WireRouteTextField()
     private let usernameField = WireRouteTextField()
     private let passwordField = WireRouteSecureTextField()
+    private let defaultInterfaceField = WireRouteTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private let onSave: (RouterOSStoredConnection) throws -> Void
 
@@ -1902,7 +1911,7 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
         self.existingConnections = existingConnections
         self.onSave = onSave
         super.init(nibName: nil, bundle: nil)
-        preferredContentSize = NSSize(width: 620, height: 410)
+        preferredContentSize = NSSize(width: 620, height: 470)
     }
 
     required init?(coder: NSCoder) {
@@ -1931,7 +1940,8 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
         passwordField.placeholderString = existingConnection == nil
             ? tr("macRouterOSPasswordRequiredPlaceholder")
             : tr("macRouterOSPasswordKeepPlaceholder")
-        for field in [nameField, addressField, usernameField, passwordField] {
+        defaultInterfaceField.placeholderString = tr("macRouterOSDefaultInterfacePlaceholder")
+        for field in [nameField, addressField, usernameField, passwordField, defaultInterfaceField] {
             field.controlSize = .large
             field.font = .systemFont(ofSize: 14)
         }
@@ -1940,13 +1950,27 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
             nameField.stringValue = existingConnection.name
             addressField.stringValue = existingConnection.url
             usernameField.stringValue = existingConnection.username
+            defaultInterfaceField.stringValue = existingConnection.defaultInterface ?? ""
         }
+
+        let defaultInterfaceHelp = NSTextField(
+            wrappingLabelWithString: tr("macRouterOSDefaultInterfaceHelp")
+        )
+        defaultInterfaceHelp.font = .systemFont(ofSize: 11)
+        defaultInterfaceHelp.textColor = .secondaryLabelColor
+        let defaultInterfaceStack = NSStackView(views: [defaultInterfaceField, defaultInterfaceHelp])
+        defaultInterfaceStack.orientation = .vertical
+        defaultInterfaceStack.alignment = .leading
+        defaultInterfaceStack.spacing = 4
+        defaultInterfaceField.widthAnchor.constraint(equalTo: defaultInterfaceStack.widthAnchor).isActive = true
+        defaultInterfaceHelp.widthAnchor.constraint(equalTo: defaultInterfaceStack.widthAnchor).isActive = true
 
         let grid = NSGridView(views: [
             [fieldLabel(tr("macRouterOSConnectionName")), nameField],
             [fieldLabel(tr("macRouterOSAddress")), addressField],
             [fieldLabel(tr("macRouterOSUsername")), usernameField],
-            [fieldLabel(tr("macRouterOSPassword")), passwordField]
+            [fieldLabel(tr("macRouterOSPassword")), passwordField],
+            [fieldLabel(tr("macRouterOSDefaultInterface")), defaultInterfaceStack]
         ])
         grid.rowSpacing = 12
         grid.columnSpacing = 14
@@ -2026,6 +2050,8 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
         let address = addressField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let username = usernameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let newPassword = passwordField.stringValue
+        let defaultInterface = defaultInterfaceField.stringValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !name.isEmpty else {
             showError(tr("macRouterOSConnectionNameRequired"))
@@ -2061,7 +2087,8 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
             name: name,
             url: url.absoluteString,
             username: username,
-            password: password
+            password: password,
+            defaultInterface: defaultInterface.isEmpty ? nil : defaultInterface
         )
         do {
             try onSave(connection)
@@ -2316,9 +2343,10 @@ final class RouterOSSettingsViewController: NSViewController {
         connectionsTableView.doubleAction = #selector(editConnectionClicked)
 
         let columns: [(String, String, CGFloat)] = [
-            ("connectionName", tr("macRouterOSConnectionName"), 180),
-            ("connectionAddress", tr("macRouterOSAddress"), 300),
-            ("connectionUsername", tr("macRouterOSUsername"), 150)
+            ("connectionName", tr("macRouterOSConnectionName"), 160),
+            ("connectionAddress", tr("macRouterOSAddress"), 250),
+            ("connectionUsername", tr("macRouterOSUsername"), 130),
+            ("connectionInterface", tr("macRouterOSDefaultInterface"), 150)
         ]
         for (identifier, title, width) in columns {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
@@ -2638,6 +2666,8 @@ extension RouterOSSettingsViewController: NSTableViewDataSource, NSTableViewDele
             cell.textField?.stringValue = connection.url
         case "connectionUsername":
             cell.textField?.stringValue = connection.username
+        case "connectionInterface":
+            cell.textField?.stringValue = connection.defaultInterface ?? tr("macRouterOSAutomatic")
         default:
             cell.textField?.stringValue = ""
         }

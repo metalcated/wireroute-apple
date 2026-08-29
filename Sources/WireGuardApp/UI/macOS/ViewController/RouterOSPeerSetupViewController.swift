@@ -28,6 +28,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let existingTunnelNames: Set<String>
     private let publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?
     private let peerDefaults: RouterOSPeerDefaults
+    private let preferredInterfaceName: String?
     private let clientPrivateKey: String
     private let clientPublicKey: String
 
@@ -56,13 +57,15 @@ final class RouterOSPeerSetupViewController: NSViewController {
         existingPeers: [RouterOSWireGuardPeer],
         existingTunnelNames: Set<String>,
         publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?,
-        peerDefaults: RouterOSPeerDefaults
+        peerDefaults: RouterOSPeerDefaults,
+        preferredInterfaceName: String?
     ) {
         self.interfaces = interfaces
         self.existingPeers = existingPeers
         self.existingTunnelNames = existingTunnelNames
         self.publicEndpointSuggestion = publicEndpointSuggestion
         self.peerDefaults = peerDefaults
+        self.preferredInterfaceName = preferredInterfaceName
         let privateKey = PrivateKey()
         clientPrivateKey = privateKey.base64Key
         clientPublicKey = privateKey.publicKey.base64Key
@@ -137,7 +140,10 @@ final class RouterOSPeerSetupViewController: NSViewController {
         for interface in interfaces {
             interfacePopup.addItem(withTitle: interface.name)
         }
-        if let preferredIndex = interfaces.firstIndex(where: { $0.isRunning && !$0.isDisabled }) {
+        if let preferredInterfaceName,
+           let preferredIndex = interfaces.firstIndex(where: { $0.name == preferredInterfaceName }) {
+            interfacePopup.selectItem(at: preferredIndex)
+        } else if let preferredIndex = interfaces.firstIndex(where: { $0.isRunning && !$0.isDisabled }) {
             interfacePopup.selectItem(at: preferredIndex)
         }
         interfacePopup.target = self
