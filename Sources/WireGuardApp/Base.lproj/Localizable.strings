@@ -541,6 +541,11 @@
 "macRouterOSDefaultInterfacePlaceholder" = "wg-remote";
 "macRouterOSDefaultInterfaceHelp" = "Optional. Enter the WireGuard interface to preselect when setting up a device. If it is unavailable, WireRoute selects an active interface.";
 "macRouterOSAutomatic" = "Automatic";
+"macRouterOSLoadInterfaces" = "Connect and Load Interfaces";
+"macRouterOSDefaultInterfaceConnectHelp" = "Connects read-only to list this router's WireGuard interfaces. No RouterOS settings are changed.";
+"macRouterOSLoadingInterfaces" = "Connecting read-only and loading WireGuard interfaces…";
+"macRouterOSInterfacesLoaded (%d)" = "%d WireGuard interfaces loaded. Choose the default for new devices.";
+"macRouterOSNoInterfacesForDefault" = "No WireGuard interfaces were found on this router.";
 "macRouterOSPasswordRequiredPlaceholder" = "Required; stored in Keychain";
 "macRouterOSPasswordKeepPlaceholder" = "Leave blank to keep the saved password";
 "macRouterOSSaveConnection" = "Save Connection";
