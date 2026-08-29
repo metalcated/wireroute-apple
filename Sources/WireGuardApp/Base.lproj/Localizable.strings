@@ -527,7 +527,10 @@
 
 "macButtonEdit" = "Edit";
 "macTunnelProfilesTitle" = "Profiles";
-"macTunnelProfilesSubtitle" = "Choose one profile, then connect or change how it routes traffic.";
+"macTunnelProfilesSubtitle" = "Choose a profile to connect or change its routing.";
+"macButtonRouterOSPeers" = "RouterOS Peers";
+"macTunnelAddProfile" = "Add profile";
+"macTunnelMoreActions" = "More";
 "macTunnelTrafficRouting" = "Traffic routing";
 "macTunnelRoutingSplit" = "Split";
 "macTunnelRoutingFull" = "Full";

@@ -52,7 +52,11 @@ class SettingsTableViewController: UITableViewController {
         tableView.register(KeyValueCell.self)
         tableView.register(ButtonCell.self)
 
-        tableView.tableFooterView = UIImageView(image: UIImage(named: "wireguard.pdf"))
+        let brandImageView = UIImageView(image: UIImage(named: "wireguard.pdf"))
+        brandImageView.contentMode = .scaleAspectFit
+        brandImageView.isAccessibilityElement = true
+        brandImageView.accessibilityLabel = "WireRoute"
+        tableView.tableFooterView = brandImageView
     }
 
     override func viewDidLayoutSubviews() {
@@ -75,6 +79,8 @@ class SettingsTableViewController: UITableViewController {
         let needsReload = height != logo.frame.height
 
         logo.frame = CGRect(x: (view.bounds.size.width - width) / 2, y: fullHeight - height, width: width, height: height)
+        logo.layer.cornerRadius = height * 0.22
+        logo.clipsToBounds = true
 
         if needsReload {
             tableView.tableFooterView = logo

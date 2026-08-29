@@ -4,6 +4,25 @@
 import Cocoa
 import UniformTypeIdentifiers
 
+private final class ProfileTableRowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+
+        let selectionRect = bounds.insetBy(dx: 3, dy: 2)
+        let selectionPath = NSBezierPath(roundedRect: selectionRect, xRadius: 11, yRadius: 11)
+        let accentColor = NSColor.controlAccentColor
+        let fillColor = isEmphasized
+            ? accentColor.withAlphaComponent(0.18)
+            : NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.42)
+        fillColor.setFill()
+        selectionPath.fill()
+
+        accentColor.withAlphaComponent(isEmphasized ? 0.42 : 0.20).setStroke()
+        selectionPath.lineWidth = 1
+        selectionPath.stroke()
+    }
+}
+
 @MainActor
 protocol TunnelsListTableViewControllerDelegate: AnyObject {
     func tunnelsSelected(tunnelIndices: [Int])
@@ -21,8 +40,8 @@ class TunnelsListTableViewController: NSViewController {
         tableView.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("TunnelsList")))
         tableView.headerView = nil
         tableView.rowSizeStyle = .custom
-        tableView.rowHeight = 52
-        tableView.intercellSpacing = NSSize(width: 0, height: 4)
+        tableView.rowHeight = 58
+        tableView.intercellSpacing = NSSize(width: 0, height: 5)
         tableView.backgroundColor = .clear
         tableView.selectionHighlightStyle = .regular
         tableView.allowsMultipleSelection = true
@@ -30,8 +49,8 @@ class TunnelsListTableViewController: NSViewController {
     }()
 
     let addButton: NSPopUpButton = {
-        let imageItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        imageItem.image = NSImage(named: NSImage.addTemplateName)!
+        let imageItem = NSMenuItem(title: tr("macTunnelAddProfile"), action: nil, keyEquivalent: "")
+        imageItem.image = NSImage(systemSymbolName: "plus", accessibilityDescription: tr("macTunnelAddProfile"))
 
         let menu = NSMenu()
         menu.addItem(imageItem)
@@ -41,32 +60,47 @@ class TunnelsListTableViewController: NSViewController {
 
         let button = NSPopUpButton(frame: NSRect.zero, pullsDown: true)
         button.menu = menu
-        button.bezelStyle = .texturedRounded
+        button.bezelStyle = .rounded
+        button.controlSize = .large
+        button.font = .systemFont(ofSize: 12, weight: .semibold)
+        button.imagePosition = .imageLeading
+        button.toolTip = tr("macTunnelAddProfile")
         (button.cell as? NSPopUpButtonCell)?.arrowPosition = .arrowAtBottom
         return button
     }()
 
-    let removeButton: NSButton = {
-        let image = NSImage(named: NSImage.removeTemplateName)!
-        let button = NSButton(image: image, target: nil, action: nil)
-        button.bezelStyle = .texturedRounded
-        button.imagePosition = .imageOnly
+    let routerOSButton: NSButton = {
+        let button = NSButton(title: tr("macButtonRouterOSPeers"), target: nil, action: nil)
+        button.bezelStyle = .rounded
+        button.controlSize = .large
+        button.font = .systemFont(ofSize: 12, weight: .semibold)
+        button.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: tr("macButtonRouterOSPeers"))
+        button.imagePosition = .imageLeading
+        button.contentTintColor = .systemBlue
+        button.toolTip = tr("macMenuRouterOSManager")
         return button
     }()
 
     let actionButton: NSPopUpButton = {
-        let imageItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        imageItem.image = NSImage(named: NSImage.actionTemplateName)!
+        let imageItem = NSMenuItem(title: tr("macTunnelMoreActions"), action: nil, keyEquivalent: "")
+        imageItem.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: tr("macTunnelMoreActions"))
 
         let menu = NSMenu()
         menu.addItem(imageItem)
         menu.addItem(withTitle: tr("macMenuViewLog"), action: #selector(handleViewLogAction), keyEquivalent: "")
         menu.addItem(withTitle: tr("macMenuExportTunnels"), action: #selector(handleExportTunnelsAction), keyEquivalent: "")
-        menu.autoenablesItems = false
+        menu.addItem(.separator())
+        let deleteItem = menu.addItem(withTitle: tr("macMenuDeleteSelected"), action: #selector(handleRemoveTunnelAction), keyEquivalent: "")
+        deleteItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: tr("macMenuDeleteSelected"))
+        menu.autoenablesItems = true
 
         let button = NSPopUpButton(frame: NSRect.zero, pullsDown: true)
         button.menu = menu
-        button.bezelStyle = .texturedRounded
+        button.bezelStyle = .rounded
+        button.controlSize = .large
+        button.font = .systemFont(ofSize: 12, weight: .semibold)
+        button.imagePosition = .imageLeading
+        button.toolTip = tr("macTunnelMoreActions")
         (button.cell as? NSPopUpButtonCell)?.arrowPosition = .arrowAtBottom
         return button
     }()
@@ -83,8 +117,8 @@ class TunnelsListTableViewController: NSViewController {
     override func loadView() {
         tableView.dataSource = self
         tableView.delegate = self
-        removeButton.target = self
-        removeButton.action = #selector(handleRemoveTunnelAction)
+        routerOSButton.target = self
+        routerOSButton.action = #selector(handleRouterOSManagerAction)
 
         tableView.doubleAction = #selector(listDoubleClicked(sender:))
 
@@ -109,20 +143,16 @@ class TunnelsListTableViewController: NSViewController {
         let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macTunnelProfilesSubtitle"))
         subtitleLabel.font = .systemFont(ofSize: 11, weight: .medium)
         subtitleLabel.textColor = .secondaryLabelColor
-        let sidebarHeader = NSStackView(views: [titleLabel, subtitleLabel])
+        let sidebarHeader = NSStackView(views: [titleLabel, subtitleLabel, routerOSButton])
         sidebarHeader.orientation = .vertical
         sidebarHeader.alignment = .leading
-        sidebarHeader.spacing = 3
+        sidebarHeader.spacing = 4
+        sidebarHeader.setCustomSpacing(13, after: subtitleLabel)
 
-        let buttonBar = NSStackView(views: [addButton, removeButton, actionButton])
+        let buttonBar = NSStackView(views: [addButton, actionButton])
         buttonBar.orientation = .horizontal
-        buttonBar.spacing = 6
-
-        NSLayoutConstraint.activate([
-            removeButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 26),
-            removeButton.topAnchor.constraint(equalTo: buttonBar.topAnchor),
-            removeButton.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor)
-        ])
+        buttonBar.spacing = 8
+        buttonBar.distribution = .fillEqually
 
         let containerView = NSView()
         containerView.wantsLayer = true
@@ -141,18 +171,19 @@ class TunnelsListTableViewController: NSViewController {
         NSLayoutConstraint.activate([
             sidebarHeader.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 16),
             sidebarHeader.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
-            sidebarHeader.trailingAnchor.constraint(lessThanOrEqualTo: containerView.trailingAnchor, constant: -16),
+            sidebarHeader.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
+            routerOSButton.widthAnchor.constraint(equalTo: sidebarHeader.widthAnchor),
             scrollView.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor, constant: 12),
             scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 8),
             scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -8),
-            scrollView.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: 1),
+            scrollView.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: -12),
             buttonBar.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
-            buttonBar.trailingAnchor.constraint(lessThanOrEqualTo: containerView.trailingAnchor, constant: -12),
+            buttonBar.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
             containerView.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor, constant: 12)
         ])
 
         NSLayoutConstraint.activate([
-            containerView.widthAnchor.constraint(equalToConstant: 238),
+            containerView.widthAnchor.constraint(equalToConstant: 264),
             containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120)
         ])
 
@@ -187,6 +218,10 @@ class TunnelsListTableViewController: NSViewController {
 
     @objc func handleImportTunnelAction() {
         ImportPanelPresenter.presentImportPanel(tunnelsManager: tunnelsManager, sourceVC: self)
+    }
+
+    @objc func handleRouterOSManagerAction() {
+        (NSApp.delegate as? AppDelegate)?.showRouterOSManager()
     }
 
     @objc func handleRemoveTunnelAction() {
@@ -339,6 +374,10 @@ extension TunnelsListTableViewController: NSTableViewDataSource {
 }
 
 extension TunnelsListTableViewController: NSTableViewDelegate {
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        return ProfileTableRowView()
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell: TunnelListRow = tableView.dequeueReusableCell()
         cell.tunnel = tunnelsManager.tunnel(at: row)

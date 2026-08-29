@@ -77,19 +77,19 @@ class TunnelListRow: NSView {
         routingModeLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.backgroundColor = .clear
         NSLayoutConstraint.activate([
-            statusImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            statusImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 13),
             statusImageView.widthAnchor.constraint(equalToConstant: 14),
             statusImageView.heightAnchor.constraint(equalTo: statusImageView.widthAnchor),
-            nameLabel.leadingAnchor.constraint(equalTo: statusImageView.trailingAnchor, constant: 9),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: routingModeLabel.leadingAnchor, constant: -8),
-            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            nameLabel.leadingAnchor.constraint(equalTo: statusImageView.trailingAnchor, constant: 10),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: routingModeLabel.leadingAnchor, constant: -10),
+            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 10),
             detailLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            detailLabel.trailingAnchor.constraint(lessThanOrEqualTo: routingModeLabel.leadingAnchor, constant: -8),
+            detailLabel.trailingAnchor.constraint(lessThanOrEqualTo: routingModeLabel.leadingAnchor, constant: -10),
             detailLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
-            detailLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -7),
-            routingModeLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -9),
+            detailLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -9),
+            routingModeLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             routingModeLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            routingModeLabel.widthAnchor.constraint(equalToConstant: 42),
+            routingModeLabel.widthAnchor.constraint(equalToConstant: 46),
             routingModeLabel.heightAnchor.constraint(equalToConstant: 20),
             statusImageView.centerYAnchor.constraint(equalTo: self.centerYAnchor),
         ])
