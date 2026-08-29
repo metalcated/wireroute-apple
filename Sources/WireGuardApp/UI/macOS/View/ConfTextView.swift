@@ -45,6 +45,10 @@ class ConfTextView: NSTextView {
         updateTheme()
     }
 
+    func refreshSyntaxColors() {
+        updateTheme()
+    }
+
     private func updateTheme() {
         switch effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) ?? .aqua {
         case .darkAqua:

@@ -474,7 +474,11 @@ final class WireRouteTextEditorScrollView: NSScrollView, WireRouteThemeField {
 
         guard let textView = documentView as? NSTextView else { return }
         textView.drawsBackground = false
-        textView.textColor = .controlTextColor
+        if let configurationTextView = textView as? ConfTextView {
+            configurationTextView.refreshSyntaxColors()
+        } else {
+            textView.textColor = .controlTextColor
+        }
         textView.insertionPointColor = WireRouteTheme.accentColor
         textView.needsDisplay = true
     }

@@ -28,7 +28,11 @@ private final class MacSplitRouteEntryViewController: NSViewController {
     private let saveButton = NSButton(title: tr("macEditSave"), target: nil, action: nil)
 
     override func loadView() {
-        let container = NSView()
+        let container = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
 
         let titleLabel = NSTextField(labelWithString: tr("splitRouteEntryTitle"))
         titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
@@ -62,13 +66,38 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         footer.spacing = 12
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let stack = NSStackView(views: [titleLabel, messageLabel, scrollView, hintLabel, footer])
+        let routesStack = NSStackView(views: [scrollView, hintLabel])
+        routesStack.orientation = .vertical
+        routesStack.alignment = .leading
+        routesStack.spacing = 8
+
+        let routesCard = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
+        routesCard.adaptiveBorderColor = .separatorColor
+        routesCard.adaptiveBorderAlpha = 0.65
+        routesCard.layer?.borderWidth = 1
+        routesCard.layer?.cornerRadius = 14
+        routesCard.layer?.cornerCurve = .continuous
+        routesCard.addSubview(routesStack)
+        routesStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            routesStack.leadingAnchor.constraint(equalTo: routesCard.leadingAnchor, constant: 14),
+            routesStack.trailingAnchor.constraint(equalTo: routesCard.trailingAnchor, constant: -14),
+            routesStack.topAnchor.constraint(equalTo: routesCard.topAnchor, constant: 14),
+            routesStack.bottomAnchor.constraint(equalTo: routesCard.bottomAnchor, constant: -12),
+            scrollView.widthAnchor.constraint(equalTo: routesStack.widthAnchor),
+            hintLabel.widthAnchor.constraint(equalTo: routesStack.widthAnchor)
+        ])
+
+        let stack = NSStackView(views: [titleLabel, messageLabel, routesCard, footer])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
         stack.setCustomSpacing(4, after: titleLabel)
         stack.setCustomSpacing(18, after: messageLabel)
-        stack.setCustomSpacing(8, after: scrollView)
         container.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -76,12 +105,11 @@ private final class MacSplitRouteEntryViewController: NSViewController {
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
             stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 22),
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
-            scrollView.widthAnchor.constraint(equalTo: stack.widthAnchor),
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
-            hintLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            routesCard.widthAnchor.constraint(equalTo: stack.widthAnchor),
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
-        container.frame = NSRect(x: 0, y: 0, width: 560, height: 390)
+        container.frame = NSRect(x: 0, y: 0, width: 560, height: 420)
         view = container
     }
 
