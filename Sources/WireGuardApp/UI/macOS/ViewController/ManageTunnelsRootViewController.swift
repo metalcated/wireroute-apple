@@ -61,6 +61,45 @@ final class AppearanceAwareLayerScrollView: NSScrollView {
     }
 }
 
+@MainActor
+final class AppearanceAwareMaterialView: NSVisualEffectView {
+    var adaptiveBorderColor: NSColor? {
+        didSet { needsDisplay = true }
+    }
+    var adaptiveBorderAlpha: CGFloat = 1 {
+        didSet { needsDisplay = true }
+    }
+
+    init(material: NSVisualEffectView.Material, blendingMode: NSVisualEffectView.BlendingMode) {
+        super.init(frame: .zero)
+        self.material = material
+        self.blendingMode = blendingMode
+        state = .followsWindowActiveState
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool {
+        return true
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.borderColor = adaptiveBorderColor?
+                .withAlphaComponent(adaptiveBorderAlpha).cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
 class ManageTunnelsRootViewController: NSViewController {
 
     let tunnelsManager: TunnelsManager
@@ -90,7 +129,11 @@ class ManageTunnelsRootViewController: NSViewController {
     }
 
     override func loadView() {
-        view = NSView()
+        let backgroundView = NSVisualEffectView()
+        backgroundView.material = .underWindowBackground
+        backgroundView.blendingMode = .behindWindow
+        backgroundView.state = .followsWindowActiveState
+        view = backgroundView
 
         let horizontalSpacing: CGFloat = 22
         let verticalSpacing: CGFloat = 22

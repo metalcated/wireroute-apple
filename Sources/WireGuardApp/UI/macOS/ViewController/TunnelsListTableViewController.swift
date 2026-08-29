@@ -278,10 +278,7 @@ class TunnelsListTableViewController: NSViewController {
         buttonBar.spacing = 8
         buttonBar.distribution = .fillEqually
 
-        let containerView = AppearanceAwareLayerView()
-        containerView.wantsLayer = true
-        containerView.adaptiveBackgroundColor = .controlBackgroundColor
-        containerView.adaptiveBackgroundAlpha = 0.72
+        let containerView = AppearanceAwareMaterialView(material: .sidebar, blendingMode: .withinWindow)
         containerView.adaptiveBorderColor = .separatorColor
         containerView.adaptiveBorderAlpha = 0.45
         containerView.layer?.cornerRadius = 16

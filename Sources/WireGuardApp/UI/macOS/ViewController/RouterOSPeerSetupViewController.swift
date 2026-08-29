@@ -184,10 +184,9 @@ final class RouterOSPeerSetupViewController: NSViewController {
     }
 
     private func makeForm() -> NSView {
-        let card = AppearanceAwareLayerView()
-        card.wantsLayer = true
-        card.adaptiveBackgroundColor = .controlBackgroundColor
+        let card = AppearanceAwareMaterialView(material: .contentBackground, blendingMode: .withinWindow)
         card.adaptiveBorderColor = .separatorColor
+        card.adaptiveBorderAlpha = 0.65
         card.layer?.cornerRadius = 14
         card.layer?.cornerCurve = .continuous
         card.layer?.borderWidth = 1

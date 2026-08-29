@@ -456,25 +456,23 @@ class TunnelDetailTableViewController: NSViewController {
         return button
     }()
 
-    let box: NSBox = {
-        let box = NSBox()
-        box.titlePosition = .noTitle
-        box.boxType = .custom
-        box.fillColor = .controlBackgroundColor
-        box.borderColor = .separatorColor
-        box.borderWidth = 1
-        box.cornerRadius = 16
+    let box: AppearanceAwareMaterialView = {
+        let box = AppearanceAwareMaterialView(material: .contentBackground, blendingMode: .withinWindow)
+        box.adaptiveBorderColor = .separatorColor
+        box.adaptiveBorderAlpha = 0.65
+        box.layer?.borderWidth = 1
+        box.layer?.cornerRadius = 16
+        box.layer?.cornerCurve = .continuous
         return box
     }()
 
-    private let heroCard: NSBox = {
-        let box = NSBox()
-        box.titlePosition = .noTitle
-        box.boxType = .custom
-        box.fillColor = .controlBackgroundColor
-        box.borderColor = .separatorColor
-        box.borderWidth = 1
-        box.cornerRadius = 18
+    private let heroCard: AppearanceAwareMaterialView = {
+        let box = AppearanceAwareMaterialView(material: .contentBackground, blendingMode: .withinWindow)
+        box.adaptiveBorderColor = .separatorColor
+        box.adaptiveBorderAlpha = 0.65
+        box.layer?.borderWidth = 1
+        box.layer?.cornerRadius = 18
+        box.layer?.cornerCurve = .continuous
         return box
     }()
     private let identityImageView: NSImageView = {
