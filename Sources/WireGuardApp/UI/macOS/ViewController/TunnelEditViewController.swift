@@ -46,11 +46,10 @@ class TunnelEditViewController: NSViewController {
 
     let onDemandControlsRow = OnDemandControlsRow()
 
-    let scrollView: NSScrollView = {
-        let scrollView = NSScrollView()
+    let scrollView: WireRouteTextEditorScrollView = {
+        let scrollView = WireRouteTextEditorScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
-        scrollView.borderType = .bezelBorder
         return scrollView
     }()
 
@@ -154,6 +153,7 @@ class TunnelEditViewController: NSViewController {
         populateFields()
 
         scrollView.documentView = textView
+        scrollView.updateWireRouteTheme()
 
         saveButton.target = self
         saveButton.action = #selector(handleSaveAction)
@@ -172,7 +172,27 @@ class TunnelEditViewController: NSViewController {
         let editorStackView = NSStackView(views: [nameRow, publicKeyRow, onDemandControlsRow, scrollView])
         editorStackView.orientation = .vertical
         editorStackView.setHuggingPriority(.defaultHigh, for: .horizontal)
+        editorStackView.setHuggingPriority(.defaultLow, for: .vertical)
         editorStackView.spacing = internalSpacing
+
+        let editorCard = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
+        editorCard.adaptiveBorderColor = .separatorColor
+        editorCard.adaptiveBorderAlpha = 0.65
+        editorCard.layer?.borderWidth = 1
+        editorCard.layer?.cornerRadius = 14
+        editorCard.layer?.cornerCurve = .continuous
+        editorCard.addSubview(editorStackView)
+        editorStackView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            editorStackView.leadingAnchor.constraint(equalTo: editorCard.leadingAnchor, constant: 16),
+            editorStackView.trailingAnchor.constraint(equalTo: editorCard.trailingAnchor, constant: -16),
+            editorStackView.topAnchor.constraint(equalTo: editorCard.topAnchor, constant: 16),
+            editorStackView.bottomAnchor.constraint(equalTo: editorCard.bottomAnchor, constant: -16)
+        ])
 
         let buttonRowStackView = NSStackView()
         buttonRowStackView.setViews([discardButton, saveButton], in: .trailing)
@@ -180,13 +200,26 @@ class TunnelEditViewController: NSViewController {
         buttonRowStackView.orientation = .horizontal
         buttonRowStackView.spacing = internalSpacing
 
-        let containerView = NSStackView(views: [editorStackView, buttonRowStackView])
-        containerView.orientation = .vertical
-        containerView.edgeInsets = NSEdgeInsets(top: margin, left: margin, bottom: margin, right: margin)
-        containerView.setHuggingPriority(.defaultHigh, for: .horizontal)
-        containerView.spacing = internalSpacing
+        let contentStackView = NSStackView(views: [editorCard, buttonRowStackView])
+        contentStackView.orientation = .vertical
+        contentStackView.setHuggingPriority(.defaultHigh, for: .horizontal)
+        contentStackView.spacing = internalSpacing
+
+        let containerView = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
+        containerView.addSubview(contentStackView)
+        contentStackView.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
+            contentStackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: margin),
+            contentStackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -margin),
+            contentStackView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: margin),
+            contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -margin),
+            editorCard.widthAnchor.constraint(equalTo: contentStackView.widthAnchor),
+            buttonRowStackView.widthAnchor.constraint(equalTo: contentStackView.widthAnchor),
             containerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 180),
             containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240)
         ])
