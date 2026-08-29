@@ -743,6 +743,9 @@ extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegat
 
     func routerOSManagerSelected() {
         let routerOSManagerVC = self.routerOSManagerVC ?? RouterOSManagerViewController(tunnelsManager: tunnelsManager)
+        routerOSManagerVC.onOpenSettings = { [weak self] in
+            self?.selectSettings()
+        }
         self.routerOSManagerVC = routerOSManagerVC
         setTunnelDetailContentVC(routerOSManagerVC)
         tunnelDetailVC = nil

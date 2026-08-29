@@ -167,6 +167,7 @@ private final class RouterOSRemovePeerOptionsView: NSStackView {
 @MainActor
 final class RouterOSManagerViewController: NSViewController {
     private struct ConnectedContext: Sendable {
+        let connectionID: UUID
         let baseURL: URL
         let credentials: RouterOSCredentials
         let trustedCertificate: RouterOSServerCertificate?
@@ -203,11 +204,14 @@ final class RouterOSManagerViewController: NSViewController {
         }
     }
 
-    private let urlField = WireRouteTextField()
     private let tunnelsManager: TunnelsManager
-    private let usernameField = WireRouteTextField()
-    private let passwordField = WireRouteSecureTextField()
+    private let connectionPopUp = WireRoutePopUpButton()
     private let connectButton = NSButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
+    private let manageConnectionsButton = NSButton(
+        title: tr("macRouterOSManageConnections"),
+        target: nil,
+        action: nil
+    )
     private let addPeerButton = NSButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
     private let importPeerButton = NSButton(title: tr("macRouterOSImportExistingPeer"), target: nil, action: nil)
     private let showAllPeersButton = NSButton(
@@ -228,6 +232,10 @@ final class RouterOSManagerViewController: NSViewController {
     private var connectionTask: Task<Void, Never>?
     private var isBusy = false
     private var contextPeer: RouterOSWireGuardPeer?
+    private var savedConnections = [RouterOSStoredConnection]()
+    var onOpenSettings: (() -> Void)?
+
+    private static let selectedConnectionKey = "WireRoute.RouterOSSelectedConnection"
 
     init(tunnelsManager: TunnelsManager) {
         self.tunnelsManager = tunnelsManager
@@ -377,33 +385,58 @@ final class RouterOSManagerViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(savedConnectionsDidChange),
+            name: RouterOSCredentialStore.connectionsDidChange,
+            object: nil
+        )
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
-            urlField.stringValue = "https://router.example"
-            usernameField.stringValue = "reviewer"
-            passwordField.stringValue = ""
+            savedConnections = [RouterOSStoredConnection(
+                id: UUID(),
+                name: "Office Router",
+                url: "https://router.example",
+                username: "reviewer",
+                password: ""
+            )]
+            populateConnectionPopUp(preferredID: savedConnections[0].id)
             return
         }
         #endif
-        loadStoredConnection()
+        reloadSavedConnections()
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        #if DEBUG
+        guard !ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") else { return }
+        #endif
+        reloadSavedConnections()
     }
 
     private func makeConnectionCard() -> NSView {
-        let card = AppearanceAwareMaterialView(material: .contentBackground, blendingMode: .withinWindow)
+        let card = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
         card.adaptiveBorderColor = .separatorColor
         card.adaptiveBorderAlpha = 0.65
         card.layer?.cornerRadius = 14
         card.layer?.cornerCurve = .continuous
         card.layer?.borderWidth = 1
 
-        urlField.placeholderString = "https://router.example"
-        usernameField.placeholderString = tr("macRouterOSUsernamePlaceholder")
-        passwordField.placeholderString = tr("macRouterOSPasswordPlaceholder")
-        for field in [urlField, usernameField, passwordField] {
-            field.controlSize = .large
-            field.font = .systemFont(ofSize: 14)
-            field.delegate = self
-        }
+        let titleLabel = NSTextField(labelWithString: tr("macRouterOSConnectionTitle"))
+        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        let helpLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionHelp"))
+        helpLabel.font = .systemFont(ofSize: 12)
+        helpLabel.textColor = .secondaryLabelColor
+
+        connectionPopUp.controlSize = .large
+        connectionPopUp.font = .systemFont(ofSize: 14)
+        connectionPopUp.target = self
+        connectionPopUp.action = #selector(connectionSelectionChanged)
 
         connectButton.target = self
         connectButton.action = #selector(connectClicked)
@@ -411,34 +444,37 @@ final class RouterOSManagerViewController: NSViewController {
         connectButton.controlSize = .large
         connectButton.keyEquivalent = "\r"
 
+        manageConnectionsButton.target = self
+        manageConnectionsButton.action = #selector(manageConnectionsClicked)
+        manageConnectionsButton.bezelStyle = .rounded
+        manageConnectionsButton.controlSize = .large
+
         progressIndicator.style = .spinning
         progressIndicator.controlSize = .small
         progressIndicator.isDisplayedWhenStopped = false
 
-        let connectRow = NSStackView(views: [connectButton, progressIndicator])
+        let rowSpacer = NSView()
+        rowSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let connectRow = NSStackView(views: [connectionPopUp, connectButton, progressIndicator, rowSpacer, manageConnectionsButton])
         connectRow.orientation = .horizontal
         connectRow.alignment = .centerY
         connectRow.spacing = 10
 
-        let grid = NSGridView(views: [
-            [NSTextField(labelWithString: tr("macRouterOSAddress")), urlField],
-            [NSTextField(labelWithString: tr("macRouterOSUsername")), usernameField],
-            [NSTextField(labelWithString: tr("macRouterOSPassword")), passwordField],
-            [NSView(), connectRow]
-        ])
-        grid.rowSpacing = 10
-        grid.columnSpacing = 14
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 1).xPlacement = .fill
+        let stack = NSStackView(views: [titleLabel, connectRow, helpLabel])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 9
+        connectRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        helpLabel.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 
-        card.addSubview(grid)
-        grid.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            grid.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
-            grid.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
-            grid.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
-            grid.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
-            urlField.widthAnchor.constraint(greaterThanOrEqualToConstant: 360)
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            connectionPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 300)
         ])
         return card
     }
@@ -470,16 +506,88 @@ final class RouterOSManagerViewController: NSViewController {
         }
     }
 
-    private func loadStoredConnection() {
+    private var selectedConnection: RouterOSStoredConnection? {
+        guard let identifier = connectionPopUp.selectedItem?.representedObject as? String,
+              let id = UUID(uuidString: identifier) else {
+            return nil
+        }
+        return savedConnections.first { $0.id == id }
+    }
+
+    @objc private func savedConnectionsDidChange() {
+        reloadSavedConnections()
+    }
+
+    private func reloadSavedConnections() {
+        let preferredID = selectedConnection?.id
+            ?? UserDefaults.standard.string(forKey: Self.selectedConnectionKey).flatMap(UUID.init(uuidString:))
         do {
-            guard let storedConnection = try RouterOSCredentialStore.load() else { return }
-            urlField.stringValue = storedConnection.url
-            usernameField.stringValue = storedConnection.username
-            passwordField.stringValue = storedConnection.password
+            savedConnections = try RouterOSCredentialStore.loadAll().sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+            populateConnectionPopUp(preferredID: preferredID)
+
+            if let context = connectedContext {
+                let matchingConnection = savedConnections.first { $0.id == context.connectionID }
+                let stillMatches = matchingConnection.map {
+                    URL(string: $0.url) == context.baseURL
+                        && $0.username == context.credentials.username
+                        && $0.password == context.credentials.password
+                } ?? false
+                if !stillMatches {
+                    invalidateDiscovery()
+                    messageLabel.stringValue = tr("macRouterOSReconnectRequired")
+                    messageLabel.textColor = .secondaryLabelColor
+                }
+            }
         } catch {
+            savedConnections = []
+            populateConnectionPopUp(preferredID: nil)
             messageLabel.stringValue = error.localizedDescription
             messageLabel.textColor = .systemRed
         }
+    }
+
+    private func populateConnectionPopUp(preferredID: UUID?) {
+        connectionPopUp.removeAllItems()
+        if savedConnections.isEmpty {
+            connectionPopUp.addItem(withTitle: tr("macRouterOSNoConnections"))
+        }
+        for connection in savedConnections {
+            let host = URL(string: connection.url)?.host ?? connection.url
+            connectionPopUp.addItem(withTitle: "\(connection.name) — \(host)")
+            connectionPopUp.lastItem?.representedObject = connection.id.uuidString
+        }
+
+        let selectedIndex = preferredID.flatMap { id in
+            savedConnections.firstIndex { $0.id == id }
+        } ?? (savedConnections.isEmpty ? nil : 0)
+        if let selectedIndex {
+            connectionPopUp.selectItem(at: selectedIndex)
+            UserDefaults.standard.set(savedConnections[selectedIndex].id.uuidString, forKey: Self.selectedConnectionKey)
+        }
+
+        let hasConnections = !savedConnections.isEmpty
+        connectionPopUp.isEnabled = hasConnections && !isBusy
+        connectButton.isEnabled = hasConnections && !isBusy
+        connectionPopUp.toolTip = hasConnections
+            ? tr("macRouterOSConnectionSelectorHelp")
+            : tr("macRouterOSNoConnectionsHelp")
+        reloadDiscoveryTable()
+    }
+
+    @objc private func connectionSelectionChanged() {
+        guard let selectedConnection else { return }
+        UserDefaults.standard.set(selectedConnection.id.uuidString, forKey: Self.selectedConnectionKey)
+        if let context = connectedContext, context.connectionID != selectedConnection.id {
+            invalidateDiscovery()
+            messageLabel.stringValue = tr("macRouterOSReconnectRequired")
+            messageLabel.textColor = .secondaryLabelColor
+        }
+    }
+
+    @objc private func manageConnectionsClicked() {
+        onOpenSettings?()
     }
 
     @objc private func connectClicked() {
@@ -488,16 +596,14 @@ final class RouterOSManagerViewController: NSViewController {
         messageLabel.textColor = .secondaryLabelColor
         messageLabel.stringValue = tr("macRouterOSConnecting")
 
-        guard let url = URL(string: urlField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let storedConnection = selectedConnection else {
+            showError(tr("macRouterOSNoConnectionsHelp"))
+            return
+        }
+        guard let url = URL(string: storedConnection.url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             showError(RouterOSClientError.invalidBaseURL.localizedDescription)
             return
         }
-
-        let storedConnection = RouterOSStoredConnection(
-            url: url.absoluteString,
-            username: usernameField.stringValue,
-            password: passwordField.stringValue
-        )
         connect(to: url, storedConnection: storedConnection)
     }
 
@@ -533,6 +639,7 @@ final class RouterOSManagerViewController: NSViewController {
                     from: addresses ?? []
                 )
                 connectedContext = ConnectedContext(
+                    connectionID: storedConnection.id,
                     baseURL: url,
                     credentials: credentials,
                     trustedCertificate: trustedCertificate
@@ -541,13 +648,6 @@ final class RouterOSManagerViewController: NSViewController {
                 addPeerButton.isEnabled = !interfaces.isEmpty
                 messageLabel.stringValue = tr("macRouterOSConnectedReadOnly")
                 messageLabel.textColor = .systemGreen
-
-                do {
-                    try RouterOSCredentialStore.save(storedConnection)
-                } catch {
-                    messageLabel.stringValue = tr("macRouterOSConnectedCredentialWarning")
-                    messageLabel.textColor = .systemOrange
-                }
             } catch is CancellationError {
                 return
             } catch let certificateError as RouterOSTLSCertificateError {
@@ -569,10 +669,9 @@ final class RouterOSManagerViewController: NSViewController {
 
     private func setConnecting(_ isConnecting: Bool) {
         isBusy = isConnecting
-        connectButton.isEnabled = !isConnecting
-        urlField.isEnabled = !isConnecting
-        usernameField.isEnabled = !isConnecting
-        passwordField.isEnabled = !isConnecting
+        connectButton.isEnabled = !isConnecting && selectedConnection != nil
+        connectionPopUp.isEnabled = !isConnecting && !savedConnections.isEmpty
+        manageConnectionsButton.isEnabled = !isConnecting
         addPeerButton.isEnabled = !isConnecting && connectedContext != nil && !interfaces.isEmpty
         showAllPeersButton.isEnabled = !isConnecting && connectedContext != nil && !peers.isEmpty
         updateImportPeerButtonState()
@@ -1680,7 +1779,9 @@ final class RouterOSManagerViewController: NSViewController {
         tableView.usesAlternatingRowBackgroundColors = !rows.isEmpty
         emptyStateLabel.isHidden = !rows.isEmpty
         if connectedContext == nil {
-            emptyStateLabel.stringValue = tr("macRouterOSEmptyDiscovery")
+            emptyStateLabel.stringValue = savedConnections.isEmpty
+                ? tr("macRouterOSNoConnectionsHelp")
+                : tr("macRouterOSEmptyDiscovery")
         } else if peers.isEmpty {
             emptyStateLabel.stringValue = tr("macRouterOSNoPeers")
         } else {
@@ -1782,19 +1883,221 @@ enum RouterOSPeerDefaultsStore {
 }
 
 @MainActor
+private final class RouterOSConnectionEditorViewController: NSViewController {
+    private let existingConnection: RouterOSStoredConnection?
+    private let existingConnections: [RouterOSStoredConnection]
+    private let nameField = WireRouteTextField()
+    private let addressField = WireRouteTextField()
+    private let usernameField = WireRouteTextField()
+    private let passwordField = WireRouteSecureTextField()
+    private let errorLabel = NSTextField(wrappingLabelWithString: "")
+    private let onSave: (RouterOSStoredConnection) throws -> Void
+
+    init(
+        connection: RouterOSStoredConnection?,
+        existingConnections: [RouterOSStoredConnection],
+        onSave: @escaping (RouterOSStoredConnection) throws -> Void
+    ) {
+        existingConnection = connection
+        self.existingConnections = existingConnections
+        self.onSave = onSave
+        super.init(nibName: nil, bundle: nil)
+        preferredContentSize = NSSize(width: 620, height: 410)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        let view = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
+        let titleLabel = NSTextField(labelWithString: tr(
+            existingConnection == nil
+                ? "macRouterOSAddConnectionTitle"
+                : "macRouterOSEditConnectionTitle"
+        ))
+        titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
+        let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionEditorHelp"))
+        subtitleLabel.font = .systemFont(ofSize: 12)
+        subtitleLabel.textColor = .secondaryLabelColor
+
+        nameField.placeholderString = tr("macRouterOSConnectionNamePlaceholder")
+        addressField.placeholderString = "https://router.example"
+        usernameField.placeholderString = tr("macRouterOSUsernamePlaceholder")
+        passwordField.placeholderString = existingConnection == nil
+            ? tr("macRouterOSPasswordRequiredPlaceholder")
+            : tr("macRouterOSPasswordKeepPlaceholder")
+        for field in [nameField, addressField, usernameField, passwordField] {
+            field.controlSize = .large
+            field.font = .systemFont(ofSize: 14)
+        }
+
+        if let existingConnection {
+            nameField.stringValue = existingConnection.name
+            addressField.stringValue = existingConnection.url
+            usernameField.stringValue = existingConnection.username
+        }
+
+        let grid = NSGridView(views: [
+            [fieldLabel(tr("macRouterOSConnectionName")), nameField],
+            [fieldLabel(tr("macRouterOSAddress")), addressField],
+            [fieldLabel(tr("macRouterOSUsername")), usernameField],
+            [fieldLabel(tr("macRouterOSPassword")), passwordField]
+        ])
+        grid.rowSpacing = 12
+        grid.columnSpacing = 14
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .fill
+
+        let card = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
+        card.adaptiveBorderColor = .separatorColor
+        card.adaptiveBorderAlpha = 0.65
+        card.layer?.cornerRadius = 14
+        card.layer?.cornerCurve = .continuous
+        card.layer?.borderWidth = 1
+        card.addSubview(grid)
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            grid.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            grid.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
+            grid.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
+            nameField.widthAnchor.constraint(greaterThanOrEqualToConstant: 360)
+        ])
+
+        errorLabel.font = .systemFont(ofSize: 12)
+        errorLabel.textColor = .systemRed
+        errorLabel.isHidden = true
+
+        let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: self, action: #selector(cancelClicked))
+        cancelButton.bezelStyle = .rounded
+        let saveButton = NSButton(title: tr("macRouterOSSaveConnection"), target: self, action: #selector(saveClicked))
+        saveButton.bezelStyle = .rounded
+        saveButton.keyEquivalent = "\r"
+        let buttonSpacer = NSView()
+        buttonSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let buttonRow = NSStackView(views: [buttonSpacer, cancelButton, saveButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 10
+
+        let stack = NSStackView(views: [titleLabel, subtitleLabel, card, errorLabel, buttonRow])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.setCustomSpacing(4, after: titleLabel)
+        stack.setCustomSpacing(18, after: subtitleLabel)
+        stack.setCustomSpacing(8, after: card)
+        view.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 22),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -22),
+            subtitleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            card.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            errorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            buttonRow.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        ])
+        self.view = view
+    }
+
+    private func fieldLabel(_ value: String) -> NSTextField {
+        let label = NSTextField(labelWithString: value)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        return label
+    }
+
+    @objc private func cancelClicked() {
+        dismiss(self)
+    }
+
+    @objc private func saveClicked() {
+        let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let address = addressField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = usernameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newPassword = passwordField.stringValue
+
+        guard !name.isEmpty else {
+            showError(tr("macRouterOSConnectionNameRequired"))
+            return
+        }
+        let duplicateName = existingConnections.contains {
+            $0.id != existingConnection?.id
+                && $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+        guard !duplicateName else {
+            showError(tr("macRouterOSConnectionNameDuplicate"))
+            return
+        }
+        guard let url = URL(string: address),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host != nil else {
+            showError(tr("macRouterOSConnectionAddressInvalid"))
+            return
+        }
+        guard !username.isEmpty else {
+            showError(tr("macRouterOSConnectionUsernameRequired"))
+            return
+        }
+        let password = newPassword.isEmpty ? existingConnection?.password ?? "" : newPassword
+        guard !password.isEmpty else {
+            showError(tr("macRouterOSConnectionPasswordRequired"))
+            return
+        }
+
+        let connection = RouterOSStoredConnection(
+            id: existingConnection?.id ?? UUID(),
+            name: name,
+            url: url.absoluteString,
+            username: username,
+            password: password
+        )
+        do {
+            try onSave(connection)
+            dismiss(self)
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    private func showError(_ message: String) {
+        errorLabel.stringValue = message
+        errorLabel.isHidden = false
+    }
+}
+
+@MainActor
 final class RouterOSSettingsViewController: NSViewController {
     private let appearancePopUp = WireRoutePopUpButton()
     private let statusIconPopUp = WireRoutePopUpButton()
+    private let connectionsTableView = NSTableView()
+    private let connectionsEmptyLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionsEmpty"))
+    private let addConnectionButton = NSButton(title: tr("macRouterOSAddConnection"), target: nil, action: nil)
+    private let editConnectionButton = NSButton(title: tr("macRouterOSEditConnection"), target: nil, action: nil)
+    private let removeConnectionButton = NSButton(title: tr("macRouterOSRemoveConnection"), target: nil, action: nil)
     private let endpointField = WireRouteTextField()
     private let dnsField = WireRouteTextField()
     private let routesField = WireRouteTextField()
     private let keepaliveField = WireRouteTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
+    private var connections = [RouterOSStoredConnection]()
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        loadStoredDefaults()
         errorLabel.isHidden = true
+        loadStoredDefaults()
+        loadConnections()
     }
 
     override func loadView() {
@@ -1812,8 +2115,10 @@ final class RouterOSSettingsViewController: NSViewController {
 
         configureFields()
         let appearanceForm = makeAppearanceForm()
+        let connectionsForm = makeConnectionsForm()
         let peerDefaultsForm = makePeerDefaultsForm()
         let appearanceTitle = sectionTitle(tr("macSettingsAppearanceTitle"))
+        let connectionsTitle = sectionTitle(tr("macRouterOSConnectionsTitle"))
         let peerDefaultsTitle = sectionTitle(tr("macRouterOSSettingsTitle"))
 
         let restoreButton = NSButton(
@@ -1846,6 +2151,8 @@ final class RouterOSSettingsViewController: NSViewController {
             subtitleLabel,
             appearanceTitle,
             appearanceForm,
+            connectionsTitle,
+            connectionsForm,
             peerDefaultsTitle,
             peerDefaultsForm,
             errorLabel,
@@ -1858,6 +2165,8 @@ final class RouterOSSettingsViewController: NSViewController {
         stack.setCustomSpacing(20, after: subtitleLabel)
         stack.setCustomSpacing(6, after: appearanceTitle)
         stack.setCustomSpacing(18, after: appearanceForm)
+        stack.setCustomSpacing(6, after: connectionsTitle)
+        stack.setCustomSpacing(18, after: connectionsForm)
         stack.setCustomSpacing(6, after: peerDefaultsTitle)
         stack.setCustomSpacing(16, after: peerDefaultsForm)
 
@@ -1888,6 +2197,7 @@ final class RouterOSSettingsViewController: NSViewController {
             documentView.bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: 22),
             subtitleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             appearanceForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            connectionsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             peerDefaultsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             errorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             buttonRow.widthAnchor.constraint(equalTo: stack.widthAnchor)
@@ -1989,6 +2299,108 @@ final class RouterOSSettingsViewController: NSViewController {
         return card
     }
 
+    private func makeConnectionsForm() -> NSView {
+        let card = makeCard()
+        let helpLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionsHelp"))
+        helpLabel.font = .systemFont(ofSize: 12)
+        helpLabel.textColor = .secondaryLabelColor
+
+        connectionsTableView.dataSource = self
+        connectionsTableView.delegate = self
+        connectionsTableView.backgroundColor = .clear
+        connectionsTableView.headerView = NSTableHeaderView()
+        connectionsTableView.rowHeight = 30
+        connectionsTableView.intercellSpacing = NSSize(width: 8, height: 2)
+        connectionsTableView.usesAlternatingRowBackgroundColors = false
+        connectionsTableView.target = self
+        connectionsTableView.doubleAction = #selector(editConnectionClicked)
+
+        let columns: [(String, String, CGFloat)] = [
+            ("connectionName", tr("macRouterOSConnectionName"), 180),
+            ("connectionAddress", tr("macRouterOSAddress"), 300),
+            ("connectionUsername", tr("macRouterOSUsername"), 150)
+        ]
+        for (identifier, title, width) in columns {
+            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
+            column.title = title
+            column.headerCell = RouterOSDiscoveryHeaderCell(textCell: title)
+            column.width = width
+            column.minWidth = 90
+            connectionsTableView.addTableColumn(column)
+        }
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = connectionsTableView
+
+        let listContainer = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .inset
+        )
+        listContainer.adaptiveBorderColor = .separatorColor
+        listContainer.adaptiveBorderAlpha = 0.45
+        listContainer.layer?.cornerRadius = 10
+        listContainer.layer?.cornerCurve = .continuous
+        listContainer.layer?.borderWidth = 1
+        listContainer.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        connectionsEmptyLabel.alignment = .center
+        connectionsEmptyLabel.font = .systemFont(ofSize: 12)
+        connectionsEmptyLabel.textColor = .tertiaryLabelColor
+        listContainer.addSubview(connectionsEmptyLabel)
+        connectionsEmptyLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: listContainer.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor),
+            connectionsEmptyLabel.centerXAnchor.constraint(equalTo: listContainer.centerXAnchor),
+            connectionsEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: 8),
+            connectionsEmptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: listContainer.leadingAnchor, constant: 24),
+            connectionsEmptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: listContainer.trailingAnchor, constant: -24),
+            listContainer.heightAnchor.constraint(equalToConstant: 150)
+        ])
+
+        addConnectionButton.target = self
+        addConnectionButton.action = #selector(addConnectionClicked)
+        editConnectionButton.target = self
+        editConnectionButton.action = #selector(editConnectionClicked)
+        removeConnectionButton.target = self
+        removeConnectionButton.action = #selector(removeConnectionClicked)
+        for button in [addConnectionButton, editConnectionButton, removeConnectionButton] {
+            button.bezelStyle = .rounded
+        }
+        let buttonSpacer = NSView()
+        buttonSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let buttonRow = NSStackView(views: [addConnectionButton, editConnectionButton, removeConnectionButton, buttonSpacer])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 8
+
+        let stack = NSStackView(views: [helpLabel, listContainer, buttonRow])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        helpLabel.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        buttonRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+
+        card.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16)
+        ])
+        updateConnectionButtons()
+        return card
+    }
+
     private func makePeerDefaultsForm() -> NSView {
         let card = makeCard()
 
@@ -2066,6 +2478,88 @@ final class RouterOSSettingsViewController: NSViewController {
         return label
     }
 
+    private var selectedStoredConnection: RouterOSStoredConnection? {
+        let row = connectionsTableView.selectedRow
+        guard connections.indices.contains(row) else { return nil }
+        return connections[row]
+    }
+
+    private func loadConnections(selecting connectionID: UUID? = nil) {
+        let preferredID = connectionID ?? selectedStoredConnection?.id
+        do {
+            connections = try RouterOSCredentialStore.loadAll().sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+            connectionsTableView.reloadData()
+            if let preferredID, let index = connections.firstIndex(where: { $0.id == preferredID }) {
+                connectionsTableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+                connectionsTableView.scrollRowToVisible(index)
+            } else if !connections.isEmpty {
+                connectionsTableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            }
+            connectionsEmptyLabel.isHidden = !connections.isEmpty
+            updateConnectionButtons()
+        } catch {
+            connections = []
+            connectionsTableView.reloadData()
+            connectionsEmptyLabel.isHidden = false
+            updateConnectionButtons()
+            showSettingsError(error.localizedDescription)
+        }
+    }
+
+    private func updateConnectionButtons() {
+        let hasSelection = selectedStoredConnection != nil
+        editConnectionButton.isEnabled = hasSelection
+        removeConnectionButton.isEnabled = hasSelection
+    }
+
+    @objc private func addConnectionClicked() {
+        presentConnectionEditor(connection: nil)
+    }
+
+    @objc private func editConnectionClicked() {
+        guard let connection = selectedStoredConnection else { return }
+        presentConnectionEditor(connection: connection)
+    }
+
+    private func presentConnectionEditor(connection: RouterOSStoredConnection?) {
+        let editor = RouterOSConnectionEditorViewController(
+            connection: connection,
+            existingConnections: connections
+        ) { [weak self] savedConnection in
+            try RouterOSCredentialStore.save(savedConnection)
+            self?.loadConnections(selecting: savedConnection.id)
+        }
+        presentAsSheet(editor)
+    }
+
+    @objc private func removeConnectionClicked() {
+        guard let connection = selectedStoredConnection, let window = view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr(format: "macRouterOSRemoveConnectionTitle (%@)", connection.name)
+        alert.informativeText = tr("macRouterOSRemoveConnectionMessage")
+        let removeButton = alert.addButton(withTitle: tr("macRouterOSRemoveConnectionConfirm"))
+        removeButton.hasDestructiveAction = true
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            do {
+                try RouterOSCredentialStore.delete(id: connection.id)
+                self?.loadConnections()
+            } catch {
+                self?.showSettingsError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func showSettingsError(_ message: String) {
+        errorLabel.stringValue = message
+        errorLabel.textColor = .systemRed
+        errorLabel.isHidden = false
+    }
+
     @objc private func restoreDefaultsClicked() {
         endpointField.stringValue = ""
         dnsField.stringValue = ""
@@ -2119,5 +2613,54 @@ final class RouterOSSettingsViewController: NSViewController {
     private static func splitValues(_ value: String) -> [String] {
         let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
         return value.components(separatedBy: separators).filter { !$0.isEmpty }
+    }
+}
+
+extension RouterOSSettingsViewController: NSTableViewDataSource, NSTableViewDelegate {
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        connections.count
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        RouterOSDiscoveryRowView()
+    }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard let tableColumn, connections.indices.contains(row) else { return nil }
+        let identifier = tableColumn.identifier
+        let cell = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView
+            ?? makeConnectionCell(identifier: identifier)
+        let connection = connections[row]
+        switch identifier.rawValue {
+        case "connectionName":
+            cell.textField?.stringValue = connection.name
+        case "connectionAddress":
+            cell.textField?.stringValue = connection.url
+        case "connectionUsername":
+            cell.textField?.stringValue = connection.username
+        default:
+            cell.textField?.stringValue = ""
+        }
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        updateConnectionButtons()
+    }
+
+    private func makeConnectionCell(identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
+        let cell = NSTableCellView()
+        cell.identifier = identifier
+        let label = NSTextField(labelWithString: "")
+        label.lineBreakMode = .byTruncatingMiddle
+        cell.textField = label
+        cell.addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
+            label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+        ])
+        return cell
     }
 }
