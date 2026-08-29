@@ -214,7 +214,7 @@
 
 "settingsSectionTitleAbout" = "About";
 "settingsVersionKeyWireGuardForIOS" = "WireRoute for iOS";
-"settingsVersionKeyWireGuardGoBackend" = "WireGuard Go Backend";
+"settingsVersionKeyWireGuardGoBackend" = "WireRoute VPN Engine";
 
 "settingsSectionTitleExportConfigurations" = "Export configurations";
 "settingsExportZipButtonTitle" = "Export zip archive";

@@ -23,6 +23,21 @@ private final class ProfileTableRowView: NSTableRowView {
     }
 }
 
+private final class SidebarActionButton: NSButton {
+    override var wantsUpdateLayer: Bool {
+        return true
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        layer?.cornerRadius = 10
+        layer?.cornerCurve = .continuous
+        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.14).cgColor
+        layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.32).cgColor
+        layer?.borderWidth = 1
+    }
+}
+
 @MainActor
 protocol TunnelsListTableViewControllerDelegate: AnyObject {
     func tunnelsSelected(tunnelIndices: [Int])
@@ -70,13 +85,14 @@ class TunnelsListTableViewController: NSViewController {
     }()
 
     let routerOSButton: NSButton = {
-        let button = NSButton(title: tr("macButtonRouterOSPeers"), target: nil, action: nil)
-        button.bezelStyle = .rounded
+        let button = SidebarActionButton(title: tr("macButtonRouterOSPeers"), target: nil, action: nil)
+        button.isBordered = false
+        button.wantsLayer = true
         button.controlSize = .large
         button.font = .systemFont(ofSize: 12, weight: .semibold)
         button.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: tr("macButtonRouterOSPeers"))
         button.imagePosition = .imageLeading
-        button.contentTintColor = .systemBlue
+        button.contentTintColor = .labelColor
         button.toolTip = tr("macMenuRouterOSManager")
         return button
     }()
@@ -173,6 +189,7 @@ class TunnelsListTableViewController: NSViewController {
             sidebarHeader.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
             sidebarHeader.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
             routerOSButton.widthAnchor.constraint(equalTo: sidebarHeader.widthAnchor),
+            routerOSButton.heightAnchor.constraint(equalToConstant: 36),
             scrollView.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor, constant: 12),
             scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 8),
             scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -8),

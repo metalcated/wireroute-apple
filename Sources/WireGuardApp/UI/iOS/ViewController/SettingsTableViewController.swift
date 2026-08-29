@@ -4,6 +4,53 @@
 import UIKit
 import os.log
 
+private final class WireRouteSettingsFooterView: UIView {
+    private let brandImageView: UIImageView = {
+        let imageView = UIImageView(image: UIImage(named: "WireRouteBrand"))
+        imageView.contentMode = .scaleAspectFit
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 14
+        return imageView
+    }()
+
+    private let productNameLabel: UILabel = {
+        let label = UILabel()
+        label.font = .preferredFont(forTextStyle: .title2)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .label
+        return label
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        let productName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "WireRoute"
+        brandImageView.accessibilityLabel = productName
+        productNameLabel.text = productName
+
+        let brandStack = UIStackView(arrangedSubviews: [brandImageView, productNameLabel])
+        brandStack.axis = .horizontal
+        brandStack.alignment = .center
+        brandStack.spacing = 14
+        addSubview(brandStack)
+        brandStack.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            brandImageView.widthAnchor.constraint(equalToConstant: 64),
+            brandImageView.heightAnchor.constraint(equalTo: brandImageView.widthAnchor),
+            brandStack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            brandStack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
+            brandStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -24),
+            brandStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -18),
+            brandStack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 12)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 class SettingsTableViewController: UITableViewController {
 
     enum SettingsFields {
@@ -29,7 +76,7 @@ class SettingsTableViewController: UITableViewController {
     ]
 
     let tunnelsManager: TunnelsManager?
-    var wireguardCaptionedImage: (view: UIView, size: CGSize)?
+    private let brandFooterView = WireRouteSettingsFooterView()
 
     init(tunnelsManager: TunnelsManager?) {
         self.tunnelsManager = tunnelsManager
@@ -52,38 +99,25 @@ class SettingsTableViewController: UITableViewController {
         tableView.register(KeyValueCell.self)
         tableView.register(ButtonCell.self)
 
-        let brandImageView = UIImageView(image: UIImage(named: "wireguard.pdf"))
-        brandImageView.contentMode = .scaleAspectFit
-        brandImageView.isAccessibilityElement = true
-        brandImageView.accessibilityLabel = "WireRoute"
-        tableView.tableFooterView = brandImageView
+        tableView.tableFooterView = brandFooterView
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        guard let logo = tableView.tableFooterView else { return }
+        let currentFooterHeight = brandFooterView.frame.height
+        let contentWithoutFooter = max(tableView.contentSize.height - currentFooterHeight, 0)
+        let visibleHeight = tableView.bounds.height
+            - tableView.adjustedContentInset.top
+            - tableView.adjustedContentInset.bottom
+        let footerHeight = max(112, visibleHeight - contentWithoutFooter)
+        let footerWidth = tableView.bounds.width
+        let needsReload = abs(footerHeight - currentFooterHeight) > 0.5
+            || abs(footerWidth - brandFooterView.frame.width) > 0.5
 
-        let bottomPadding = max(tableView.layoutMargins.bottom, 10)
-        let fullHeight = max(tableView.contentSize.height, tableView.bounds.size.height - tableView.layoutMargins.top - bottomPadding)
-
-        let imageAspectRatio = logo.intrinsicContentSize.width / logo.intrinsicContentSize.height
-
-        var height = tableView.estimatedRowHeight * 1.5
-        var width = height * imageAspectRatio
-        let maxWidth = view.bounds.size.width - max(tableView.layoutMargins.left + tableView.layoutMargins.right, 20)
-        if width > maxWidth {
-            width = maxWidth
-            height = width / imageAspectRatio
-        }
-
-        let needsReload = height != logo.frame.height
-
-        logo.frame = CGRect(x: (view.bounds.size.width - width) / 2, y: fullHeight - height, width: width, height: height)
-        logo.layer.cornerRadius = height * 0.22
-        logo.clipsToBounds = true
+        brandFooterView.frame = CGRect(x: 0, y: 0, width: footerWidth, height: footerHeight)
 
         if needsReload {
-            tableView.tableFooterView = logo
+            tableView.tableFooterView = brandFooterView
         }
     }
 
