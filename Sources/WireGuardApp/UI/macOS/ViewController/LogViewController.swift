@@ -3,8 +3,10 @@
 
 import Cocoa
 
+@MainActor
 class LogViewController: NSViewController {
 
+    @MainActor
     enum LogColumn: String {
         case time = "Time"
         case logMessage = "LogMessage"
@@ -108,15 +110,21 @@ class LogViewController: NSViewController {
         scrollView.contentView = clipView
 
         boundsChangedNotificationToken = NotificationCenter.default.observe(name: NSView.boundsDidChangeNotification, object: clipView, queue: OperationQueue.main) { [weak self] _ in
-            guard let self = self else { return }
-            let lastVisibleRowIndex = self.tableView.row(at: NSPoint(x: 0, y: self.scrollView.contentView.documentVisibleRect.maxY - 1))
-            self.isInScrolledToEndMode = lastVisibleRowIndex < 0 || lastVisibleRowIndex == self.logEntries.count - 1
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let visibleRect = self.scrollView.contentView.documentVisibleRect
+                let lastVisibleRowIndex = self.tableView.row(
+                    at: NSPoint(x: 0, y: visibleRect.maxY - 1)
+                )
+                self.isInScrolledToEndMode = lastVisibleRowIndex < 0
+                    || lastVisibleRowIndex == self.logEntries.count - 1
+            }
         }
 
         frameChangedNotificationToken = NotificationCenter.default.observe(name: NSView.frameDidChangeNotification, object: tableView, queue: OperationQueue.main) { [weak self] _ in
-            guard let self = self else { return }
-            if self.isInScrolledToEndMode {
-                DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.isInScrolledToEndMode {
                     self.tableView.scroll(NSPoint(x: 0, y: self.tableView.frame.maxY - clipView.documentVisibleRect.height))
                 }
             }
@@ -185,7 +193,9 @@ class LogViewController: NSViewController {
         updateLogEntries()
         updateLogEntriesTimer?.invalidate()
         let timer = Timer(timeInterval: 1 /* second */, repeats: true) { [weak self] _ in
-            self?.updateLogEntries()
+            Task { @MainActor [weak self] in
+                self?.updateLogEntries()
+            }
         }
         updateLogEntriesTimer = timer
         RunLoop.main.add(timer, forMode: .common)

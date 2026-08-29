@@ -526,6 +526,12 @@
 "macButtonDeleteTunnels (%d)" = "Delete %d tunnels";
 
 "macButtonEdit" = "Edit";
+"macTunnelProfilesTitle" = "Profiles";
+"macTunnelProfilesSubtitle" = "Choose one profile, then connect or change how it routes traffic.";
+"macTunnelTrafficRouting" = "Traffic routing";
+"macTunnelRoutingSplit" = "Split";
+"macTunnelRoutingFull" = "Full";
+"macTunnelTechnicalDetails" = "Configuration details";
 
 // Mac detail/edit view fields
 

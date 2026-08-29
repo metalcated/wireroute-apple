@@ -6,9 +6,9 @@ import Cocoa
 // swiftlint:disable colon
 
 class MainMenu: NSMenu {
-    init() {
+    init(application: NSApplication, applicationDelegate: NSApplicationDelegate?) {
         super.init(title: "")
-        addSubmenu(createApplicationMenu())
+        addSubmenu(createApplicationMenu(application: application, applicationDelegate: applicationDelegate))
         addSubmenu(createFileMenu())
         addSubmenu(createEditMenu())
         addSubmenu(createTunnelMenu())
@@ -24,12 +24,12 @@ class MainMenu: NSMenu {
         self.setSubmenu(menu, for: menuItem)
     }
 
-    private func createApplicationMenu() -> NSMenu {
+    private func createApplicationMenu(application: NSApplication, applicationDelegate: NSApplicationDelegate?) -> NSMenu {
         let menu = NSMenu()
 
         let aboutMenuItem = menu.addItem(withTitle: tr("macMenuAbout"),
             action: #selector(AppDelegate.aboutClicked), keyEquivalent: "")
-        aboutMenuItem.target = NSApp.delegate
+        aboutMenuItem.target = applicationDelegate
 
         menu.addItem(NSMenuItem.separator())
 
@@ -38,7 +38,7 @@ class MainMenu: NSMenu {
             action: #selector(AppDelegate.showRouterOSSettings),
             keyEquivalent: ","
         )
-        settingsMenuItem.target = NSApp.delegate
+        settingsMenuItem.target = applicationDelegate
 
         menu.addItem(NSMenuItem.separator())
 
@@ -51,20 +51,20 @@ class MainMenu: NSMenu {
             keyEquivalent: "r"
         )
         routerOSMenuItem.keyEquivalentModifierMask = [.command, .shift]
-        routerOSMenuItem.target = NSApp.delegate
+        routerOSMenuItem.target = applicationDelegate
 
         menu.addItem(NSMenuItem.separator())
 
         let hideMenuItem = menu.addItem(withTitle: tr("macMenuHideApp"),
                                         action: #selector(NSApplication.hide), keyEquivalent: "h")
-        hideMenuItem.target = NSApp
+        hideMenuItem.target = application
         let hideOthersMenuItem = menu.addItem(withTitle: tr("macMenuHideOtherApps"),
                                               action: #selector(NSApplication.hideOtherApplications), keyEquivalent: "h")
         hideOthersMenuItem.keyEquivalentModifierMask = [.command, .option]
-        hideOthersMenuItem.target = NSApp
+        hideOthersMenuItem.target = application
         let showAllMenuItem = menu.addItem(withTitle: tr("macMenuShowAllApps"),
             action: #selector(NSApplication.unhideAllApplications), keyEquivalent: "")
-        showAllMenuItem.target = NSApp
+        showAllMenuItem.target = application
 
         menu.addItem(NSMenuItem.separator())
 

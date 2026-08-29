@@ -27,10 +27,12 @@ class ManageTunnelsRootViewController: NSViewController {
 
     override func loadView() {
         view = NSView()
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
-        let horizontalSpacing: CGFloat = 20
-        let verticalSpacing: CGFloat = 20
-        let centralSpacing: CGFloat = 10
+        let horizontalSpacing: CGFloat = 22
+        let verticalSpacing: CGFloat = 22
+        let centralSpacing: CGFloat = 16
 
         let container = NSLayoutGuide()
         view.addLayoutGuide(container)

@@ -9,6 +9,7 @@ protocol TunnelEditViewControllerDelegate: AnyObject {
     func tunnelEditingCancelled()
 }
 
+@MainActor
 class TunnelEditViewController: NSViewController {
 
     let nameRow: EditableKeyValueRow = {
@@ -122,19 +123,30 @@ class TunnelEditViewController: NSViewController {
             updateExcludePrivateIPsVisibility(singlePeerAllowedIPs: nil)
             dnsServersAddedToAllowedIPs = nil
         }
-        privateKeyObservationToken = textView.observe(\.privateKeyString) { [weak publicKeyRow] textView, _ in
-            if let privateKeyString = textView.privateKeyString,
-               let privateKey = PrivateKey(base64Key: privateKeyString) {
-                publicKeyRow?.value = privateKey.publicKey.base64Key
-            } else {
-                publicKeyRow?.value = ""
+        privateKeyObservationToken = textView.observe(\.privateKeyString) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let privateKeyString = self.textView.privateKeyString,
+                   let privateKey = PrivateKey(base64Key: privateKeyString) {
+                    self.publicKeyRow.value = privateKey.publicKey.base64Key
+                } else {
+                    self.publicKeyRow.value = ""
+                }
             }
         }
-        hasErrorObservationToken = textView.observe(\.hasError) { [weak saveButton] textView, _ in
-            saveButton?.isEnabled = !textView.hasError
+        hasErrorObservationToken = textView.observe(\.hasError) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.saveButton.isEnabled = !self.textView.hasError
+            }
         }
-        singlePeerAllowedIPsObservationToken = textView.observe(\.singlePeerAllowedIPs) { [weak self] textView, _ in
-            self?.updateExcludePrivateIPsVisibility(singlePeerAllowedIPs: textView.singlePeerAllowedIPs)
+        singlePeerAllowedIPsObservationToken = textView.observe(\.singlePeerAllowedIPs) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.updateExcludePrivateIPsVisibility(
+                    singlePeerAllowedIPs: self.textView.singlePeerAllowedIPs
+                )
+            }
         }
     }
 

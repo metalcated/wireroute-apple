@@ -37,7 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             isLaunchedAtLogin = LaunchedAtLoginDetector.isLaunchedAtLogin(openAppleEvent: appleEvent)
         }
 
-        NSApp.mainMenu = MainMenu()
+        NSApp.mainMenu = MainMenu(application: NSApp, applicationDelegate: NSApp.delegate)
         setDockIconAndMainMenuVisibility(isVisible: !isLaunchedAtLogin)
 
         TunnelsManager.create { [weak self] result in
@@ -259,7 +259,9 @@ extension AppDelegate: StatusMenuWindowDelegate {
             manageTunnelsRootVC = ManageTunnelsRootViewController(tunnelsManager: tunnelsManager)
             let window = NSWindow(contentViewController: manageTunnelsRootVC!)
             window.title = tr("macWindowTitleManageTunnels")
-            window.setContentSize(NSSize(width: 800, height: 480))
+            window.setContentSize(NSSize(width: 1040, height: 680))
+            window.minSize = NSSize(width: 900, height: 580)
+            window.titlebarAppearsTransparent = true
             window.setFrameAutosaveName(NSWindow.FrameAutosaveName("ManageTunnelsWindow")) // Auto-save window position and size
             manageTunnelsWindowObject = window
             tunnelsTracker?.manageTunnelsRootVC = manageTunnelsRootVC
@@ -275,5 +277,18 @@ extension AppDelegate: StatusMenuWindowDelegate {
 func registerLoginItem(shouldLaunchAtLogin: Bool) -> Bool {
     let appId = Bundle.main.bundleIdentifier!
     let helperBundleId = "\(appId).login-item-helper"
-    return SMLoginItemSetEnabled(helperBundleId as CFString, shouldLaunchAtLogin)
+    let service = SMAppService.loginItem(identifier: helperBundleId)
+    do {
+        if shouldLaunchAtLogin {
+            if service.status == .notRegistered {
+                try service.register()
+            }
+        } else if service.status == .enabled || service.status == .requiresApproval {
+            try service.unregister()
+        }
+        return true
+    } catch {
+        wg_log(.error, message: "Unable to update login item registration: \(error)")
+        return false
+    }
 }

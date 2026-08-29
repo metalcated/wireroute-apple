@@ -2,6 +2,7 @@
 // Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
 
 import Cocoa
+import UniformTypeIdentifiers
 
 @MainActor
 protocol TunnelsListTableViewControllerDelegate: AnyObject {
@@ -19,7 +20,11 @@ class TunnelsListTableViewController: NSViewController {
         let tableView = NSTableView()
         tableView.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("TunnelsList")))
         tableView.headerView = nil
-        tableView.rowSizeStyle = .medium
+        tableView.rowSizeStyle = .custom
+        tableView.rowHeight = 52
+        tableView.intercellSpacing = NSSize(width: 0, height: 4)
+        tableView.backgroundColor = .clear
+        tableView.selectionHighlightStyle = .regular
         tableView.allowsMultipleSelection = true
         return tableView
     }()
@@ -36,15 +41,15 @@ class TunnelsListTableViewController: NSViewController {
 
         let button = NSPopUpButton(frame: NSRect.zero, pullsDown: true)
         button.menu = menu
-        button.bezelStyle = .smallSquare
+        button.bezelStyle = .texturedRounded
         (button.cell as? NSPopUpButtonCell)?.arrowPosition = .arrowAtBottom
         return button
     }()
 
     let removeButton: NSButton = {
         let image = NSImage(named: NSImage.removeTemplateName)!
-        let button = NSButton(image: image, target: self, action: #selector(handleRemoveTunnelAction))
-        button.bezelStyle = .smallSquare
+        let button = NSButton(image: image, target: nil, action: nil)
+        button.bezelStyle = .texturedRounded
         button.imagePosition = .imageOnly
         return button
     }()
@@ -61,7 +66,7 @@ class TunnelsListTableViewController: NSViewController {
 
         let button = NSPopUpButton(frame: NSRect.zero, pullsDown: true)
         button.menu = menu
-        button.bezelStyle = .smallSquare
+        button.bezelStyle = .texturedRounded
         (button.cell as? NSPopUpButtonCell)?.arrowPosition = .arrowAtBottom
         return button
     }()
@@ -78,6 +83,8 @@ class TunnelsListTableViewController: NSViewController {
     override func loadView() {
         tableView.dataSource = self
         tableView.delegate = self
+        removeButton.target = self
+        removeButton.action = #selector(handleRemoveTunnelAction)
 
         tableView.doubleAction = #selector(listDoubleClicked(sender:))
 
@@ -90,15 +97,26 @@ class TunnelsListTableViewController: NSViewController {
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
-        scrollView.borderType = .bezelBorder
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
 
         let clipView = NSClipView()
         clipView.documentView = tableView
         scrollView.contentView = clipView
 
+        let titleLabel = NSTextField(labelWithString: tr("macTunnelProfilesTitle"))
+        titleLabel.font = .systemFont(ofSize: 19, weight: .bold)
+        let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macTunnelProfilesSubtitle"))
+        subtitleLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        subtitleLabel.textColor = .secondaryLabelColor
+        let sidebarHeader = NSStackView(views: [titleLabel, subtitleLabel])
+        sidebarHeader.orientation = .vertical
+        sidebarHeader.alignment = .leading
+        sidebarHeader.spacing = 3
+
         let buttonBar = NSStackView(views: [addButton, removeButton, actionButton])
         buttonBar.orientation = .horizontal
-        buttonBar.spacing = -1
+        buttonBar.spacing = 6
 
         NSLayoutConstraint.activate([
             removeButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 26),
@@ -106,31 +124,35 @@ class TunnelsListTableViewController: NSViewController {
             removeButton.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor)
         ])
 
-        let fillerButton = FillerButton()
-
         let containerView = NSView()
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.72).cgColor
+        containerView.layer?.cornerRadius = 16
+        containerView.layer?.cornerCurve = .continuous
+        containerView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
+        containerView.layer?.borderWidth = 1
+        containerView.addSubview(sidebarHeader)
         containerView.addSubview(scrollView)
         containerView.addSubview(buttonBar)
-        containerView.addSubview(fillerButton)
+        sidebarHeader.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         buttonBar.translatesAutoresizingMaskIntoConstraints = false
-        fillerButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            containerView.topAnchor.constraint(equalTo: scrollView.topAnchor),
-            containerView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-            containerView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            sidebarHeader.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 16),
+            sidebarHeader.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
+            sidebarHeader.trailingAnchor.constraint(lessThanOrEqualTo: containerView.trailingAnchor, constant: -16),
+            scrollView.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor, constant: 12),
+            scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 8),
+            scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -8),
             scrollView.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: 1),
-            containerView.leadingAnchor.constraint(equalTo: buttonBar.leadingAnchor),
-            containerView.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: fillerButton.topAnchor, constant: 1),
-            containerView.bottomAnchor.constraint(equalTo: fillerButton.bottomAnchor),
-            buttonBar.trailingAnchor.constraint(equalTo: fillerButton.leadingAnchor, constant: 1),
-            fillerButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor)
+            buttonBar.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
+            buttonBar.trailingAnchor.constraint(lessThanOrEqualTo: containerView.trailingAnchor, constant: -12),
+            containerView.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor, constant: 12)
         ])
 
         NSLayoutConstraint.activate([
-            containerView.widthAnchor.constraint(equalToConstant: 180),
+            containerView.widthAnchor.constraint(equalToConstant: 238),
             containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120)
         ])
 
@@ -213,7 +235,7 @@ class TunnelsListTableViewController: NSViewController {
             guard let self = self else { return }
             guard let window = self.view.window else { return }
             let savePanel = NSSavePanel()
-            savePanel.allowedFileTypes = ["zip"]
+            savePanel.allowedContentTypes = [.zip]
             savePanel.prompt = tr("macSheetButtonExportZip")
             savePanel.nameFieldLabel = tr("macNameFieldExportZip")
             savePanel.nameFieldStringValue = "wireguard-export.zip"

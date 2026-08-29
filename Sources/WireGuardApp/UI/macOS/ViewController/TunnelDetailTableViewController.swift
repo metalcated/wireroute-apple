@@ -3,6 +3,120 @@
 
 import Cocoa
 
+@MainActor
+private final class MacSplitRouteEntryViewController: NSViewController {
+    var onSave: ((String, @escaping @MainActor @Sendable (WireGuardAppError?) -> Void) -> Void)?
+
+    private let routesTextView: NSTextView = {
+        let textView = NSTextView()
+        textView.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.textContainerInset = NSSize(width: 12, height: 12)
+        return textView
+    }()
+    private let errorLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.textColor = .systemRed
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.isHidden = true
+        return label
+    }()
+    private let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
+    private let saveButton = NSButton(title: tr("macEditSave"), target: nil, action: nil)
+
+    override func loadView() {
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+
+        let titleLabel = NSTextField(labelWithString: tr("splitRouteEntryTitle"))
+        titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
+        let messageLabel = NSTextField(wrappingLabelWithString: tr("splitRouteEntryMessage"))
+        messageLabel.font = .systemFont(ofSize: 13)
+        messageLabel.textColor = .secondaryLabelColor
+        let hintLabel = NSTextField(wrappingLabelWithString: tr("splitRouteEntryHint"))
+        hintLabel.font = .systemFont(ofSize: 11)
+        hintLabel.textColor = .secondaryLabelColor
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = routesTextView
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .noBorder
+        scrollView.wantsLayer = true
+        scrollView.layer?.cornerRadius = 12
+        scrollView.layer?.cornerCurve = .continuous
+        scrollView.layer?.borderWidth = 1
+        scrollView.layer?.borderColor = NSColor.separatorColor.cgColor
+
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelClicked)
+        saveButton.target = self
+        saveButton.action = #selector(saveClicked)
+        saveButton.keyEquivalent = "\r"
+        saveButton.bezelStyle = .rounded
+        let buttonRow = NSStackView(views: [cancelButton, saveButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 10
+
+        let spacer = NSView()
+        let footer = NSStackView(views: [errorLabel, spacer, buttonRow])
+        footer.orientation = .horizontal
+        footer.alignment = .centerY
+        footer.spacing = 12
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let stack = NSStackView(views: [titleLabel, messageLabel, scrollView, hintLabel, footer])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        stack.setCustomSpacing(4, after: titleLabel)
+        stack.setCustomSpacing(18, after: messageLabel)
+        stack.setCustomSpacing(8, after: scrollView)
+        container.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 22),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
+            scrollView.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            hintLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        ])
+        container.frame = NSRect(x: 0, y: 0, width: 560, height: 390)
+        view = container
+    }
+
+    @objc private func cancelClicked() {
+        presentingViewController?.dismiss(self)
+    }
+
+    @objc private func saveClicked() {
+        guard let onSave else { return }
+        let routes = routesTextView.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        saveButton.isEnabled = false
+        routesTextView.isEditable = false
+        errorLabel.isHidden = true
+        onSave(routes) { [weak self] error in
+            guard let self else { return }
+            self.saveButton.isEnabled = true
+            self.routesTextView.isEditable = true
+            if let error {
+                self.errorLabel.stringValue = error.alertText.message
+                self.errorLabel.isHidden = false
+            } else {
+                self.presentingViewController?.dismiss(self)
+            }
+        }
+    }
+}
+
+@MainActor
 class TunnelDetailTableViewController: NSViewController {
 
     private enum TableViewModelRow {
@@ -34,8 +148,7 @@ class TunnelDetailTableViewController: NSViewController {
     }
 
     static let interfaceFields: [TunnelViewModel.InterfaceField] = [
-        .name, .status, .publicKey, .addresses,
-        .listenPort, .mtu, .dns, .toggleStatus
+        .name, .publicKey, .addresses, .listenPort, .mtu, .dns
     ]
 
     static let peerFields: [TunnelViewModel.PeerField] = [
@@ -70,8 +183,74 @@ class TunnelDetailTableViewController: NSViewController {
     let box: NSBox = {
         let box = NSBox()
         box.titlePosition = .noTitle
-        box.fillColor = .unemphasizedSelectedContentBackgroundColor
+        box.boxType = .custom
+        box.fillColor = .controlBackgroundColor
+        box.borderColor = NSColor.separatorColor.withAlphaComponent(0.55)
+        box.borderWidth = 1
+        box.cornerRadius = 16
         return box
+    }()
+
+    private let heroCard: NSBox = {
+        let box = NSBox()
+        box.titlePosition = .noTitle
+        box.boxType = .custom
+        box.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.82)
+        box.borderColor = NSColor.systemBlue.withAlphaComponent(0.28)
+        box.borderWidth = 1
+        box.cornerRadius = 18
+        return box
+    }()
+    private let identityImageView: NSImageView = {
+        let imageView = NSImageView()
+        imageView.contentTintColor = .systemBlue
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        return imageView
+    }()
+    private let titleLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.font = .systemFont(ofSize: 25, weight: .bold)
+        label.lineBreakMode = .byTruncatingTail
+        return label
+    }()
+    private let statusLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        return label
+    }()
+    private let routeModeControl = NSSegmentedControl(
+        labels: [tr("macTunnelRoutingSplit"), tr("macTunnelRoutingFull")],
+        trackingMode: .selectOne,
+        target: nil,
+        action: nil
+    )
+    private let routeDescriptionLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .secondaryLabelColor
+        label.maximumNumberOfLines = 2
+        return label
+    }()
+    private let routeProgressIndicator: NSProgressIndicator = {
+        let indicator = NSProgressIndicator()
+        indicator.style = .spinning
+        indicator.controlSize = .small
+        indicator.isDisplayedWhenStopped = false
+        return indicator
+    }()
+    private let connectionButton: NSButton = {
+        let button = NSButton(title: "", target: nil, action: nil)
+        button.bezelStyle = .rounded
+        button.controlSize = .large
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        return button
+    }()
+    private let technicalDetailsLabel: NSTextField = {
+        let label = NSTextField(labelWithString: tr("macTunnelTechnicalDetails"))
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        return label
     }()
 
     let tunnelsManager: TunnelsManager
@@ -90,6 +269,8 @@ class TunnelDetailTableViewController: NSViewController {
     private var tableViewModelRows = [TableViewModelRow]()
 
     private var statusObservationToken: AnyObject?
+    private var isOnDemandEnabledObservationToken: AnyObject?
+    private var hasOnDemandRulesObservationToken: AnyObject?
     private var tunnelEditVC: TunnelEditViewController?
     private var reloadRuntimeConfigurationTimer: Timer?
 
@@ -102,12 +283,25 @@ class TunnelDetailTableViewController: NSViewController {
         updateTableViewModelRowsBySection()
         updateTableViewModelRows()
         statusObservationToken = tunnel.observe(\TunnelContainer.status) { [weak self] _, _ in
-            guard let self = self else { return }
-            if tunnel.status == .active {
-                self.startUpdatingRuntimeConfiguration()
-            } else if tunnel.status == .inactive {
-                self.reloadRuntimeConfiguration()
-                self.stopUpdatingRuntimeConfiguration()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.updateDashboard()
+                if self.tunnel.status == .active {
+                    self.startUpdatingRuntimeConfiguration()
+                } else if self.tunnel.status == .inactive {
+                    self.reloadRuntimeConfiguration()
+                    self.stopUpdatingRuntimeConfiguration()
+                }
+            }
+        }
+        isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.updateDashboard()
+            }
+        }
+        hasOnDemandRulesObservationToken = tunnel.observe(\.hasOnDemandRules) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.updateDashboard()
             }
         }
     }
@@ -119,9 +313,17 @@ class TunnelDetailTableViewController: NSViewController {
     override func loadView() {
         tableView.dataSource = self
         tableView.delegate = self
+        tableView.rowHeight = 30
+        tableView.intercellSpacing = NSSize(width: 0, height: 3)
+        tableView.gridStyleMask = []
 
         editButton.target = self
         editButton.action = #selector(handleEditTunnelAction)
+        routeModeControl.target = self
+        routeModeControl.action = #selector(routingModeChanged)
+        routeModeControl.segmentStyle = .rounded
+        connectionButton.target = self
+        connectionButton.action = #selector(handleToggleActiveStatusAction)
 
         let clipView = NSClipView()
         clipView.documentView = tableView
@@ -132,42 +334,95 @@ class TunnelDetailTableViewController: NSViewController {
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
 
+        let identityText = NSStackView(views: [titleLabel, statusLabel])
+        identityText.orientation = .vertical
+        identityText.alignment = .leading
+        identityText.spacing = 3
+        let identitySpacer = NSView()
+        identitySpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let identityRow = NSStackView(views: [identityImageView, identityText, identitySpacer, editButton])
+        identityRow.orientation = .horizontal
+        identityRow.alignment = .centerY
+        identityRow.spacing = 14
+
+        let routingLabel = NSTextField(labelWithString: tr("macTunnelTrafficRouting"))
+        routingLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        let routingSpacer = NSView()
+        routingSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let routingRow = NSStackView(
+            views: [routingLabel, routingSpacer, routeProgressIndicator, routeModeControl]
+        )
+        routingRow.orientation = .horizontal
+        routingRow.alignment = .centerY
+        routingRow.spacing = 10
+
+        let descriptionSpacer = NSView()
+        descriptionSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let descriptionRow = NSStackView(
+            views: [routeDescriptionLabel, descriptionSpacer, connectionButton]
+        )
+        descriptionRow.orientation = .horizontal
+        descriptionRow.alignment = .centerY
+        descriptionRow.spacing = 16
+
+        let heroStack = NSStackView(views: [identityRow, routingRow, descriptionRow])
+        heroStack.orientation = .vertical
+        heroStack.alignment = .leading
+        heroStack.spacing = 15
+        heroStack.setCustomSpacing(20, after: identityRow)
+        heroCard.addSubview(heroStack)
+        heroStack.translatesAutoresizingMaskIntoConstraints = false
+
         let containerView = NSView()
-        let bottomControlsContainer = NSLayoutGuide()
-        containerView.addLayoutGuide(bottomControlsContainer)
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        containerView.addSubview(heroCard)
+        containerView.addSubview(technicalDetailsLabel)
         containerView.addSubview(box)
         containerView.addSubview(scrollView)
-        containerView.addSubview(editButton)
+        heroCard.translatesAutoresizingMaskIntoConstraints = false
+        technicalDetailsLabel.translatesAutoresizingMaskIntoConstraints = false
         box.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        editButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            containerView.topAnchor.constraint(equalTo: scrollView.topAnchor),
-            containerView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-            containerView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
-            containerView.leadingAnchor.constraint(equalTo: bottomControlsContainer.leadingAnchor),
-            containerView.trailingAnchor.constraint(equalTo: bottomControlsContainer.trailingAnchor),
-            bottomControlsContainer.heightAnchor.constraint(equalToConstant: 32),
-            scrollView.bottomAnchor.constraint(equalTo: bottomControlsContainer.topAnchor),
-            bottomControlsContainer.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
-            editButton.trailingAnchor.constraint(equalTo: bottomControlsContainer.trailingAnchor),
-            bottomControlsContainer.bottomAnchor.constraint(equalTo: editButton.bottomAnchor, constant: 0)
+            heroStack.leadingAnchor.constraint(equalTo: heroCard.leadingAnchor, constant: 20),
+            heroStack.trailingAnchor.constraint(equalTo: heroCard.trailingAnchor, constant: -20),
+            heroStack.topAnchor.constraint(equalTo: heroCard.topAnchor, constant: 18),
+            heroStack.bottomAnchor.constraint(equalTo: heroCard.bottomAnchor, constant: -18),
+            identityRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
+            routingRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
+            descriptionRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
+            identityImageView.widthAnchor.constraint(equalToConstant: 44),
+            identityImageView.heightAnchor.constraint(equalTo: identityImageView.widthAnchor),
+            routeModeControl.widthAnchor.constraint(equalToConstant: 220),
+            routeDescriptionLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 260),
+            connectionButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 116)
         ])
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: box.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: box.bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: box.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: box.trailingAnchor)
+            heroCard.topAnchor.constraint(equalTo: containerView.topAnchor),
+            heroCard.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            heroCard.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            technicalDetailsLabel.topAnchor.constraint(equalTo: heroCard.bottomAnchor, constant: 18),
+            technicalDetailsLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 4),
+            box.topAnchor.constraint(equalTo: technicalDetailsLabel.bottomAnchor, constant: 8),
+            box.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            box.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            box.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+            scrollView.topAnchor.constraint(equalTo: box.topAnchor, constant: 8),
+            scrollView.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -8),
+            scrollView.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 8),
+            scrollView.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8)
         ])
 
         NSLayoutConstraint.activate([
-            containerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
-            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120)
+            containerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 500),
+            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 480)
         ])
 
         view = containerView
+        updateDashboard()
     }
 
     func updateTableViewModelRowsBySection() {
@@ -175,9 +430,8 @@ class TunnelDetailTableViewController: NSViewController {
 
         var interfaceSection = [(isVisible: Bool, modelRow: TableViewModelRow)]()
         for field in TunnelDetailTableViewController.interfaceFields {
-            let isStatus = field == .status || field == .toggleStatus
             let isEmpty = tunnelViewModel.interfaceData[field].isEmpty
-            interfaceSection.append((isVisible: isStatus || !isEmpty, modelRow: .interfaceFieldRow(field)))
+            interfaceSection.append((isVisible: !isEmpty, modelRow: .interfaceFieldRow(field)))
         }
         interfaceSection.append((isVisible: true, modelRow: .spacerRow))
         modelRowsBySection.append(interfaceSection)
@@ -218,8 +472,11 @@ class TunnelDetailTableViewController: NSViewController {
     @objc func handleToggleActiveStatusAction() {
         if tunnel.hasOnDemandRules {
             let turnOn = !tunnel.isActivateOnDemandEnabled
-            tunnelsManager.setOnDemandEnabled(turnOn, on: tunnel) { error in
-                if error == nil && !turnOn {
+            tunnelsManager.setOnDemandEnabled(turnOn, on: tunnel) { [weak self] error in
+                guard let self else { return }
+                if let error {
+                    ErrorPresenter.showErrorAlert(error: error, from: self)
+                } else if !turnOn {
                     self.tunnelsManager.startDeactivation(of: self.tunnel)
                 }
             }
@@ -229,6 +486,96 @@ class TunnelDetailTableViewController: NSViewController {
             } else if tunnel.status == .active {
                 tunnelsManager.startDeactivation(of: tunnel)
             }
+        }
+    }
+
+    @objc private func routingModeChanged() {
+        let requestedMode: TunnelRouteMode = routeModeControl.selectedSegment == 1
+            ? .full
+            : .split
+        guard requestedMode != tunnel.routingMode else { return }
+        setRoutingControlBusy(true)
+        tunnelsManager.setRoutingMode(requestedMode, on: tunnel) { [weak self] error in
+            guard let self else { return }
+            self.setRoutingControlBusy(false)
+            guard let error else {
+                self.refreshAfterRoutingChange()
+                return
+            }
+            self.updateDashboard()
+            if let routingError = error as? TunnelRoutingError,
+               case .missingSplitRoutes = routingError {
+                self.presentSplitRouteEntry()
+            } else {
+                ErrorPresenter.showErrorAlert(error: error, from: self)
+            }
+        }
+    }
+
+    private func presentSplitRouteEntry() {
+        let routeEntryViewController = MacSplitRouteEntryViewController()
+        routeEntryViewController.onSave = { [weak self] routes, completion in
+            guard let self else {
+                completion(TunnelRoutingError.invalidStoredRoutes)
+                return
+            }
+            self.tunnelsManager.setRoutingMode(
+                .split,
+                enteredSplitRoutes: routes,
+                on: self.tunnel
+            ) { error in
+                if error == nil {
+                    self.refreshAfterRoutingChange()
+                }
+                completion(error)
+            }
+        }
+        presentAsSheet(routeEntryViewController)
+    }
+
+    private func refreshAfterRoutingChange() {
+        tunnelViewModel = TunnelViewModel(tunnelConfiguration: tunnel.tunnelConfiguration)
+        onDemandViewModel = ActivateOnDemandViewModel(tunnel: tunnel)
+        tableView.reloadData()
+        updateDashboard()
+    }
+
+    private func setRoutingControlBusy(_ isBusy: Bool) {
+        routeModeControl.isEnabled = !isBusy
+        editButton.isEnabled = !isBusy
+        connectionButton.isEnabled = !isBusy
+        if isBusy {
+            routeProgressIndicator.startAnimation(nil)
+        } else {
+            routeProgressIndicator.stopAnimation(nil)
+        }
+    }
+
+    private func updateDashboard() {
+        guard isViewLoaded else { return }
+        titleLabel.stringValue = tunnel.name
+        statusLabel.stringValue = Self.localizedStatusDescription(for: tunnel)
+        routeModeControl.selectedSegment = tunnel.routingMode == .full ? 1 : 0
+        routeDescriptionLabel.stringValue = tunnel.routingMode == .full
+            ? tr("tunnelRoutingFullDescription")
+            : tr("tunnelRoutingSplitDescription")
+        identityImageView.image = NSImage(
+            systemSymbolName: tunnel.routingMode == .full
+                ? "globe.americas.fill"
+                : "arrow.triangle.branch",
+            accessibilityDescription: tr("macTunnelTrafficRouting")
+        ) ?? NSImage(systemSymbolName: "network", accessibilityDescription: nil)
+        connectionButton.title = Self.localizedToggleStatusActionText(for: tunnel)
+        connectionButton.isEnabled = tunnel.hasOnDemandRules
+            || tunnel.status == .active
+            || tunnel.status == .inactive
+        switch tunnel.status {
+        case .active, .restarting, .reasserting:
+            statusLabel.textColor = .systemGreen
+        case .activating, .waiting, .deactivating:
+            statusLabel.textColor = .systemOrange
+        case .inactive:
+            statusLabel.textColor = .secondaryLabelColor
         }
     }
 
@@ -353,7 +700,9 @@ class TunnelDetailTableViewController: NSViewController {
         reloadRuntimeConfiguration()
         reloadRuntimeConfigurationTimer?.invalidate()
         let reloadTimer = Timer(timeInterval: 1 /* second */, repeats: true) { [weak self] _ in
-            self?.reloadRuntimeConfiguration()
+            Task { @MainActor [weak self] in
+                self?.reloadRuntimeConfiguration()
+            }
         }
         reloadRuntimeConfigurationTimer = reloadTimer
         RunLoop.main.add(reloadTimer, forMode: .common)
@@ -433,14 +782,20 @@ extension TunnelDetailTableViewController: NSTableViewDelegate {
         cell.key = tr(format: "macFieldKey (%@)", tr("tunnelInterfaceStatus"))
         cell.value = TunnelDetailTableViewController.localizedStatusDescription(for: tunnel)
         cell.valueImage = TunnelDetailTableViewController.image(for: tunnel)
-        let changeHandler: (TunnelContainer, Any) -> Void = { [weak cell] tunnel, _ in
-            guard let cell = cell else { return }
-            cell.value = TunnelDetailTableViewController.localizedStatusDescription(for: tunnel)
-            cell.valueImage = TunnelDetailTableViewController.image(for: tunnel)
+        let refreshCell: @MainActor () -> Void = { [weak self, weak cell] in
+            guard let self, let cell else { return }
+            cell.value = Self.localizedStatusDescription(for: self.tunnel)
+            cell.valueImage = Self.image(for: self.tunnel)
         }
-        cell.statusObservationToken = tunnel.observe(\.status, changeHandler: changeHandler)
-        cell.isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled, changeHandler: changeHandler)
-        cell.hasOnDemandRulesObservationToken = tunnel.observe(\.hasOnDemandRules, changeHandler: changeHandler)
+        cell.statusObservationToken = tunnel.observe(\.status) { _, _ in
+            Task { @MainActor in refreshCell() }
+        }
+        cell.isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { _, _ in
+            Task { @MainActor in refreshCell() }
+        }
+        cell.hasOnDemandRulesObservationToken = tunnel.observe(\.hasOnDemandRules) { _, _ in
+            Task { @MainActor in refreshCell() }
+        }
         return cell
     }
 
@@ -452,14 +807,22 @@ extension TunnelDetailTableViewController: NSTableViewDelegate {
         cell.onButtonClicked = { [weak self] in
             self?.handleToggleActiveStatusAction()
         }
-        let changeHandler: (TunnelContainer, Any) -> Void = { [weak cell] tunnel, _ in
-            guard let cell = cell else { return }
-            cell.buttonTitle = TunnelDetailTableViewController.localizedToggleStatusActionText(for: tunnel)
-            cell.isButtonEnabled = (tunnel.hasOnDemandRules || tunnel.status == .active || tunnel.status == .inactive)
+        let refreshCell: @MainActor () -> Void = { [weak self, weak cell] in
+            guard let self, let cell else { return }
+            cell.buttonTitle = Self.localizedToggleStatusActionText(for: self.tunnel)
+            cell.isButtonEnabled = self.tunnel.hasOnDemandRules
+                || self.tunnel.status == .active
+                || self.tunnel.status == .inactive
         }
-        cell.statusObservationToken = tunnel.observe(\.status, changeHandler: changeHandler)
-        cell.isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled, changeHandler: changeHandler)
-        cell.hasOnDemandRulesObservationToken = tunnel.observe(\.hasOnDemandRules, changeHandler: changeHandler)
+        cell.statusObservationToken = tunnel.observe(\.status) { _, _ in
+            Task { @MainActor in refreshCell() }
+        }
+        cell.isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { _, _ in
+            Task { @MainActor in refreshCell() }
+        }
+        cell.hasOnDemandRulesObservationToken = tunnel.observe(\.hasOnDemandRules) { _, _ in
+            Task { @MainActor in refreshCell() }
+        }
         return cell
     }
 
@@ -549,6 +912,7 @@ extension TunnelDetailTableViewController: TunnelEditViewControllerDelegate {
         updateTableViewModelRowsBySection()
         updateTableViewModelRows()
         tableView.reloadData()
+        updateDashboard()
         self.tunnelEditVC = nil
     }
 

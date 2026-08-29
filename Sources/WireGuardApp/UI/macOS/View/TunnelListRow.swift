@@ -3,21 +3,25 @@
 
 import Cocoa
 
+@MainActor
 class TunnelListRow: NSView {
     var tunnel: TunnelContainer? {
         didSet(value) {
-            // Bind to the tunnel's name
-            nameLabel.stringValue = tunnel?.name ?? ""
-            nameObservationToken = tunnel?.observe(\TunnelContainer.name) { [weak self] tunnel, _ in
-                self?.nameLabel.stringValue = tunnel.name
+            updateContent()
+            nameObservationToken = tunnel?.observe(\TunnelContainer.name) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.updateContent()
+                }
             }
-            // Bind to the tunnel's status
-            statusImageView.image = TunnelListRow.image(for: tunnel)
-            statusObservationToken = tunnel?.observe(\TunnelContainer.status) { [weak self] tunnel, _ in
-                self?.statusImageView.image = TunnelListRow.image(for: tunnel)
+            statusObservationToken = tunnel?.observe(\TunnelContainer.status) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.updateContent()
+                }
             }
-            isOnDemandEnabledObservationToken = tunnel?.observe(\TunnelContainer.isActivateOnDemandEnabled) { [weak self] tunnel, _ in
-                self?.statusImageView.image = TunnelListRow.image(for: tunnel)
+            isOnDemandEnabledObservationToken = tunnel?.observe(\TunnelContainer.isActivateOnDemandEnabled) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.updateContent()
+                }
             }
         }
     }
@@ -29,7 +33,29 @@ class TunnelListRow: NSView {
         nameLabel.isBordered = false
         nameLabel.maximumNumberOfLines = 1
         nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         return nameLabel
+    }()
+
+    let detailLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.maximumNumberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.font = .systemFont(ofSize: 10, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        return label
+    }()
+
+    let routingModeLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.alignment = .center
+        label.font = .systemFont(ofSize: 10, weight: .semibold)
+        label.textColor = .systemBlue
+        label.wantsLayer = true
+        label.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
+        label.layer?.cornerRadius = 6
+        label.layer?.cornerCurve = .continuous
+        return label
     }()
 
     let statusImageView = NSImageView()
@@ -43,16 +69,29 @@ class TunnelListRow: NSView {
 
         addSubview(statusImageView)
         addSubview(nameLabel)
+        addSubview(detailLabel)
+        addSubview(routingModeLabel)
         statusImageView.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        detailLabel.translatesAutoresizingMaskIntoConstraints = false
+        routingModeLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.backgroundColor = .clear
         NSLayoutConstraint.activate([
-            self.leadingAnchor.constraint(equalTo: statusImageView.leadingAnchor),
-            statusImageView.trailingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            statusImageView.widthAnchor.constraint(equalToConstant: 20),
-            nameLabel.trailingAnchor.constraint(equalTo: self.trailingAnchor),
+            statusImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            statusImageView.widthAnchor.constraint(equalToConstant: 14),
+            statusImageView.heightAnchor.constraint(equalTo: statusImageView.widthAnchor),
+            nameLabel.leadingAnchor.constraint(equalTo: statusImageView.trailingAnchor, constant: 9),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: routingModeLabel.leadingAnchor, constant: -8),
+            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            detailLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            detailLabel.trailingAnchor.constraint(lessThanOrEqualTo: routingModeLabel.leadingAnchor, constant: -8),
+            detailLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
+            detailLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -7),
+            routingModeLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -9),
+            routingModeLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            routingModeLabel.widthAnchor.constraint(equalToConstant: 42),
+            routingModeLabel.heightAnchor.constraint(equalToConstant: 20),
             statusImageView.centerYAnchor.constraint(equalTo: self.centerYAnchor),
-            nameLabel.centerYAnchor.constraint(equalTo: self.centerYAnchor)
         ])
     }
 
@@ -76,8 +115,38 @@ class TunnelListRow: NSView {
         }
     }
 
+    private func updateContent() {
+        guard let tunnel else {
+            nameLabel.stringValue = ""
+            detailLabel.stringValue = ""
+            routingModeLabel.stringValue = ""
+            statusImageView.image = nil
+            return
+        }
+        nameLabel.stringValue = tunnel.name
+        detailLabel.stringValue = Self.statusText(for: tunnel)
+        routingModeLabel.stringValue = tunnel.routingMode == .full
+            ? tr("macTunnelRoutingFull")
+            : tr("macTunnelRoutingSplit")
+        statusImageView.image = Self.image(for: tunnel)
+    }
+
+    private static func statusText(for tunnel: TunnelContainer) -> String {
+        switch tunnel.status {
+        case .inactive: return tr("tunnelStatusInactive")
+        case .activating: return tr("tunnelStatusActivating")
+        case .active: return tr("tunnelStatusActive")
+        case .deactivating: return tr("tunnelStatusDeactivating")
+        case .reasserting: return tr("tunnelStatusReasserting")
+        case .restarting: return tr("tunnelStatusRestarting")
+        case .waiting: return tr("tunnelStatusWaiting")
+        }
+    }
+
     override func prepareForReuse() {
         nameLabel.stringValue = ""
+        detailLabel.stringValue = ""
+        routingModeLabel.stringValue = ""
         statusImageView.image = nil
     }
 }

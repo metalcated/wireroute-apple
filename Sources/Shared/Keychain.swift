@@ -12,10 +12,10 @@ struct KeychainRecoveryConfiguration {
 
 class Keychain {
     static func openReference(called ref: Data) -> String? {
-        var result: CFTypeRef?
-        let ret = SecItemCopyMatching([kSecValuePersistentRef: ref,
-                                        kSecReturnData: true] as CFDictionary,
-                                       &result)
+        let (ret, result) = copyMatching([
+            kSecValuePersistentRef: ref,
+            kSecReturnData: true
+        ])
         if ret != errSecSuccess || result == nil {
             wg_log(.error, message: "Unable to open config from keychain: \(ret)")
             return nil
@@ -51,8 +51,7 @@ class Keychain {
 
     static func recoveryConfiguration(for peerID: String) -> KeychainRecoveryConfiguration? {
         guard let service = serviceIdentifier(suffix: ".credential-recovery") else { return nil }
-        var result: CFTypeRef?
-        let ret = SecItemCopyMatching([
+        let (ret, result) = copyMatching([
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: peerID,
@@ -60,7 +59,7 @@ class Keychain {
             kSecReturnAttributes: true,
             kSecReturnData: true,
             kSecReturnPersistentRef: true
-        ] as CFDictionary, &result)
+        ])
         guard ret == errSecSuccess,
               let item = result as? NSDictionary,
               let reference = item[kSecValuePersistentRef] as? Data,
@@ -83,7 +82,6 @@ class Keychain {
         serviceSuffix: String?,
         description: String
     ) -> Data? {
-        var ret: OSStatus
         guard let service = serviceIdentifier(suffix: serviceSuffix) else {
             wg_log(.error, staticMessage: "Unable to determine bundle identifier")
             return nil
@@ -96,42 +94,23 @@ class Keychain {
                                     kSecValueData: value.data(using: .utf8) as Any,
                                     kSecReturnPersistentRef: true]
 
+        guard let accessGroup = FileManager.appGroupId else {
+            wg_log(.error, staticMessage: "Unable to determine app group identifier")
+            return nil
+        }
+        items[kSecAttrAccessGroup] = accessGroup
+        items[kSecUseDataProtectionKeychain] = true
         #if os(iOS)
-        items[kSecAttrAccessGroup] = FileManager.appGroupId
         items[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlock
         #elseif os(macOS)
         items[kSecAttrSynchronizable] = false
         items[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-
-        guard let extensionPath = Bundle.main.builtInPlugInsURL?.appendingPathComponent("WireRouteNetworkExtension.appex", isDirectory: true).path else {
-            wg_log(.error, staticMessage: "Unable to determine app extension path")
-            return nil
-        }
-        var extensionApp: SecTrustedApplication?
-        var mainApp: SecTrustedApplication?
-        ret = SecTrustedApplicationCreateFromPath(extensionPath, &extensionApp)
-        if ret != kOSReturnSuccess || extensionApp == nil {
-            wg_log(.error, message: "Unable to create keychain extension trusted application object: \(ret)")
-            return nil
-        }
-        ret = SecTrustedApplicationCreateFromPath(nil, &mainApp)
-        if ret != errSecSuccess || mainApp == nil {
-            wg_log(.error, message: "Unable to create keychain local trusted application object: \(ret)")
-            return nil
-        }
-        var access: SecAccess?
-        ret = SecAccessCreate(label as CFString, [extensionApp!, mainApp!] as CFArray, &access)
-        if ret != errSecSuccess || access == nil {
-            wg_log(.error, message: "Unable to create keychain ACL object: \(ret)")
-            return nil
-        }
-        items[kSecAttrAccess] = access!
         #else
         #error("Unimplemented")
         #endif
 
         var ref: CFTypeRef?
-        ret = SecItemAdd(items as CFDictionary, &ref)
+        let ret = SecItemAdd(items as CFDictionary, &ref)
         if ret != errSecSuccess || ref == nil {
             wg_log(.error, message: "Unable to add config to keychain: \(ret)")
             return nil
@@ -148,23 +127,28 @@ class Keychain {
     }
 
     static func deleteReference(called ref: Data) {
-        let ret = SecItemDelete([kSecValuePersistentRef: ref] as CFDictionary)
+        var query: [CFString: Any] = [
+            kSecValuePersistentRef: ref,
+            kSecUseDataProtectionKeychain: true
+        ]
+        var ret = SecItemDelete(query as CFDictionary)
+        #if os(macOS)
+        if shouldTryLegacyKeychain(after: ret) {
+            query.removeValue(forKey: kSecUseDataProtectionKeychain)
+            ret = SecItemDelete(query as CFDictionary)
+        }
+        #endif
         if ret != errSecSuccess {
             wg_log(.error, message: "Unable to delete config from keychain: \(ret)")
         }
     }
 
     static func deleteReferences(except whitelist: Set<Data>) {
-        var result: CFTypeRef?
-        let ret = SecItemCopyMatching([kSecClass: kSecClassGenericPassword,
-                                       kSecAttrService: Bundle.main.bundleIdentifier as Any,
-                                       kSecMatchLimit: kSecMatchLimitAll,
-                                       kSecReturnPersistentRef: true] as CFDictionary,
-                                      &result)
-        if ret != errSecSuccess || result == nil {
-            return
-        }
-        guard let items = result as? [Data] else { return }
+        guard let service = serviceIdentifier(suffix: nil) else { return }
+        var items = persistentReferences(service: service, useDataProtectionKeychain: true)
+        #if os(macOS)
+        items.append(contentsOf: persistentReferences(service: service, useDataProtectionKeychain: false))
+        #endif
         for item in items {
             if !whitelist.contains(item) {
                 deleteReference(called: item)
@@ -173,7 +157,52 @@ class Keychain {
     }
 
     static func verifyReference(called ref: Data) -> Bool {
-        return SecItemCopyMatching([kSecValuePersistentRef: ref] as CFDictionary,
-                                   nil) != errSecItemNotFound
+        let (ret, _) = copyMatching([kSecValuePersistentRef: ref])
+        return ret != errSecItemNotFound
+    }
+
+    private static func copyMatching(
+        _ attributes: [CFString: Any]
+    ) -> (OSStatus, CFTypeRef?) {
+        var modernAttributes = attributes
+        modernAttributes[kSecUseDataProtectionKeychain] = true
+        var result: CFTypeRef?
+        var ret = SecItemCopyMatching(modernAttributes as CFDictionary, &result)
+        #if os(macOS)
+        if shouldTryLegacyKeychain(after: ret) {
+            result = nil
+            ret = SecItemCopyMatching(attributes as CFDictionary, &result)
+        }
+        #endif
+        return (ret, result)
+    }
+
+    private static func shouldTryLegacyKeychain(after status: OSStatus) -> Bool {
+        status == errSecItemNotFound || status == errSecParam
+    }
+
+    private static func persistentReferences(
+        service: String,
+        useDataProtectionKeychain: Bool
+    ) -> [Data] {
+        var query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecMatchLimit: kSecMatchLimitAll,
+            kSecReturnPersistentRef: true
+        ]
+        if useDataProtectionKeychain {
+            query[kSecUseDataProtectionKeychain] = true
+        }
+        var result: CFTypeRef?
+        let ret = SecItemCopyMatching(query as CFDictionary, &result)
+        guard ret == errSecSuccess else { return [] }
+        if let references = result as? [Data] {
+            return references
+        }
+        if let reference = result as? Data {
+            return [reference]
+        }
+        return []
     }
 }
