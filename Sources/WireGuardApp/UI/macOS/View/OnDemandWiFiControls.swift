@@ -38,7 +38,7 @@ class OnDemandControlsRow: NSView {
         .anySSID, .onlySpecificSSIDs, .exceptSpecificSSIDs
     ]
 
-    let onDemandSSIDOptionsPopup = NSPopUpButton()
+    let onDemandSSIDOptionsPopup = WireRoutePopUpButton()
 
     let onDemandSSIDsField: NSTokenField = {
         let tokenField = NSTokenField()

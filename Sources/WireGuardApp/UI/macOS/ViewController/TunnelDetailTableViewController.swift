@@ -39,15 +39,10 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         hintLabel.font = .systemFont(ofSize: 11)
         hintLabel.textColor = .secondaryLabelColor
 
-        let scrollView = AppearanceAwareLayerScrollView()
+        let scrollView = WireRouteTextEditorScrollView()
         scrollView.documentView = routesTextView
+        scrollView.updateWireRouteTheme()
         scrollView.hasVerticalScroller = true
-        scrollView.borderType = .noBorder
-        scrollView.wantsLayer = true
-        scrollView.layer?.cornerRadius = 12
-        scrollView.layer?.cornerCurve = .continuous
-        scrollView.layer?.borderWidth = 1
-        scrollView.adaptiveBorderColor = .separatorColor
 
         cancelButton.target = self
         cancelButton.action = #selector(cancelClicked)
@@ -120,13 +115,13 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
 
     private let currentPolicy: DNSProtectionPolicy
     private let isTunnelActive: Bool
-    private let modeControl = NSSegmentedControl(
+    private let modeControl = WireRouteSegmentedControl(
         labels: [tr("dnsProtectionProfileDNS"), tr("dnsProtectionEncryptedDNS")],
         trackingMode: .selectOne,
         target: nil,
         action: nil
     )
-    private let presetPopUp = NSPopUpButton()
+    private let presetPopUp = WireRoutePopUpButton()
     private let presetDescriptionLabel: NSTextField = {
         let label = NSTextField(wrappingLabelWithString: "")
         label.font = .systemFont(ofSize: 11)
@@ -497,7 +492,7 @@ class TunnelDetailTableViewController: NSViewController {
         label.textColor = .secondaryLabelColor
         return label
     }()
-    private let routeModeControl = NSSegmentedControl(
+    private let routeModeControl = WireRouteSegmentedControl(
         labels: [tr("macTunnelRoutingSplit"), tr("macTunnelRoutingFull")],
         trackingMode: .selectOne,
         target: nil,

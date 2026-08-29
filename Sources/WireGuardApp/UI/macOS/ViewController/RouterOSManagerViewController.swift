@@ -1761,8 +1761,8 @@ enum RouterOSPeerDefaultsStore {
 
 @MainActor
 final class RouterOSSettingsViewController: NSViewController {
-    private let appearancePopUp = NSPopUpButton()
-    private let statusIconPopUp = NSPopUpButton()
+    private let appearancePopUp = WireRoutePopUpButton()
+    private let statusIconPopUp = WireRoutePopUpButton()
     private let endpointField = WireRouteTextField()
     private let dnsField = WireRouteTextField()
     private let routesField = WireRouteTextField()

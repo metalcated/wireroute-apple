@@ -31,7 +31,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let clientPrivateKey: String
     private let clientPublicKey: String
 
-    private let interfacePopup = NSPopUpButton()
+    private let interfacePopup = WireRoutePopUpButton()
     private let nameField = WireRouteTextField()
     private let clientAddressField = WireRouteTextField()
     private let clientAddressHelpLabel = NSTextField(wrappingLabelWithString: "")
@@ -39,7 +39,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let endpointPortField = WireRouteTextField()
     private let endpointHelpLabel = NSTextField(wrappingLabelWithString: "")
     private let dnsField = WireRouteTextField()
-    private let routeModeControl = NSSegmentedControl(
+    private let routeModeControl = WireRouteSegmentedControl(
         labels: [tr("macRouterOSRouteModeSplit"), tr("macRouterOSRouteModeFull")],
         trackingMode: .selectOne,
         target: nil,
@@ -214,10 +214,10 @@ final class RouterOSPeerSetupViewController: NSViewController {
         clientAddressField.widthAnchor.constraint(equalTo: clientAddressStack.widthAnchor).isActive = true
         clientAddressHelpLabel.widthAnchor.constraint(equalTo: clientAddressStack.widthAnchor).isActive = true
 
-        let routesScrollView = NSScrollView()
-        routesScrollView.borderType = .bezelBorder
+        let routesScrollView = WireRouteTextEditorScrollView()
         routesScrollView.hasVerticalScroller = true
         routesScrollView.documentView = routesTextView
+        routesScrollView.updateWireRouteTheme()
         routesScrollView.heightAnchor.constraint(equalToConstant: 76).isActive = true
 
         let routeStack = NSStackView(views: [routeModeControl, routesScrollView])
