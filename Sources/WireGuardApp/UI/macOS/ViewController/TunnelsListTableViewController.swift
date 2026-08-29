@@ -8,7 +8,7 @@ private final class ProfileTableRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
 
-        let selectionRect = bounds.insetBy(dx: 3, dy: 2)
+        let selectionRect = bounds.insetBy(dx: 0, dy: 2)
         let selectionPath = NSBezierPath(roundedRect: selectionRect, xRadius: 11, yRadius: 11)
         let accentColor = NSColor.controlAccentColor
         let fillColor = isEmphasized
@@ -271,8 +271,8 @@ class TunnelsListTableViewController: NSViewController {
             routerOSButton.widthAnchor.constraint(equalTo: sidebarHeader.widthAnchor),
             routerOSButton.heightAnchor.constraint(equalToConstant: 36),
             scrollView.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor, constant: 12),
-            scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 8),
-            scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -8),
+            scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
+            scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
             scrollView.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: -12),
             buttonBar.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
             buttonBar.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
