@@ -670,7 +670,10 @@
 "alertRoutingInvalidRoutesMessage" = "The saved split routes for this profile are invalid. Review its AllowedIPs before changing routing mode.";
 "splitRouteEntryTitle" = "Choose split routes";
 "splitRouteEntryMessage" = "Enter the networks that should use this VPN. Other traffic stays on the device’s normal connection.";
-"splitRouteEntryPlaceholder" = "192.168.0.0/16\n10.0.0.0/8";
+"splitRouteEntryGuidanceTitle" = "Not sure what to enter?";
+"splitRouteEntryGuidanceMessage" = "Add networks that exist behind this VPN, such as your home, office, or VPN address range.";
+"splitRouteEntryGuidanceExample" = "Examples only — replace them with your networks:\n192.168.50.0/24\n10.20.0.0/16";
+"splitRouteEntryPlaceholder" = "Enter one network per line";
 "splitRouteEntryHint" = "Use CIDR notation, one network per line. Default routes (0.0.0.0/0 and ::/0) belong to Full tunnel.";
 "alertRoutingEmptyEnteredRoutesTitle" = "Routes required";
 "alertRoutingEmptyEnteredRoutesMessage" = "Add at least one network for Split tunnel.";

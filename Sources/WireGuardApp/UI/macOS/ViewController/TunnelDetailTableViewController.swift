@@ -39,9 +39,66 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         let messageLabel = NSTextField(wrappingLabelWithString: tr("splitRouteEntryMessage"))
         messageLabel.font = .systemFont(ofSize: 13)
         messageLabel.textColor = .secondaryLabelColor
+        let guidanceTitleLabel = NSTextField(labelWithString: tr("splitRouteEntryGuidanceTitle"))
+        guidanceTitleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        let guidanceMessageLabel = NSTextField(
+            wrappingLabelWithString: tr("splitRouteEntryGuidanceMessage")
+        )
+        guidanceMessageLabel.font = .systemFont(ofSize: 11)
+        guidanceMessageLabel.textColor = .secondaryLabelColor
+        let guidanceExampleLabel = NSTextField(
+            wrappingLabelWithString: tr("splitRouteEntryGuidanceExample")
+        )
+        guidanceExampleLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        guidanceExampleLabel.textColor = .secondaryLabelColor
         let hintLabel = NSTextField(wrappingLabelWithString: tr("splitRouteEntryHint"))
         hintLabel.font = .systemFont(ofSize: 11)
         hintLabel.textColor = .secondaryLabelColor
+
+        let guidanceIcon = NSImageView()
+        guidanceIcon.image = NSImage(
+            systemSymbolName: "questionmark.circle.fill",
+            accessibilityDescription: tr("splitRouteEntryGuidanceTitle")
+        )
+        guidanceIcon.contentTintColor = WireRouteTheme.accentColor
+        guidanceIcon.imageScaling = .scaleProportionallyUpOrDown
+        guidanceIcon.setContentHuggingPriority(.required, for: .horizontal)
+
+        let guidanceTextStack = NSStackView(views: [
+            guidanceTitleLabel,
+            guidanceMessageLabel,
+            guidanceExampleLabel
+        ])
+        guidanceTextStack.orientation = .vertical
+        guidanceTextStack.alignment = .leading
+        guidanceTextStack.spacing = 4
+        let guidanceStack = NSStackView(views: [guidanceIcon, guidanceTextStack])
+        guidanceStack.orientation = .horizontal
+        guidanceStack.alignment = .top
+        guidanceStack.spacing = 10
+
+        let guidanceCard = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        guidanceCard.adaptiveBorderColor = WireRouteTheme.accentColor
+        guidanceCard.adaptiveBorderAlpha = 0.35
+        guidanceCard.layer?.borderWidth = 1
+        guidanceCard.layer?.cornerRadius = 10
+        guidanceCard.layer?.cornerCurve = .continuous
+        guidanceCard.addSubview(guidanceStack)
+        guidanceStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            guidanceStack.leadingAnchor.constraint(equalTo: guidanceCard.leadingAnchor, constant: 12),
+            guidanceStack.trailingAnchor.constraint(equalTo: guidanceCard.trailingAnchor, constant: -12),
+            guidanceStack.topAnchor.constraint(equalTo: guidanceCard.topAnchor, constant: 10),
+            guidanceStack.bottomAnchor.constraint(equalTo: guidanceCard.bottomAnchor, constant: -10),
+            guidanceIcon.widthAnchor.constraint(equalToConstant: 18),
+            guidanceIcon.heightAnchor.constraint(equalToConstant: 18),
+            guidanceMessageLabel.widthAnchor.constraint(equalTo: guidanceTextStack.widthAnchor),
+            guidanceExampleLabel.widthAnchor.constraint(equalTo: guidanceTextStack.widthAnchor)
+        ])
 
         let scrollView = WireRouteTextEditorScrollView()
         scrollView.documentView = routesTextView
@@ -66,10 +123,10 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         footer.spacing = 12
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let routesStack = NSStackView(views: [scrollView, hintLabel])
+        let routesStack = NSStackView(views: [guidanceCard, scrollView, hintLabel])
         routesStack.orientation = .vertical
         routesStack.alignment = .leading
-        routesStack.spacing = 8
+        routesStack.spacing = 10
 
         let routesCard = AppearanceAwareMaterialView(
             material: .contentBackground,
@@ -88,6 +145,7 @@ private final class MacSplitRouteEntryViewController: NSViewController {
             routesStack.trailingAnchor.constraint(equalTo: routesCard.trailingAnchor, constant: -14),
             routesStack.topAnchor.constraint(equalTo: routesCard.topAnchor, constant: 14),
             routesStack.bottomAnchor.constraint(equalTo: routesCard.bottomAnchor, constant: -12),
+            guidanceCard.widthAnchor.constraint(equalTo: routesStack.widthAnchor),
             scrollView.widthAnchor.constraint(equalTo: routesStack.widthAnchor),
             hintLabel.widthAnchor.constraint(equalTo: routesStack.widthAnchor)
         ])
@@ -105,11 +163,11 @@ private final class MacSplitRouteEntryViewController: NSViewController {
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
             stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 22),
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 140),
             routesCard.widthAnchor.constraint(equalTo: stack.widthAnchor),
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
-        container.frame = NSRect(x: 0, y: 0, width: 560, height: 420)
+        container.frame = NSRect(x: 0, y: 0, width: 560, height: 520)
         view = container
     }
 

@@ -49,6 +49,59 @@ private final class SplitRouteEntryViewController: UIViewController, UITextViewD
         return label
     }()
 
+    private let guidanceCard: UIView = {
+        let card = UIView()
+        card.backgroundColor = WireRouteAppearance.card
+        card.layer.cornerRadius = 12
+        card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 1
+        card.layer.borderColor = WireRouteAppearance.signalBlue.withAlphaComponent(0.35).cgColor
+
+        let iconView = UIImageView(image: UIImage(systemName: "questionmark.circle.fill"))
+        iconView.tintColor = WireRouteAppearance.signalBlue
+        iconView.contentMode = .scaleAspectFit
+        iconView.setContentHuggingPriority(.required, for: .horizontal)
+
+        let titleLabel = UILabel()
+        titleLabel.text = tr("splitRouteEntryGuidanceTitle")
+        titleLabel.font = UIFont.preferredFont(forTextStyle: .subheadline).withWeight(.semibold)
+        titleLabel.adjustsFontForContentSizeCategory = true
+
+        let messageLabel = UILabel()
+        messageLabel.text = tr("splitRouteEntryGuidanceMessage")
+        messageLabel.font = UIFont.preferredFont(forTextStyle: .footnote)
+        messageLabel.adjustsFontForContentSizeCategory = true
+        messageLabel.textColor = .secondaryLabel
+        messageLabel.numberOfLines = 0
+
+        let exampleLabel = UILabel()
+        exampleLabel.text = tr("splitRouteEntryGuidanceExample")
+        exampleLabel.font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        exampleLabel.adjustsFontForContentSizeCategory = true
+        exampleLabel.textColor = .secondaryLabel
+        exampleLabel.numberOfLines = 0
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, messageLabel, exampleLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 4
+        let contentStack = UIStackView(arrangedSubviews: [iconView, textStack])
+        contentStack.axis = .horizontal
+        contentStack.alignment = .top
+        contentStack.spacing = 10
+
+        card.addSubview(contentStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            contentStack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+            contentStack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            contentStack.topAnchor.constraint(equalTo: card.topAnchor, constant: 10),
+            contentStack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10),
+            iconView.widthAnchor.constraint(equalToConstant: 20),
+            iconView.heightAnchor.constraint(equalToConstant: 20)
+        ])
+        return card
+    }()
+
     private let hintLabel: UILabel = {
         let label = UILabel()
         label.text = tr("splitRouteEntryHint")
@@ -108,11 +161,19 @@ private final class SplitRouteEntryViewController: UIViewController, UITextViewD
             glyphContainer.heightAnchor.constraint(equalToConstant: 56)
         ])
 
-        let stack = UIStackView(arrangedSubviews: [glyphContainer, messageLabel, routesTextView, hintLabel, errorLabel])
+        let stack = UIStackView(arrangedSubviews: [
+            glyphContainer,
+            messageLabel,
+            guidanceCard,
+            routesTextView,
+            hintLabel,
+            errorLabel
+        ])
         stack.axis = .vertical
         stack.alignment = .fill
         stack.spacing = 12
         stack.setCustomSpacing(20, after: messageLabel)
+        stack.setCustomSpacing(16, after: guidanceCard)
         stack.setCustomSpacing(8, after: routesTextView)
 
         view.addSubview(stack)
