@@ -729,6 +729,14 @@ class ManageTunnelsRootViewController: NSViewController {
 }
 
 extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegate {
+    func editSelectedTunnel() {
+        tunnelDetailVC?.handleEditTunnelAction()
+    }
+
+    func toggleSelectedTunnelStatus() {
+        tunnelDetailVC?.handleToggleActiveStatusAction()
+    }
+
     func routerOSManagerSelected() {
         let routerOSManagerVC = self.routerOSManagerVC ?? RouterOSManagerViewController(tunnelsManager: tunnelsManager)
         self.routerOSManagerVC = routerOSManagerVC

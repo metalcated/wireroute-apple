@@ -27,6 +27,21 @@ private final class ProfileTableRowView: NSTableRowView {
     }
 }
 
+final class ProfileTableView: NSTableView {
+    var contextMenuProvider: ((Int) -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let location = convert(event.locationInWindow, from: nil)
+        let targetRow = row(at: location)
+        guard targetRow >= 0 else { return nil }
+
+        if !selectedRowIndexes.contains(targetRow) {
+            selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
+        }
+        return contextMenuProvider?(targetRow)
+    }
+}
+
 private final class SidebarActionButton: NSButton {
     private let leadingImageView = NSImageView()
     private let buttonTitleLabel = NSTextField(labelWithString: "")
@@ -169,6 +184,8 @@ protocol TunnelsListTableViewControllerDelegate: AnyObject {
     func settingsSelected()
     func tunnelsSelected(tunnelIndices: [Int])
     func tunnelsListEmpty()
+    func editSelectedTunnel()
+    func toggleSelectedTunnelStatus()
 }
 
 class TunnelsListTableViewController: NSViewController {
@@ -179,8 +196,8 @@ class TunnelsListTableViewController: NSViewController {
     private var isRouterOSManagerSelected = false
     private var isSettingsSelected = false
 
-    let tableView: NSTableView = {
-        let tableView = NSTableView()
+    let tableView: ProfileTableView = {
+        let tableView = ProfileTableView()
         tableView.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("TunnelsList")))
         tableView.headerView = nil
         tableView.rowSizeStyle = .custom
@@ -261,6 +278,9 @@ class TunnelsListTableViewController: NSViewController {
     override func loadView() {
         tableView.dataSource = self
         tableView.delegate = self
+        tableView.contextMenuProvider = { [weak self] row in
+            self?.profileContextMenu(for: row)
+        }
         routerOSButton.target = self
         routerOSButton.action = #selector(handleRouterOSManagerAction)
         settingsButton.target = self
@@ -461,12 +481,33 @@ class TunnelsListTableViewController: NSViewController {
         alert.beginSheetModal(for: window)
     }
 
+    @objc private func handleEditSelectedTunnelAction() {
+        delegate?.editSelectedTunnel()
+    }
+
+    @objc private func handleToggleSelectedTunnelStatusAction() {
+        delegate?.toggleSelectedTunnelStatus()
+    }
+
+    @objc private func handleExportSelectedTunnelsAction() {
+        let selectedIndices = tableView.selectedRowIndexes.sorted().filter {
+            $0 >= 0 && $0 < tunnelsManager.numberOfTunnels()
+        }
+        guard !selectedIndices.isEmpty else { return }
+        exportTunnels(at: selectedIndices)
+    }
+
     @objc func handleViewLogAction() {
         let logVC = LogViewController()
         self.presentAsSheet(logVC)
     }
 
     @objc func handleExportTunnelsAction() {
+        exportTunnels(at: Array(0 ..< tunnelsManager.numberOfTunnels()))
+    }
+
+    private func exportTunnels(at indices: [Int]) {
+        guard !indices.isEmpty else { return }
         PrivateDataConfirmation.confirmAccess(to: tr("macExportPrivateData")) { [weak self] in
             guard let self = self else { return }
             guard let window = self.view.window else { return }
@@ -476,12 +517,12 @@ class TunnelsListTableViewController: NSViewController {
             savePanel.nameFieldLabel = tr("macNameFieldExportZip")
             savePanel.nameFieldStringValue = "wireguard-export.zip"
             let tunnelsManager = self.tunnelsManager
+            let tunnelIndices = indices
             savePanel.beginSheetModal(for: window) { [weak tunnelsManager] response in
                 guard let tunnelsManager = tunnelsManager else { return }
                 guard response == .OK else { return }
                 guard let destinationURL = savePanel.url else { return }
-                let count = tunnelsManager.numberOfTunnels()
-                let tunnelConfigurations = (0 ..< count).compactMap { tunnelsManager.tunnel(at: $0).tunnelConfiguration }
+                let tunnelConfigurations = tunnelIndices.compactMap { tunnelsManager.tunnel(at: $0).tunnelConfiguration }
                 ZipExporter.exportConfigFiles(tunnelConfigurations: tunnelConfigurations, to: destinationURL) { [weak self] error in
                     if let error = error {
                         ErrorPresenter.showErrorAlert(error: error, from: self)
@@ -490,6 +531,76 @@ class TunnelsListTableViewController: NSViewController {
                 }
             }
         }
+    }
+
+    private func profileContextMenu(for row: Int) -> NSMenu? {
+        guard row >= 0, row < tunnelsManager.numberOfTunnels() else { return nil }
+
+        let selectedIndices = tableView.selectedRowIndexes.sorted().filter {
+            $0 >= 0 && $0 < tunnelsManager.numberOfTunnels()
+        }
+        guard !selectedIndices.isEmpty else { return nil }
+
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        if selectedIndices.count == 1 {
+            let tunnel = tunnelsManager.tunnel(at: selectedIndices[0])
+            if tunnel.isTunnelAvailableToUser {
+                let toggleItem = menu.addItem(
+                    withTitle: TunnelDetailTableViewController.localizedToggleStatusActionText(for: tunnel),
+                    action: #selector(handleToggleSelectedTunnelStatusAction),
+                    keyEquivalent: ""
+                )
+                toggleItem.target = self
+                toggleItem.isEnabled = tunnel.hasOnDemandRules
+                    || tunnel.status == .active
+                    || tunnel.status == .inactive
+                toggleItem.image = NSImage(
+                    systemSymbolName: tunnel.status == .active ? "stop.circle" : "play.circle",
+                    accessibilityDescription: toggleItem.title
+                )
+
+                let editItem = menu.addItem(
+                    withTitle: tr("macMenuEditTunnel"),
+                    action: #selector(handleEditSelectedTunnelAction),
+                    keyEquivalent: ""
+                )
+                editItem.target = self
+                editItem.image = NSImage(
+                    systemSymbolName: "pencil",
+                    accessibilityDescription: editItem.title
+                )
+                menu.addItem(.separator())
+            }
+        }
+
+        let exportKey = selectedIndices.count == 1
+            ? "macTunnelContextExportProfile"
+            : "macTunnelContextExportProfiles"
+        let exportItem = menu.addItem(
+            withTitle: tr(exportKey),
+            action: #selector(handleExportSelectedTunnelsAction),
+            keyEquivalent: ""
+        )
+        exportItem.target = self
+        exportItem.image = NSImage(
+            systemSymbolName: "square.and.arrow.up",
+            accessibilityDescription: exportItem.title
+        )
+
+        menu.addItem(.separator())
+        let deleteItem = menu.addItem(
+            withTitle: tr("macMenuDeleteSelected"),
+            action: #selector(handleRemoveTunnelAction),
+            keyEquivalent: ""
+        )
+        deleteItem.target = self
+        deleteItem.image = NSImage(
+            systemSymbolName: "trash",
+            accessibilityDescription: deleteItem.title
+        )
+
+        return menu
     }
 
     @objc func listDoubleClicked(sender: AnyObject) {

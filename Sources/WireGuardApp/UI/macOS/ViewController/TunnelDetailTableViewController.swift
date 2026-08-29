@@ -1232,7 +1232,7 @@ extension TunnelDetailTableViewController: NSTableViewDelegate {
         }
     }
 
-    private static func localizedToggleStatusActionText(for tunnel: TunnelContainer) -> String {
+    static func localizedToggleStatusActionText(for tunnel: TunnelContainer) -> String {
         if tunnel.hasOnDemandRules {
             let turnOn = !tunnel.isActivateOnDemandEnabled
             if turnOn {

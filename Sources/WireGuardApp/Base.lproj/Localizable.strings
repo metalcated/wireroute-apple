@@ -554,6 +554,8 @@
 "macButtonRouterOSPeers" = "RouterOS Peers";
 "macTunnelAddProfile" = "Add profile";
 "macTunnelMoreActions" = "More";
+"macTunnelContextExportProfile" = "Export Profile to Zip…";
+"macTunnelContextExportProfiles" = "Export Selected Profiles to Zip…";
 "macTunnelTrafficRouting" = "Traffic routing";
 "macTunnelRoutingSplit" = "Split";
 "macTunnelRoutingFull" = "Full";
