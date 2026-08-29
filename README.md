@@ -22,7 +22,7 @@ $ cp Sources/WireGuardApp/Config/Developer.xcconfig.template Sources/WireGuardAp
 $ open -e Sources/WireGuardApp/Config/Developer.xcconfig
 ```
 
-- Set your Apple Developer Team ID. The iOS App ID is `com.gnet.wireroute`; create it with the Network Extensions capability before installing on an iPhone. Set a separate macOS App ID when macOS signing begins.
+- Set your Apple Developer Team ID. Use `com.gnet.wireroute` as the base App ID for both platforms. The project derives `com.gnet.wireroute.network-extension` and `com.gnet.wireroute.login-item-helper` for the nested macOS bundles, so the base ID must not include an additional `.macos` suffix. Register the app and Network Extension identifiers with the required capabilities before signing.
 
 - Install the build tools required by the inherited tunnel bridge:
 

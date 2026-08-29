@@ -4,5 +4,7 @@
 DEVELOPMENT_TEAM = <team_id>
 
 // Create these App IDs at developer.apple.com with the Network Extensions capability.
+// APP_ID_MACOS is the containing app's bundle ID. The project appends one suffix
+// for its network extension and login item helper.
 APP_ID_IOS = com.gnet.wireroute
-APP_ID_MACOS = <mac_app_id>
+APP_ID_MACOS = com.gnet.wireroute
