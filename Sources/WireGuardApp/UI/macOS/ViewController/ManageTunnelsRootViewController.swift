@@ -125,7 +125,7 @@ private protocol WireRouteThemeField: AnyObject {
 @MainActor
 private enum WireRouteFieldStyle {
     static func contentRect(for bounds: NSRect) -> NSRect {
-        return bounds.insetBy(dx: 10, dy: 4)
+        return bounds.insetBy(dx: 10, dy: 0)
     }
 
     static func drawBackground(in bounds: NSRect) {
@@ -144,7 +144,7 @@ private final class WireRouteTextFieldCell: NSTextFieldCell {
         guard WireRouteTheme.isBlueNordic else {
             return super.drawingRect(forBounds: rect)
         }
-        return super.drawingRect(forBounds: WireRouteFieldStyle.contentRect(for: rect))
+        return WireRouteFieldStyle.contentRect(for: rect)
     }
 
     override func edit(
@@ -184,7 +184,7 @@ private final class WireRouteSecureTextFieldCell: NSSecureTextFieldCell {
         guard WireRouteTheme.isBlueNordic else {
             return super.drawingRect(forBounds: rect)
         }
-        return super.drawingRect(forBounds: WireRouteFieldStyle.contentRect(for: rect))
+        return WireRouteFieldStyle.contentRect(for: rect)
     }
 
     override func edit(
