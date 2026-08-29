@@ -54,6 +54,12 @@ class TunnelsManager {
     static func create(
         completionHandler: @escaping @MainActor @Sendable (Result<TunnelsManager, TunnelsManagerError>) -> Void
     ) {
+        #if DEBUG && os(macOS)
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            completionHandler(.success(TunnelsManager(tunnelProviders: MockTunnels.createMockTunnels())))
+            return
+        }
+        #endif
         #if targetEnvironment(simulator)
         completionHandler(.success(TunnelsManager(tunnelProviders: MockTunnels.createMockTunnels())))
         #else

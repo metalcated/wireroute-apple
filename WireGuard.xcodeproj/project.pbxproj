@@ -142,6 +142,7 @@
 		6F9B8A8E223398610041B9C4 /* SSIDOptionDetailTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F9B8A8D223398610041B9C4 /* SSIDOptionDetailTableViewController.swift */; };
 		6FADE96C2254B8C300B838A4 /* UnusableTunnelDetailViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FADE96A2254A6C200B838A4 /* UnusableTunnelDetailViewController.swift */; };
 		6FB1017921C57DE600766195 /* MockTunnels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB1017821C57DE600766195 /* MockTunnels.swift */; };
+		C0DE10000000000000000019 /* MockTunnels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB1017821C57DE600766195 /* MockTunnels.swift */; };
 		6FB17946222FD5960018AE71 /* OnDemandWiFiControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB17945222FD5960018AE71 /* OnDemandWiFiControls.swift */; };
 		6FB1BD6021D2607A00A991BF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB1BD5F21D2607A00A991BF /* AppDelegate.swift */; };
 		6FB1BD6221D2607E00A991BF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6FB1BD6121D2607E00A991BF /* Assets.xcassets */; };
@@ -1366,6 +1367,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0DE10000000000000000019 /* MockTunnels.swift in Sources */,
 				C0DE10000000000000000011 /* RouterOSClient.swift in Sources */,
 				C0DE10000000000000000012 /* RouterOSModels.swift in Sources */,
 				C0DE10000000000000000013 /* RouterOSCredentialStore.swift in Sources */,

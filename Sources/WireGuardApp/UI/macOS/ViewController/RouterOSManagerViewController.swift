@@ -274,6 +274,14 @@ final class RouterOSManagerViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            urlField.stringValue = "https://router.example"
+            usernameField.stringValue = "reviewer"
+            passwordField.stringValue = ""
+            return
+        }
+        #endif
         loadStoredConnection()
     }
 

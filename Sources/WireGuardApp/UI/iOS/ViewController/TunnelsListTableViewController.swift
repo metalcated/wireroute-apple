@@ -133,7 +133,9 @@ class TunnelsListTableViewController: UIViewController {
             self.addButtonTapped(sender: self.centeredAddButton)
         }
 
-        busyIndicator.startAnimating()
+        if tunnelsManager == nil {
+            busyIndicator.startAnimating()
+        }
     }
 
     override func viewDidLoad() {
