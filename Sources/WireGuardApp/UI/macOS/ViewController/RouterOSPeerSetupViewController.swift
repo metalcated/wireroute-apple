@@ -75,9 +75,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
     }
 
     override func loadView() {
-        let view = AppearanceAwareLayerView()
-        view.wantsLayer = true
-        view.adaptiveBackgroundColor = .windowBackgroundColor
+        let view = NSView()
 
         let titleLabel = NSTextField(labelWithString: tr("macRouterOSSetupTitle"))
         titleLabel.font = .systemFont(ofSize: 25, weight: .bold)

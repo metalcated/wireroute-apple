@@ -148,9 +148,7 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     override func loadView() {
-        let view = AppearanceAwareLayerView()
-        view.wantsLayer = true
-        view.adaptiveBackgroundColor = .windowBackgroundColor
+        let view = NSView()
 
         let titleLabel = NSTextField(labelWithString: tr("macRouterOSTitle"))
         titleLabel.font = .systemFont(ofSize: 28, weight: .bold)
@@ -165,7 +163,8 @@ final class RouterOSManagerViewController: NSViewController {
 
         let readOnlyBadge = AppearanceAwareLayerView()
         readOnlyBadge.wantsLayer = true
-        readOnlyBadge.adaptiveBackgroundColor = NSColor.systemBlue.withAlphaComponent(0.12)
+        readOnlyBadge.adaptiveBackgroundColor = .systemBlue
+        readOnlyBadge.adaptiveBackgroundAlpha = 0.12
         readOnlyBadge.layer?.cornerRadius = 7
         readOnlyBadge.layer?.cornerCurve = .continuous
         readOnlyBadge.addSubview(readOnlyBadgeLabel)
@@ -1727,9 +1726,7 @@ final class RouterOSSettingsViewController: NSViewController {
     }
 
     override func loadView() {
-        let view = AppearanceAwareLayerView()
-        view.wantsLayer = true
-        view.adaptiveBackgroundColor = .windowBackgroundColor
+        let view = NSView()
 
         let titleLabel = NSTextField(labelWithString: tr("macRouterOSSettingsTitle"))
         titleLabel.font = .systemFont(ofSize: 25, weight: .bold)

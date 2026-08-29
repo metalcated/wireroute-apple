@@ -8,7 +8,13 @@ final class AppearanceAwareLayerView: NSView {
     var adaptiveBackgroundColor: NSColor? {
         didSet { needsDisplay = true }
     }
+    var adaptiveBackgroundAlpha: CGFloat = 1 {
+        didSet { needsDisplay = true }
+    }
     var adaptiveBorderColor: NSColor? {
+        didSet { needsDisplay = true }
+    }
+    var adaptiveBorderAlpha: CGFloat = 1 {
         didSet { needsDisplay = true }
     }
 
@@ -19,8 +25,10 @@ final class AppearanceAwareLayerView: NSView {
     override func updateLayer() {
         super.updateLayer()
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = adaptiveBackgroundColor?.cgColor
-            layer?.borderColor = adaptiveBorderColor?.cgColor
+            layer?.backgroundColor = adaptiveBackgroundColor?
+                .withAlphaComponent(adaptiveBackgroundAlpha).cgColor
+            layer?.borderColor = adaptiveBorderColor?
+                .withAlphaComponent(adaptiveBorderAlpha).cgColor
         }
     }
 
@@ -82,10 +90,7 @@ class ManageTunnelsRootViewController: NSViewController {
     }
 
     override func loadView() {
-        let rootView = AppearanceAwareLayerView()
-        rootView.adaptiveBackgroundColor = .windowBackgroundColor
-        view = rootView
-        view.wantsLayer = true
+        view = NSView()
 
         let horizontalSpacing: CGFloat = 22
         let verticalSpacing: CGFloat = 22

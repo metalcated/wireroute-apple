@@ -280,8 +280,10 @@ class TunnelsListTableViewController: NSViewController {
 
         let containerView = AppearanceAwareLayerView()
         containerView.wantsLayer = true
-        containerView.adaptiveBackgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.72)
-        containerView.adaptiveBorderColor = NSColor.separatorColor.withAlphaComponent(0.45)
+        containerView.adaptiveBackgroundColor = .controlBackgroundColor
+        containerView.adaptiveBackgroundAlpha = 0.72
+        containerView.adaptiveBorderColor = .separatorColor
+        containerView.adaptiveBorderAlpha = 0.45
         containerView.layer?.cornerRadius = 16
         containerView.layer?.cornerCurve = .continuous
         containerView.layer?.borderWidth = 1

@@ -28,9 +28,7 @@ private final class MacSplitRouteEntryViewController: NSViewController {
     private let saveButton = NSButton(title: tr("macEditSave"), target: nil, action: nil)
 
     override func loadView() {
-        let container = AppearanceAwareLayerView()
-        container.wantsLayer = true
-        container.adaptiveBackgroundColor = .windowBackgroundColor
+        let container = NSView()
 
         let titleLabel = NSTextField(labelWithString: tr("splitRouteEntryTitle"))
         titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
@@ -185,7 +183,7 @@ class TunnelDetailTableViewController: NSViewController {
         box.titlePosition = .noTitle
         box.boxType = .custom
         box.fillColor = .controlBackgroundColor
-        box.borderColor = NSColor.separatorColor.withAlphaComponent(0.55)
+        box.borderColor = .separatorColor
         box.borderWidth = 1
         box.cornerRadius = 16
         return box
@@ -195,8 +193,8 @@ class TunnelDetailTableViewController: NSViewController {
         let box = NSBox()
         box.titlePosition = .noTitle
         box.boxType = .custom
-        box.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.82)
-        box.borderColor = NSColor.systemBlue.withAlphaComponent(0.28)
+        box.fillColor = .controlBackgroundColor
+        box.borderColor = .separatorColor
         box.borderWidth = 1
         box.cornerRadius = 18
         return box
@@ -373,9 +371,7 @@ class TunnelDetailTableViewController: NSViewController {
         heroCard.addSubview(heroStack)
         heroStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let containerView = AppearanceAwareLayerView()
-        containerView.wantsLayer = true
-        containerView.adaptiveBackgroundColor = .windowBackgroundColor
+        let containerView = NSView()
         containerView.addSubview(heroCard)
         containerView.addSubview(technicalDetailsLabel)
         containerView.addSubview(box)
