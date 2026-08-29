@@ -166,6 +166,7 @@ private final class SidebarActionButton: NSButton {
 @MainActor
 protocol TunnelsListTableViewControllerDelegate: AnyObject {
     func routerOSManagerSelected()
+    func settingsSelected()
     func tunnelsSelected(tunnelIndices: [Int])
     func tunnelsListEmpty()
 }
@@ -176,6 +177,7 @@ class TunnelsListTableViewController: NSViewController {
     weak var delegate: TunnelsListTableViewControllerDelegate?
     var isRemovingTunnelsFromWithinTheApp = false
     private var isRouterOSManagerSelected = false
+    private var isSettingsSelected = false
 
     let tableView: NSTableView = {
         let tableView = NSTableView()
@@ -217,6 +219,12 @@ class TunnelsListTableViewController: NSViewController {
         return button
     }()
 
+    let settingsButton: NSButton = {
+        let button = SidebarActionButton(title: tr("macSettingsSidebar"), leadingSymbolName: "gearshape")
+        button.toolTip = tr("macMenuSettings")
+        return button
+    }()
+
     let actionButton: NSPopUpButton = {
         let imageItem = NSMenuItem(title: tr("macTunnelMoreActions"), action: nil, keyEquivalent: "")
         imageItem.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: tr("macTunnelMoreActions"))
@@ -255,6 +263,8 @@ class TunnelsListTableViewController: NSViewController {
         tableView.delegate = self
         routerOSButton.target = self
         routerOSButton.action = #selector(handleRouterOSManagerAction)
+        settingsButton.target = self
+        settingsButton.action = #selector(handleSettingsAction)
 
         tableView.doubleAction = #selector(listDoubleClicked(sender:))
 
@@ -271,19 +281,40 @@ class TunnelsListTableViewController: NSViewController {
         scrollView.drawsBackground = false
 
         let clipView = NSClipView()
+        clipView.drawsBackground = false
         clipView.documentView = tableView
         scrollView.contentView = clipView
+
+        let profileListContainer = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .inset
+        )
+        profileListContainer.adaptiveBorderColor = .separatorColor
+        profileListContainer.adaptiveBorderAlpha = 0.35
+        profileListContainer.layer?.cornerRadius = 10
+        profileListContainer.layer?.cornerCurve = .continuous
+        profileListContainer.layer?.borderWidth = 1
+        profileListContainer.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: profileListContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: profileListContainer.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: profileListContainer.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: profileListContainer.bottomAnchor)
+        ])
 
         let titleLabel = NSTextField(labelWithString: tr("macTunnelProfilesTitle"))
         titleLabel.font = .systemFont(ofSize: 19, weight: .bold)
         let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macTunnelProfilesSubtitle"))
         subtitleLabel.font = .systemFont(ofSize: 11, weight: .medium)
         subtitleLabel.textColor = .secondaryLabelColor
-        let sidebarHeader = NSStackView(views: [titleLabel, subtitleLabel, routerOSButton])
+        let sidebarHeader = NSStackView(views: [titleLabel, subtitleLabel, routerOSButton, settingsButton])
         sidebarHeader.orientation = .vertical
         sidebarHeader.alignment = .leading
         sidebarHeader.spacing = 4
         sidebarHeader.setCustomSpacing(13, after: subtitleLabel)
+        sidebarHeader.setCustomSpacing(8, after: routerOSButton)
 
         let buttonBar = NSStackView(views: [addButton, actionButton])
         buttonBar.orientation = .horizontal
@@ -301,10 +332,10 @@ class TunnelsListTableViewController: NSViewController {
         containerView.layer?.cornerCurve = .continuous
         containerView.layer?.borderWidth = 1
         containerView.addSubview(sidebarHeader)
-        containerView.addSubview(scrollView)
+        containerView.addSubview(profileListContainer)
         containerView.addSubview(buttonBar)
         sidebarHeader.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        profileListContainer.translatesAutoresizingMaskIntoConstraints = false
         buttonBar.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
@@ -313,10 +344,12 @@ class TunnelsListTableViewController: NSViewController {
             sidebarHeader.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
             routerOSButton.widthAnchor.constraint(equalTo: sidebarHeader.widthAnchor),
             routerOSButton.heightAnchor.constraint(equalToConstant: 36),
-            scrollView.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor, constant: 12),
-            scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
-            scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
-            scrollView.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: -12),
+            settingsButton.widthAnchor.constraint(equalTo: sidebarHeader.widthAnchor),
+            settingsButton.heightAnchor.constraint(equalToConstant: 36),
+            profileListContainer.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor, constant: 12),
+            profileListContainer.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
+            profileListContainer.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
+            profileListContainer.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: -12),
             buttonBar.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
             buttonBar.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
             containerView.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor, constant: 12)
@@ -353,11 +386,25 @@ class TunnelsListTableViewController: NSViewController {
     func selectRouterOSManager() {
         loadViewIfNeeded()
         isRouterOSManagerSelected = true
+        isSettingsSelected = false
         (routerOSButton as? SidebarActionButton)?.isDestinationSelected = true
+        (settingsButton as? SidebarActionButton)?.isDestinationSelected = false
         tableView.allowsEmptySelection = true
         tableView.deselectAll(nil)
         actionButton.isEnabled = false
         delegate?.routerOSManagerSelected()
+    }
+
+    func selectSettings() {
+        loadViewIfNeeded()
+        isRouterOSManagerSelected = false
+        isSettingsSelected = true
+        (routerOSButton as? SidebarActionButton)?.isDestinationSelected = false
+        (settingsButton as? SidebarActionButton)?.isDestinationSelected = true
+        tableView.allowsEmptySelection = true
+        tableView.deselectAll(nil)
+        actionButton.isEnabled = false
+        delegate?.settingsSelected()
     }
 
     @objc func handleAddEmptyTunnelAction() {
@@ -372,6 +419,10 @@ class TunnelsListTableViewController: NSViewController {
 
     @objc func handleRouterOSManagerAction() {
         selectRouterOSManager()
+    }
+
+    @objc func handleSettingsAction() {
+        selectSettings()
     }
 
     @objc func handleRemoveTunnelAction() {
@@ -465,7 +516,9 @@ class TunnelsListTableViewController: NSViewController {
     private func selectTunnel(at index: Int) -> Bool {
         if index < tunnelsManager.numberOfTunnels() {
             isRouterOSManagerSelected = false
+            isSettingsSelected = false
             (routerOSButton as? SidebarActionButton)?.isDestinationSelected = false
+            (settingsButton as? SidebarActionButton)?.isDestinationSelected = false
             tableView.allowsEmptySelection = false
             actionButton.isEnabled = true
             tableView.scrollRowToVisible(index)
@@ -513,7 +566,7 @@ extension TunnelsListTableViewController {
         let isSingleSelectedTunnelBeingRemoved = selectedIndices.contains(index) && selectedIndices.count == 1
         tableView.removeRows(at: IndexSet(integer: index), withAnimation: .slideLeft)
         if tunnelsManager.numberOfTunnels() == 0 {
-            if !isRouterOSManagerSelected {
+            if !isRouterOSManagerSelected && !isSettingsSelected {
                 delegate?.tunnelsListEmpty()
             }
         } else if !isRemovingTunnelsFromWithinTheApp && isSingleSelectedTunnelBeingRemoved {
@@ -544,7 +597,9 @@ extension TunnelsListTableViewController: NSTableViewDelegate {
         let selectedTunnelIndices = tableView.selectedRowIndexes.sorted()
         if !selectedTunnelIndices.isEmpty {
             isRouterOSManagerSelected = false
+            isSettingsSelected = false
             (routerOSButton as? SidebarActionButton)?.isDestinationSelected = false
+            (settingsButton as? SidebarActionButton)?.isDestinationSelected = false
             tableView.allowsEmptySelection = false
             actionButton.isEnabled = true
             delegate?.tunnelsSelected(tunnelIndices: selectedTunnelIndices)

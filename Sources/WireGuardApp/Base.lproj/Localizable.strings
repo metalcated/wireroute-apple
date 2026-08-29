@@ -501,6 +501,7 @@
 "macRouterOSSaveFailedMessage" = "The RouterOS peer already exists, but the client configuration could not be saved. Copy it now so the generated private key is not lost.";
 "macRouterOSSettingsWindowTitle" = "WireRoute Settings";
 "macSettingsTitle" = "WireRoute Settings";
+"macSettingsSidebar" = "Settings";
 "macSettingsSubtitle" = "Choose how WireRoute appears and prefill new RouterOS client profiles.";
 "macSettingsAppearanceTitle" = "Appearance";
 "macSettingsThemeLabel" = "Theme";
@@ -510,6 +511,7 @@
 "macSettingsMenuBarIconLabel" = "Menu bar icon";
 "macSettingsMenuBarTitle" = "Menu Bar";
 "macSettingsSave" = "Save Changes";
+"macSettingsSaved" = "Settings saved.";
 "macStatusIconLabel" = "Icon";
 "macStatusIconHelp" = "Default follows the menu bar appearance automatically. Dark and Light remain fixed.";
 "macStatusIconDefault" = "Default";

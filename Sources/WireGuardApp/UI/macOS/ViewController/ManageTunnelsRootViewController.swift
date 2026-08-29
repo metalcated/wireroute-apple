@@ -42,6 +42,7 @@ enum WireRouteTheme {
     enum Surface {
         case canvas
         case sidebar
+        case inset
         case surface
         case raised
     }
@@ -80,6 +81,10 @@ enum WireRouteTheme {
     }
 
     static func refresh(_ view: NSView) {
+        if let textField = view as? NSTextField, textField.isEditable {
+            textField.drawsBackground = true
+            textField.backgroundColor = isBlueNordic ? color(for: .inset) : .textBackgroundColor
+        }
         view.needsDisplay = true
         view.needsLayout = true
         for subview in view.subviews {
@@ -93,6 +98,8 @@ enum WireRouteTheme {
             return blueNordicCanvas
         case .sidebar:
             return blueNordicSidebar
+        case .inset:
+            return blueNordicInset
         case .surface:
             return blueNordicSurface
         case .raised:
@@ -106,6 +113,7 @@ enum WireRouteTheme {
 
     private static let blueNordicCanvas = NSColor(srgbRed: 0x11 / 255, green: 0x1b / 255, blue: 0x2a / 255, alpha: 1)
     private static let blueNordicSidebar = NSColor(srgbRed: 0x10 / 255, green: 0x1a / 255, blue: 0x28 / 255, alpha: 1)
+    private static let blueNordicInset = NSColor(srgbRed: 0x14 / 255, green: 0x22 / 255, blue: 0x35 / 255, alpha: 1)
     private static let blueNordicSurface = NSColor(srgbRed: 0x18 / 255, green: 0x26 / 255, blue: 0x38 / 255, alpha: 1)
     private static let blueNordicRaised = NSColor(srgbRed: 0x21 / 255, green: 0x32 / 255, blue: 0x48 / 255, alpha: 1)
     private static let blueNordicBorder = NSColor(srgbRed: 0x35 / 255, green: 0x4a / 255, blue: 0x62 / 255, alpha: 1)
@@ -255,6 +263,7 @@ class ManageTunnelsRootViewController: NSViewController {
     var tunnelsListVC: TunnelsListTableViewController?
     var tunnelDetailVC: TunnelDetailTableViewController?
     var routerOSManagerVC: RouterOSManagerViewController?
+    var settingsVC: RouterOSSettingsViewController?
     let tunnelDetailContainerView = NSView()
     var tunnelDetailContentVC: NSViewController?
 
@@ -275,6 +284,11 @@ class ManageTunnelsRootViewController: NSViewController {
     func selectRouterOSManager() {
         loadViewIfNeeded()
         tunnelsListVC?.selectRouterOSManager()
+    }
+
+    func selectSettings() {
+        loadViewIfNeeded()
+        tunnelsListVC?.selectSettings()
     }
 
     override func loadView() {
@@ -335,6 +349,7 @@ class ManageTunnelsRootViewController: NSViewController {
             tunnelDetailContainerView.trailingAnchor.constraint(equalTo: contentVC.view.trailingAnchor)
         ])
         tunnelDetailContentVC = contentVC
+        WireRouteTheme.refresh(contentVC.view)
     }
 }
 
@@ -343,6 +358,13 @@ extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegat
         let routerOSManagerVC = self.routerOSManagerVC ?? RouterOSManagerViewController(tunnelsManager: tunnelsManager)
         self.routerOSManagerVC = routerOSManagerVC
         setTunnelDetailContentVC(routerOSManagerVC)
+        tunnelDetailVC = nil
+    }
+
+    func settingsSelected() {
+        let settingsVC = self.settingsVC ?? RouterOSSettingsViewController()
+        self.settingsVC = settingsVC
+        setTunnelDetailContentVC(settingsVC)
         tunnelDetailVC = nil
     }
 

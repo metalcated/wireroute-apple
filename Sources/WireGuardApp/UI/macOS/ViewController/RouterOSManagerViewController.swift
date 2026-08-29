@@ -18,6 +18,52 @@ private final class RouterOSDiscoveryTableView: NSTableView {
 }
 
 @MainActor
+private final class RouterOSDiscoveryRowView: NSTableRowView {
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard WireRouteTheme.isBlueNordic else {
+            super.drawBackground(in: dirtyRect)
+            return
+        }
+        let rowIndex = (superview as? NSTableView)?.row(for: self) ?? 0
+        let surface: WireRouteTheme.Surface = rowIndex.isMultiple(of: 2) ? .inset : .surface
+        WireRouteTheme.color(for: surface).setFill()
+        dirtyRect.fill()
+    }
+}
+
+@MainActor
+private final class RouterOSDiscoveryHeaderCell: NSTableHeaderCell {
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        guard WireRouteTheme.isBlueNordic else {
+            super.draw(withFrame: cellFrame, in: controlView)
+            return
+        }
+
+        WireRouteTheme.color(for: .surface).setFill()
+        cellFrame.fill()
+        WireRouteTheme.borderColor.withAlphaComponent(0.75).setFill()
+        NSRect(x: cellFrame.minX, y: cellFrame.minY, width: cellFrame.width, height: 1).fill()
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .left
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraphStyle
+        ]
+        let title = NSAttributedString(string: stringValue, attributes: attributes)
+        let titleSize = title.size()
+        let titleRect = NSRect(
+            x: cellFrame.minX + 10,
+            y: cellFrame.midY - titleSize.height / 2,
+            width: max(0, cellFrame.width - 20),
+            height: titleSize.height
+        )
+        title.draw(in: titleRect)
+    }
+}
+
+@MainActor
 private final class RouterOSRemovePeerOptionsView: NSStackView {
     let removeLocalProfile = NSButton(
         checkboxWithTitle: tr("macRouterOSRemoveLocalProfile"),
@@ -99,7 +145,6 @@ final class RouterOSManagerViewController: NSViewController {
     private let usernameField = NSTextField()
     private let passwordField = NSSecureTextField()
     private let connectButton = NSButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
-    private let settingsButton = NSButton(title: tr("macRouterOSSettings"), target: nil, action: nil)
     private let addPeerButton = NSButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
     private let importPeerButton = NSButton(title: tr("macRouterOSImportExistingPeer"), target: nil, action: nil)
     private let showAllPeersButton = NSButton(
@@ -160,15 +205,9 @@ final class RouterOSManagerViewController: NSViewController {
             readOnlyBadge.heightAnchor.constraint(equalToConstant: 24)
         ])
 
-        settingsButton.target = self
-        settingsButton.action = #selector(settingsClicked)
-        settingsButton.bezelStyle = .rounded
-        settingsButton.controlSize = .regular
-        settingsButton.setContentHuggingPriority(.required, for: .horizontal)
-
         let headerSpacer = NSView()
         headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let headerRow = NSStackView(views: [titleLabel, readOnlyBadge, headerSpacer, settingsButton])
+        let headerRow = NSStackView(views: [titleLabel, readOnlyBadge, headerSpacer])
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
         headerRow.spacing = 12
@@ -218,7 +257,16 @@ final class RouterOSManagerViewController: NSViewController {
         configureTableView()
         scrollView.documentView = tableView
 
-        let tableContainer = NSView()
+        let tableContainer = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .inset
+        )
+        tableContainer.adaptiveBorderColor = .separatorColor
+        tableContainer.adaptiveBorderAlpha = 0.45
+        tableContainer.layer?.cornerRadius = 12
+        tableContainer.layer?.cornerCurve = .continuous
+        tableContainer.layer?.borderWidth = 1
         tableContainer.addSubview(scrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         emptyStateLabel.alignment = .center
@@ -335,6 +383,7 @@ final class RouterOSManagerViewController: NSViewController {
     private func configureTableView() {
         tableView.dataSource = self
         tableView.delegate = self
+        tableView.backgroundColor = .clear
         tableView.headerView = NSTableHeaderView()
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.rowHeight = 30
@@ -351,6 +400,7 @@ final class RouterOSManagerViewController: NSViewController {
         for (identifier, title, width) in columns {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
             column.title = title
+            column.headerCell = RouterOSDiscoveryHeaderCell(textCell: title)
             column.width = width
             column.minWidth = 90
             tableView.addTableColumn(column)
@@ -1193,10 +1243,6 @@ final class RouterOSManagerViewController: NSViewController {
         }
     }
 
-    @objc private func settingsClicked() {
-        (NSApp.delegate as? AppDelegate)?.showRouterOSSettings()
-    }
-
     private func createPeer(_ proposal: RouterOSPeerSetupViewController.Proposal) {
         guard let connectedContext else { return }
 
@@ -1628,6 +1674,10 @@ extension RouterOSManagerViewController: NSTableViewDataSource, NSTableViewDeleg
         rows.count
     }
 
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        return RouterOSDiscoveryRowView()
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard let tableColumn, rows.indices.contains(row) else { return nil }
         let identifier = tableColumn.identifier
@@ -1750,12 +1800,6 @@ final class RouterOSSettingsViewController: NSViewController {
             action: #selector(restoreDefaultsClicked)
         )
         restoreButton.bezelStyle = .rounded
-        let cancelButton = NSButton(
-            title: tr("macRouterOSCancel"),
-            target: self,
-            action: #selector(cancelClicked)
-        )
-        cancelButton.bezelStyle = .rounded
         let saveButton = NSButton(
             title: tr("macSettingsSave"),
             target: self,
@@ -1770,7 +1814,7 @@ final class RouterOSSettingsViewController: NSViewController {
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let buttonRow = NSStackView(views: [restoreButton, spacer, cancelButton, saveButton])
+        let buttonRow = NSStackView(views: [restoreButton, spacer, saveButton])
         buttonRow.orientation = .horizontal
         buttonRow.alignment = .centerY
         buttonRow.spacing = 10
@@ -1795,13 +1839,31 @@ final class RouterOSSettingsViewController: NSViewController {
         stack.setCustomSpacing(6, after: peerDefaultsTitle)
         stack.setCustomSpacing(16, after: peerDefaultsForm)
 
-        view.addSubview(stack)
+        let documentView = NSView()
+        documentView.addSubview(stack)
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = documentView
+        view.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        documentView.translatesAutoresizingMaskIntoConstraints = false
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 26),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -26),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -22),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 26),
+            stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -26),
+            stack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 24),
+            documentView.bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: 22),
             subtitleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             appearanceForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             peerDefaultsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
@@ -1996,10 +2058,6 @@ final class RouterOSSettingsViewController: NSViewController {
         errorLabel.isHidden = true
     }
 
-    @objc private func cancelClicked() {
-        view.window?.performClose(nil)
-    }
-
     @objc private func saveClicked() {
         do {
             guard let persistentKeepalive = Int(
@@ -2026,10 +2084,12 @@ final class RouterOSSettingsViewController: NSViewController {
                 return
             }
             WireRouteTheme.apply(appearance)
-            errorLabel.isHidden = true
-            view.window?.performClose(nil)
+            errorLabel.stringValue = tr("macSettingsSaved")
+            errorLabel.textColor = .systemGreen
+            errorLabel.isHidden = false
         } catch {
             errorLabel.stringValue = error.localizedDescription
+            errorLabel.textColor = .systemRed
             errorLabel.isHidden = false
         }
     }
