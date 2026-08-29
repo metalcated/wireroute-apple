@@ -43,6 +43,16 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
+        let dnsProtectionPolicy: DNSProtectionPolicy
+        do {
+            dnsProtectionPolicy = try tunnelProviderProtocol.wireRouteDNSProtectionPolicy()
+        } catch {
+            wg_log(.error, message: "Saved DNS protection configuration is invalid: \(error)")
+            errorNotifier.notify(PacketTunnelProviderError.invalidDNSProtectionConfiguration)
+            completion(PacketTunnelProviderError.invalidDNSProtectionConfiguration)
+            return
+        }
+
         // Start the tunnel
         let adapter = self.adapter
         let blockedAddressFamilies = tunnelProviderProtocol.wireRouteEffectiveBlockedAddressFamilies(
@@ -50,7 +60,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         )
         adapter.start(
             tunnelConfiguration: tunnelConfiguration,
-            blockedAddressFamilies: blockedAddressFamilies
+            blockedAddressFamilies: blockedAddressFamilies,
+            dnsProtectionPolicy: dnsProtectionPolicy
         ) { adapterError in
             guard let adapterError = adapterError else {
                 let interfaceName = adapter.interfaceName ?? "unknown"

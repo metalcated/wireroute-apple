@@ -550,6 +550,30 @@ class TunnelsManager {
         }
     }
 
+    func setDNSProtectionPolicy(
+        _ policy: DNSProtectionPolicy,
+        on tunnel: TunnelContainer,
+        completionHandler: @escaping @MainActor @Sendable (WireGuardAppError?) -> Void
+    ) {
+        guard let tunnelProtocol = tunnel.tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol else {
+            completionHandler(TunnelDNSProtectionError.invalidStoredConfiguration)
+            return
+        }
+
+        let previousProviderConfiguration = tunnelProtocol.providerConfiguration
+        tunnelProtocol.setWireRouteDNSProtectionPolicy(policy)
+
+        Task { @MainActor in
+            do {
+                try await tunnel.tunnelProvider.saveToPreferences()
+                completionHandler(nil)
+            } catch {
+                tunnelProtocol.providerConfiguration = previousProviderConfiguration
+                completionHandler(TunnelsManagerError.systemErrorOnModifyTunnel(systemError: error))
+            }
+        }
+    }
+
     func numberOfTunnels() -> Int {
         return tunnels.count
     }
@@ -775,6 +799,13 @@ class TunnelContainer: NSObject {
         }
         let storedMode = (tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol)?.wireRouteRoutingMode
         return TunnelRoutingController.detectedMode(configuration: configuration, storedMode: storedMode)
+    }
+
+    var dnsProtectionPolicy: DNSProtectionPolicy {
+        guard let tunnelProtocol = tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol else {
+            return .profile
+        }
+        return (try? tunnelProtocol.wireRouteDNSProtectionPolicy()) ?? .profile
     }
 
     var onDemandOption: ActivateOnDemandOption {

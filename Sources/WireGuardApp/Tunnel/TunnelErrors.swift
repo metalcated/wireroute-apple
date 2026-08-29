@@ -64,11 +64,41 @@ enum TunnelsManagerActivationError: WireGuardAppError {
     }
 }
 
+enum TunnelDNSProtectionError: WireGuardAppError, Sendable {
+    case invalidStoredConfiguration
+
+    var alertText: AlertText {
+        return (tr("dnsProtectionInvalidTitle"), tr("dnsProtectionInvalidStoredMessage"))
+    }
+}
+
+extension DNSProtectionPolicy {
+    var localizedTitle: String {
+        switch mode {
+        case .profile:
+            return tr("dnsProtectionProfileDNS")
+        case .encryptedHTTPS:
+            return tr("dnsProtectionEncryptedDNS")
+        }
+    }
+
+    var localizedDescription: String {
+        switch mode {
+        case .profile:
+            return tr("dnsProtectionProfileDescription")
+        case .encryptedHTTPS:
+            return tr("dnsProtectionEncryptedDescription")
+        }
+    }
+}
+
 extension PacketTunnelProviderError: WireGuardAppError {
     var alertText: AlertText {
         switch self {
         case .savedProtocolConfigurationIsInvalid:
             return (tr("alertTunnelActivationFailureTitle"), tr("alertTunnelActivationSavedConfigFailureMessage"))
+        case .invalidDNSProtectionConfiguration:
+            return (tr("dnsProtectionInvalidTitle"), tr("dnsProtectionInvalidStoredMessage"))
         case .dnsResolutionFailure:
             return (tr("alertTunnelDNSFailureTitle"), tr("alertTunnelDNSFailureMessage"))
         case .couldNotStartBackend:

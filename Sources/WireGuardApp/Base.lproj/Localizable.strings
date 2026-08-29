@@ -618,6 +618,28 @@
 "alertRoutingDefaultEnteredRouteTitle" = "Use Full tunnel instead";
 "alertRoutingDefaultEnteredRouteMessage" = "Split tunnel cannot include a default route. Remove 0.0.0.0/0 and ::/0, or use Full tunnel.";
 
+// WireRoute DNS protection
+
+"dnsProtectionTitle" = "DNS Protection";
+"dnsProtectionProfileDNS" = "Profile DNS";
+"dnsProtectionEncryptedDNS" = "Encrypted DNS";
+"dnsProtectionProfileDescription" = "Use the DNS servers saved in this WireGuard profile.";
+"dnsProtectionEncryptedDescription" = "Send DNS queries to a custom DNS-over-HTTPS resolver while this VPN is connected.";
+"dnsProtectionIntro" = "Choose how this profile resolves domain names while connected.";
+"dnsProtectionMode" = "Protection mode";
+"dnsProtectionResolverURL" = "Resolver URL";
+"dnsProtectionResolverURLPlaceholder" = "https://resolver.example/dns-query";
+"dnsProtectionBootstrapServers" = "Bootstrap addresses";
+"dnsProtectionBootstrapPlaceholder" = "Optional IPv4 or IPv6 addresses";
+"dnsProtectionBootstrapHelp" = "Optional. Add comma-separated resolver IP addresses when the resolver hostname cannot be reached without DNS.";
+"dnsProtectionAppliesNextConnection" = "This tunnel is active. Saved DNS changes apply the next time it connects.";
+"dnsProtectionSave" = "Save";
+"dnsProtectionInvalidTitle" = "Check DNS Protection";
+"dnsProtectionInvalidURLMessage" = "Enter a valid HTTPS resolver URL without a username, password, or fragment.";
+"dnsProtectionInvalidBootstrapMessage (%@)" = "‘%@’ is not a valid IPv4 or IPv6 bootstrap address.";
+"dnsProtectionInvalidStoredMessage" = "The saved encrypted DNS settings are invalid. Open DNS Protection and save the resolver again.";
+"dnsProtectionSaveFailed" = "WireRoute could not save the DNS protection settings.";
+
 // Mac alert
 
 "macConfirmAndQuitAlertMessage" = "Do you want to close the tunnels manager or quit WireRoute entirely?";

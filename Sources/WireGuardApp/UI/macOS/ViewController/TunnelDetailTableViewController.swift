@@ -115,6 +115,221 @@ private final class MacSplitRouteEntryViewController: NSViewController {
 }
 
 @MainActor
+private final class MacDNSProtectionViewController: NSViewController {
+    var onSave: ((DNSProtectionPolicy, @escaping @MainActor @Sendable (WireGuardAppError?) -> Void) -> Void)?
+
+    private let currentPolicy: DNSProtectionPolicy
+    private let isTunnelActive: Bool
+    private let modeControl = NSSegmentedControl(
+        labels: [tr("dnsProtectionProfileDNS"), tr("dnsProtectionEncryptedDNS")],
+        trackingMode: .selectOne,
+        target: nil,
+        action: nil
+    )
+    private let resolverURLField = NSTextField()
+    private let bootstrapServersField = NSTextField()
+    private let resolverFieldsStack = NSStackView()
+    private let errorLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.textColor = .systemRed
+        label.isHidden = true
+        return label
+    }()
+    private let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
+    private let saveButton = NSButton(title: tr("dnsProtectionSave"), target: nil, action: nil)
+
+    init(policy: DNSProtectionPolicy, isTunnelActive: Bool) {
+        currentPolicy = policy
+        self.isTunnelActive = isTunnelActive
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        let container = NSView()
+
+        let iconView = NSImageView()
+        iconView.image = NSImage(
+            systemSymbolName: "lock.shield.fill",
+            accessibilityDescription: tr("dnsProtectionTitle")
+        )
+        iconView.contentTintColor = .systemBlue
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+
+        let titleLabel = NSTextField(labelWithString: tr("dnsProtectionTitle"))
+        titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
+        let introLabel = NSTextField(wrappingLabelWithString: tr("dnsProtectionIntro"))
+        introLabel.font = .systemFont(ofSize: 13)
+        introLabel.textColor = .secondaryLabelColor
+        let titleStack = NSStackView(views: [titleLabel, introLabel])
+        titleStack.orientation = .vertical
+        titleStack.alignment = .leading
+        titleStack.spacing = 3
+        let header = NSStackView(views: [iconView, titleStack])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 14
+
+        let modeLabel = makeFieldLabel(tr("dnsProtectionMode"))
+        modeControl.segmentStyle = .rounded
+        modeControl.selectedSegment = currentPolicy.mode == .encryptedHTTPS ? 1 : 0
+        modeControl.target = self
+        modeControl.action = #selector(modeChanged)
+
+        resolverURLField.placeholderString = tr("dnsProtectionResolverURLPlaceholder")
+        bootstrapServersField.placeholderString = tr("dnsProtectionBootstrapPlaceholder")
+        if currentPolicy.mode == .encryptedHTTPS {
+            resolverURLField.stringValue = currentPolicy.serverURL?.absoluteString ?? ""
+            bootstrapServersField.stringValue = currentPolicy.bootstrapServers.joined(separator: ", ")
+        }
+
+        let bootstrapHelp = NSTextField(wrappingLabelWithString: tr("dnsProtectionBootstrapHelp"))
+        bootstrapHelp.font = .systemFont(ofSize: 11)
+        bootstrapHelp.textColor = .secondaryLabelColor
+
+        resolverFieldsStack.orientation = .vertical
+        resolverFieldsStack.alignment = .leading
+        resolverFieldsStack.spacing = 8
+        resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionResolverURL")))
+        resolverFieldsStack.addArrangedSubview(resolverURLField)
+        resolverFieldsStack.setCustomSpacing(16, after: resolverURLField)
+        resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionBootstrapServers")))
+        resolverFieldsStack.addArrangedSubview(bootstrapServersField)
+        resolverFieldsStack.addArrangedSubview(bootstrapHelp)
+
+        let stateLabel = NSTextField(wrappingLabelWithString: tr("dnsProtectionAppliesNextConnection"))
+        stateLabel.font = .systemFont(ofSize: 11)
+        stateLabel.textColor = .secondaryLabelColor
+        stateLabel.isHidden = !isTunnelActive
+
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelClicked)
+        saveButton.target = self
+        saveButton.action = #selector(saveClicked)
+        saveButton.keyEquivalent = "\r"
+        saveButton.bezelStyle = .rounded
+        let buttonRow = NSStackView(views: [cancelButton, saveButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 10
+        let buttonSpacer = NSView()
+        buttonSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let footer = NSStackView(views: [errorLabel, buttonSpacer, buttonRow])
+        footer.orientation = .horizontal
+        footer.alignment = .centerY
+        footer.spacing = 12
+
+        let stack = NSStackView(views: [header, modeLabel, modeControl, resolverFieldsStack, stateLabel, footer])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        stack.setCustomSpacing(22, after: header)
+        stack.setCustomSpacing(18, after: modeControl)
+        container.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 26),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -26),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -22),
+            header.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 42),
+            iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
+            modeControl.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            resolverFieldsStack.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            resolverURLField.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            bootstrapServersField.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            bootstrapHelp.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            stateLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        ])
+
+        container.frame = NSRect(x: 0, y: 0, width: 580, height: 440)
+        view = container
+        updateMode()
+    }
+
+    @objc private func modeChanged() {
+        errorLabel.isHidden = true
+        updateMode()
+    }
+
+    private func updateMode() {
+        resolverFieldsStack.isHidden = modeControl.selectedSegment != 1
+    }
+
+    @objc private func cancelClicked() {
+        presentingViewController?.dismiss(self)
+    }
+
+    @objc private func saveClicked() {
+        let policy: DNSProtectionPolicy
+        if modeControl.selectedSegment == 0 {
+            policy = .profile
+        } else {
+            do {
+                policy = try DNSProtectionPolicy.encryptedHTTPS(
+                    serverURLString: resolverURLField.stringValue,
+                    bootstrapServerStrings: parsedBootstrapServers()
+                )
+            } catch DNSProtectionPolicyError.invalidServerURL {
+                showError(tr("dnsProtectionInvalidURLMessage"))
+                return
+            } catch DNSProtectionPolicyError.invalidBootstrapServer(let server) {
+                showError(tr(format: "dnsProtectionInvalidBootstrapMessage (%@)", server))
+                return
+            } catch {
+                showError(tr("dnsProtectionInvalidStoredMessage"))
+                return
+            }
+        }
+
+        guard let onSave else { return }
+        setSaving(true)
+        onSave(policy) { [weak self] error in
+            guard let self else { return }
+            self.setSaving(false)
+            if let error {
+                self.showError(error.alertText.message)
+            } else {
+                self.presentingViewController?.dismiss(self)
+            }
+        }
+    }
+
+    private func parsedBootstrapServers() -> [String] {
+        let separators = CharacterSet(charactersIn: ",\n \t")
+        return bootstrapServersField.stringValue
+            .components(separatedBy: separators)
+            .filter { !$0.isEmpty }
+    }
+
+    private func showError(_ message: String) {
+        errorLabel.stringValue = message
+        errorLabel.isHidden = false
+    }
+
+    private func setSaving(_ isSaving: Bool) {
+        saveButton.isEnabled = !isSaving
+        cancelButton.isEnabled = !isSaving
+        modeControl.isEnabled = !isSaving
+        resolverURLField.isEnabled = !isSaving
+        bootstrapServersField.isEnabled = !isSaving
+    }
+
+    private func makeFieldLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        return label
+    }
+}
+
+@MainActor
 class TunnelDetailTableViewController: NSViewController {
 
     private enum TableViewModelRow {
@@ -237,6 +452,23 @@ class TunnelDetailTableViewController: NSViewController {
         indicator.isDisplayedWhenStopped = false
         return indicator
     }()
+    private let dnsProtectionDescriptionLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        label.maximumNumberOfLines = 2
+        return label
+    }()
+    private let dnsProtectionButton: NSButton = {
+        let button = NSButton(title: "", target: nil, action: nil)
+        button.bezelStyle = .rounded
+        button.image = NSImage(
+            systemSymbolName: "lock.shield",
+            accessibilityDescription: tr("dnsProtectionTitle")
+        )
+        button.imagePosition = .imageLeading
+        return button
+    }()
     private let connectionButton: NSButton = {
         let button = NSButton(title: "", target: nil, action: nil)
         button.bezelStyle = .rounded
@@ -322,6 +554,8 @@ class TunnelDetailTableViewController: NSViewController {
         routeModeControl.segmentStyle = .rounded
         connectionButton.target = self
         connectionButton.action = #selector(handleToggleActiveStatusAction)
+        dnsProtectionButton.target = self
+        dnsProtectionButton.action = #selector(dnsProtectionClicked)
 
         let clipView = NSClipView()
         clipView.documentView = tableView
@@ -363,7 +597,20 @@ class TunnelDetailTableViewController: NSViewController {
         descriptionRow.alignment = .centerY
         descriptionRow.spacing = 16
 
-        let heroStack = NSStackView(views: [identityRow, routingRow, descriptionRow])
+        let dnsLabel = NSTextField(labelWithString: tr("dnsProtectionTitle"))
+        dnsLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        let dnsTextStack = NSStackView(views: [dnsLabel, dnsProtectionDescriptionLabel])
+        dnsTextStack.orientation = .vertical
+        dnsTextStack.alignment = .leading
+        dnsTextStack.spacing = 2
+        let dnsSpacer = NSView()
+        dnsSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let dnsRow = NSStackView(views: [dnsTextStack, dnsSpacer, dnsProtectionButton])
+        dnsRow.orientation = .horizontal
+        dnsRow.alignment = .centerY
+        dnsRow.spacing = 16
+
+        let heroStack = NSStackView(views: [identityRow, routingRow, descriptionRow, dnsRow])
         heroStack.orientation = .vertical
         heroStack.alignment = .leading
         heroStack.spacing = 15
@@ -389,6 +636,7 @@ class TunnelDetailTableViewController: NSViewController {
             identityRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
             routingRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
             descriptionRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
+            dnsRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
             identityImageView.widthAnchor.constraint(equalToConstant: 44),
             identityImageView.heightAnchor.constraint(equalTo: identityImageView.widthAnchor),
             routeModeControl.widthAnchor.constraint(equalToConstant: 220),
@@ -485,6 +733,26 @@ class TunnelDetailTableViewController: NSViewController {
         }
     }
 
+    @objc private func dnsProtectionClicked() {
+        let dnsViewController = MacDNSProtectionViewController(
+            policy: tunnel.dnsProtectionPolicy,
+            isTunnelActive: tunnel.status != .inactive
+        )
+        dnsViewController.onSave = { [weak self] policy, completion in
+            guard let self else {
+                completion(TunnelDNSProtectionError.invalidStoredConfiguration)
+                return
+            }
+            self.tunnelsManager.setDNSProtectionPolicy(policy, on: self.tunnel) { error in
+                if error == nil {
+                    self.updateDashboard()
+                }
+                completion(error)
+            }
+        }
+        presentAsSheet(dnsViewController)
+    }
+
     @objc private func routingModeChanged() {
         let requestedMode: TunnelRouteMode = routeModeControl.selectedSegment == 1
             ? .full
@@ -555,6 +823,8 @@ class TunnelDetailTableViewController: NSViewController {
         routeDescriptionLabel.stringValue = tunnel.routingMode == .full
             ? tr("tunnelRoutingFullDescription")
             : tr("tunnelRoutingSplitDescription")
+        dnsProtectionButton.title = tunnel.dnsProtectionPolicy.localizedTitle
+        dnsProtectionDescriptionLabel.stringValue = tunnel.dnsProtectionPolicy.localizedDescription
         identityImageView.image = NSImage(
             systemSymbolName: tunnel.routingMode == .full
                 ? "globe.americas.fill"
