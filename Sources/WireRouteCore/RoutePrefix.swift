@@ -70,6 +70,36 @@ public struct RoutePrefix: Hashable, Sendable {
         prefixLength == 0
     }
 
+    public func contains(address candidate: String) -> Bool {
+        let routeBytes: Data
+        let candidateBytes: Data
+        switch family {
+        case .ipv4:
+            guard let routeAddress = IPv4Address(address),
+                  let candidateAddress = IPv4Address(candidate) else {
+                return false
+            }
+            routeBytes = routeAddress.rawValue
+            candidateBytes = candidateAddress.rawValue
+        case .ipv6:
+            guard let routeAddress = IPv6Address(address),
+                  let candidateAddress = IPv6Address(candidate) else {
+                return false
+            }
+            routeBytes = routeAddress.rawValue
+            candidateBytes = candidateAddress.rawValue
+        }
+
+        let wholeBytes = Int(prefixLength / 8)
+        let remainingBits = Int(prefixLength % 8)
+        guard routeBytes.prefix(wholeBytes).elementsEqual(candidateBytes.prefix(wholeBytes)) else {
+            return false
+        }
+        guard remainingBits > 0 else { return true }
+        let mask = UInt8.max << UInt8(8 - remainingBits)
+        return routeBytes[wholeBytes] & mask == candidateBytes[wholeBytes] & mask
+    }
+
     public static func parseList(_ value: String) throws -> [RoutePrefix] {
         let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
         let notations = value.components(separatedBy: separators).filter { !$0.isEmpty }
@@ -87,6 +117,40 @@ public struct RoutePrefix: Hashable, Sendable {
         case .ipv6:
             return RoutePrefix(address: "::", prefixLength: 0, family: .ipv6)
         }
+    }
+}
+
+public struct ProfileDNSRouteSummary: Equatable, Sendable {
+    public struct Server: Equatable, Sendable {
+        public enum Route: Equatable, Sendable {
+            case throughTunnel
+            case outsideTunnel
+        }
+
+        public let address: String
+        public let route: Route
+    }
+
+    public let isConfigurationAvailable: Bool
+    public let servers: [Server]
+    public let searchDomains: [String]
+
+    public init(
+        dnsServers: [String],
+        searchDomains: [String],
+        allowedRoutes: [RoutePrefix],
+        isConfigurationAvailable: Bool = true
+    ) {
+        self.isConfigurationAvailable = isConfigurationAvailable
+        servers = dnsServers.map { address in
+            Server(
+                address: address,
+                route: allowedRoutes.contains { $0.contains(address: address) }
+                    ? .throughTunnel
+                    : .outsideTunnel
+            )
+        }
+        self.searchDomains = searchDomains
     }
 }
 

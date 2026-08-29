@@ -816,6 +816,26 @@ class TunnelContainer: NSObject {
         return (try? tunnelProtocol.wireRouteDNSProtectionPolicy()) ?? .profile
     }
 
+    var profileDNSRouteSummary: ProfileDNSRouteSummary {
+        guard let configuration = tunnelConfiguration else {
+            return ProfileDNSRouteSummary(
+                dnsServers: [],
+                searchDomains: [],
+                allowedRoutes: [],
+                isConfigurationAvailable: false
+            )
+        }
+        let routedAddressRanges = configuration.interface.addresses
+            + configuration.peers.flatMap(\.allowedIPs)
+        let allowedRoutes = routedAddressRanges
+            .compactMap { try? RoutePrefix($0.stringRepresentation) }
+        return ProfileDNSRouteSummary(
+            dnsServers: configuration.interface.dns.map(\.stringRepresentation),
+            searchDomains: configuration.interface.dnsSearch,
+            allowedRoutes: allowedRoutes
+        )
+    }
+
     var activityProfileIdentifier: UUID {
         guard let tunnelProtocol = tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol else {
             return WireRouteProfileIdentifier.derived(from: name)

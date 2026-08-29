@@ -140,8 +140,10 @@ private final class MacSplitRouteEntryViewController: NSViewController {
 @MainActor
 private final class MacDNSProtectionViewController: NSViewController, NSTextFieldDelegate {
     var onSave: ((DNSProtectionPolicy, @escaping @MainActor @Sendable (WireGuardAppError?) -> Void) -> Void)?
+    var onEditProfileDNS: (() -> Void)?
 
     private let currentPolicy: DNSProtectionPolicy
+    private let profileSummary: ProfileDNSRouteSummary
     private let isTunnelActive: Bool
     private let modeControl = WireRouteSegmentedControl(
         labels: [tr("dnsProtectionProfileDNS"), tr("dnsProtectionEncryptedDNS")],
@@ -158,6 +160,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
     }()
     private let resolverURLField = WireRouteTextField()
     private let bootstrapServersField = WireRouteTextField()
+    private let profileFieldsStack = NSStackView()
     private let resolverFieldsStack = NSStackView()
     private let errorLabel: NSTextField = {
         let label = NSTextField(wrappingLabelWithString: "")
@@ -166,11 +169,22 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         label.isHidden = true
         return label
     }()
+    private let editProfileButton = NSButton(
+        title: tr("dnsProtectionEditProfileDNS"),
+        target: nil,
+        action: nil
+    )
     private let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
     private let saveButton = NSButton(title: tr("dnsProtectionSave"), target: nil, action: nil)
+    private var isSaving = false
 
-    init(policy: DNSProtectionPolicy, isTunnelActive: Bool) {
+    init(
+        policy: DNSProtectionPolicy,
+        profileSummary: ProfileDNSRouteSummary,
+        isTunnelActive: Bool
+    ) {
         currentPolicy = policy
+        self.profileSummary = profileSummary
         self.isTunnelActive = isTunnelActive
         super.init(nibName: nil, bundle: nil)
     }
@@ -214,6 +228,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         modeControl.target = self
         modeControl.action = #selector(modeChanged)
 
+        configureProfileFieldsStack()
         configurePresetPopUp()
         resolverURLField.placeholderString = tr("dnsProtectionResolverURLPlaceholder")
         bootstrapServersField.placeholderString = tr("dnsProtectionBootstrapPlaceholder")
@@ -270,6 +285,22 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         resolverFieldsStack.spacing = 8
         resolverFieldsStack.addArrangedSubview(internalDNSWarningPanel)
         resolverFieldsStack.setCustomSpacing(16, after: internalDNSWarningPanel)
+        let profileOverrideMessage: String
+        if profileSummary.servers.isEmpty {
+            profileOverrideMessage = tr("dnsProtectionEncryptedOverridesNone")
+        } else {
+            profileOverrideMessage = tr(
+                format: "dnsProtectionEncryptedOverrides (%@)",
+                profileSummary.servers.map(\.address).joined(separator: ", ")
+            )
+        }
+        let profileOverridePanel = makeNoticePanel(
+            message: profileOverrideMessage,
+            symbolName: "arrow.triangle.swap",
+            tintColor: WireRouteTheme.accentColor
+        )
+        resolverFieldsStack.addArrangedSubview(profileOverridePanel)
+        resolverFieldsStack.setCustomSpacing(16, after: profileOverridePanel)
         resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionProvider")))
         resolverFieldsStack.addArrangedSubview(presetPopUp)
         resolverFieldsStack.addArrangedSubview(presetDescriptionLabel)
@@ -303,7 +334,13 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         footer.alignment = .centerY
         footer.spacing = 12
 
-        let configurationStack = NSStackView(views: [modeLabel, modeControl, resolverFieldsStack, stateLabel])
+        let configurationStack = NSStackView(views: [
+            modeLabel,
+            modeControl,
+            profileFieldsStack,
+            resolverFieldsStack,
+            stateLabel
+        ])
         configurationStack.orientation = .vertical
         configurationStack.alignment = .leading
         configurationStack.spacing = 10
@@ -346,8 +383,10 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
             iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
             configurationCard.widthAnchor.constraint(equalTo: stack.widthAnchor),
             modeControl.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
+            profileFieldsStack.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
             resolverFieldsStack.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
             internalDNSWarningPanel.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            profileOverridePanel.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
             internalDNSWarningIcon.widthAnchor.constraint(equalToConstant: 16),
             internalDNSWarningIcon.heightAnchor.constraint(equalTo: internalDNSWarningIcon.widthAnchor),
             presetPopUp.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
@@ -359,7 +398,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
 
-        container.frame = NSRect(x: 0, y: 0, width: 580, height: 590)
+        container.frame = NSRect(x: 0, y: 0, width: 620, height: targetContentHeight())
         view = container
         updateMode()
     }
@@ -370,7 +409,228 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
     }
 
     private func updateMode() {
-        resolverFieldsStack.isHidden = modeControl.selectedSegment != 1
+        let isEncrypted = modeControl.selectedSegment == 1
+        profileFieldsStack.isHidden = isEncrypted
+        resolverFieldsStack.isHidden = !isEncrypted
+        updateSaveButtonState()
+        resizeForContent()
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        resizeForContent()
+    }
+
+    private func configureProfileFieldsStack() {
+        profileFieldsStack.orientation = .vertical
+        profileFieldsStack.alignment = .leading
+        profileFieldsStack.spacing = 8
+
+        let pathLabel = makeFieldLabel(tr("dnsProtectionProfilePath"))
+        let pathDescription = NSTextField(
+            wrappingLabelWithString: tr("dnsProtectionProfilePathDescription")
+        )
+        pathDescription.font = .systemFont(ofSize: 11)
+        pathDescription.textColor = .secondaryLabelColor
+        profileFieldsStack.addArrangedSubview(pathLabel)
+        profileFieldsStack.addArrangedSubview(pathDescription)
+        pathDescription.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+        profileFieldsStack.setCustomSpacing(16, after: pathDescription)
+
+        if !profileSummary.isConfigurationAvailable {
+            let unavailable = makeNoticePanel(
+                message: tr("dnsProtectionProfileUnavailable"),
+                symbolName: "exclamationmark.triangle.fill",
+                tintColor: .systemOrange
+            )
+            profileFieldsStack.addArrangedSubview(unavailable)
+            unavailable.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+        } else if profileSummary.servers.isEmpty {
+            let emptyMessage = profileSummary.searchDomains.isEmpty
+                ? tr("dnsProtectionProfileNoServers")
+                : tr("dnsProtectionProfileNoServersWithSearchDomains")
+            let empty = makeNoticePanel(
+                message: emptyMessage,
+                symbolName: "questionmark.diamond.fill",
+                tintColor: .systemOrange
+            )
+            profileFieldsStack.addArrangedSubview(empty)
+            empty.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+        } else {
+            profileFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionProfileServers")))
+            for server in profileSummary.servers {
+                let row = makeProfileServerRow(server)
+                profileFieldsStack.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+            }
+            if profileSummary.servers.contains(where: { $0.route == .outsideTunnel }) {
+                let warning = makeNoticePanel(
+                    message: tr("dnsProtectionProfileOutsideTunnelWarning"),
+                    symbolName: "exclamationmark.triangle.fill",
+                    tintColor: .systemOrange
+                )
+                profileFieldsStack.addArrangedSubview(warning)
+                warning.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+            }
+        }
+
+        if !profileSummary.searchDomains.isEmpty {
+            if let lastView = profileFieldsStack.arrangedSubviews.last {
+                profileFieldsStack.setCustomSpacing(16, after: lastView)
+            }
+            profileFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionProfileSearchDomains")))
+            let domains = NSTextField(
+                wrappingLabelWithString: profileSummary.searchDomains.joined(separator: "  ·  ")
+            )
+            domains.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            domains.textColor = .secondaryLabelColor
+            domains.isSelectable = true
+            profileFieldsStack.addArrangedSubview(domains)
+            domains.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+        }
+
+        editProfileButton.target = self
+        editProfileButton.action = #selector(editProfileDNSClicked)
+        editProfileButton.bezelStyle = .rounded
+        if let lastView = profileFieldsStack.arrangedSubviews.last {
+            profileFieldsStack.setCustomSpacing(18, after: lastView)
+        }
+        profileFieldsStack.addArrangedSubview(editProfileButton)
+    }
+
+    private func makeProfileServerRow(_ server: ProfileDNSRouteSummary.Server) -> NSView {
+        let icon = NSImageView()
+        icon.image = NSImage(
+            systemSymbolName: "server.rack",
+            accessibilityDescription: tr("dnsProtectionProfileServers")
+        )
+        icon.contentTintColor = WireRouteTheme.accentColor
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+
+        let address = NSTextField(labelWithString: server.address)
+        address.font = .monospacedSystemFont(ofSize: 13, weight: .medium)
+        address.lineBreakMode = .byTruncatingMiddle
+        address.isSelectable = true
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let throughTunnel = server.route == .throughTunnel
+        let badge = makeRouteBadge(
+            title: tr(throughTunnel ? "dnsProtectionProfileViaTunnel" : "dnsProtectionProfileOutsideTunnel"),
+            color: throughTunnel ? .systemGreen : .systemOrange
+        )
+        let content = NSStackView(views: [icon, address, spacer, badge])
+        content.orientation = .horizontal
+        content.alignment = .centerY
+        content.spacing = 10
+
+        let row = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        row.adaptiveBorderColor = .separatorColor
+        row.adaptiveBorderAlpha = 0.45
+        row.layer?.borderWidth = 1
+        row.layer?.cornerRadius = 9
+        row.layer?.cornerCurve = .continuous
+        row.addSubview(content)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 11),
+            content.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -11),
+            content.topAnchor.constraint(equalTo: row.topAnchor, constant: 9),
+            content.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -9),
+            icon.widthAnchor.constraint(equalToConstant: 15),
+            icon.heightAnchor.constraint(equalTo: icon.widthAnchor)
+        ])
+        return row
+    }
+
+    private func makeRouteBadge(title: String, color: NSColor) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 10, weight: .semibold)
+        label.textColor = color
+        let badge = NSView()
+        badge.wantsLayer = true
+        badge.layer?.backgroundColor = color.withAlphaComponent(0.13).cgColor
+        badge.layer?.cornerRadius = 7
+        badge.addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: badge.leadingAnchor, constant: 7),
+            label.trailingAnchor.constraint(equalTo: badge.trailingAnchor, constant: -7),
+            label.topAnchor.constraint(equalTo: badge.topAnchor, constant: 3),
+            label.bottomAnchor.constraint(equalTo: badge.bottomAnchor, constant: -3)
+        ])
+        return badge
+    }
+
+    private func makeNoticePanel(message: String, symbolName: String, tintColor: NSColor) -> NSView {
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: message)
+        icon.contentTintColor = tintColor
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        let label = NSTextField(wrappingLabelWithString: message)
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let content = NSStackView(views: [icon, label])
+        content.orientation = .horizontal
+        content.alignment = .top
+        content.spacing = 8
+        let panel = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        panel.adaptiveBorderColor = .separatorColor
+        panel.adaptiveBorderAlpha = 0.5
+        panel.layer?.borderWidth = 1
+        panel.layer?.cornerRadius = 10
+        panel.layer?.cornerCurve = .continuous
+        panel.addSubview(content)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 12),
+            content.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -12),
+            content.topAnchor.constraint(equalTo: panel.topAnchor, constant: 10),
+            content.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -10),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalTo: icon.widthAnchor)
+        ])
+        return panel
+    }
+
+    @objc private func editProfileDNSClicked() {
+        let action = onEditProfileDNS
+        presentingViewController?.dismiss(self)
+        DispatchQueue.main.async {
+            action?()
+        }
+    }
+
+    private func resizeForContent() {
+        guard isViewLoaded else { return }
+        let size = NSSize(width: 620, height: targetContentHeight())
+        preferredContentSize = size
+        view.window?.setContentSize(size)
+    }
+
+    private func targetContentHeight() -> CGFloat {
+        if modeControl.selectedSegment == 1 {
+            return 690
+        }
+        var height: CGFloat = profileSummary.servers.isEmpty ? 500 : 500
+        height += CGFloat(min(profileSummary.servers.count, 6)) * 44
+        if profileSummary.servers.contains(where: { $0.route == .outsideTunnel }) {
+            height += 58
+        }
+        if !profileSummary.searchDomains.isEmpty {
+            height += 56
+        }
+        return min(760, height)
     }
 
     private func configurePresetPopUp() {
@@ -395,6 +655,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         let selectedIndex = presetPopUp.indexOfSelectedItem
         guard DNSProtectionPreset.allCases.indices.contains(selectedIndex) else {
             updatePresetDescription()
+            updateSaveButtonState()
             return
         }
         let preset = DNSProtectionPreset.allCases[selectedIndex]
@@ -402,6 +663,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         bootstrapServersField.stringValue = preset.bootstrapServers.joined(separator: ", ")
         errorLabel.isHidden = true
         updatePresetDescription()
+        updateSaveButtonState()
     }
 
     private func updatePresetDescription() {
@@ -418,6 +680,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
     }
 
     @objc private func saveClicked() {
+        guard hasUnsavedChanges else { return }
         let policy: DNSProtectionPolicy
         if modeControl.selectedSegment == 0 {
             policy = .profile
@@ -465,12 +728,28 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
     }
 
     private func setSaving(_ isSaving: Bool) {
-        saveButton.isEnabled = !isSaving
+        self.isSaving = isSaving
+        updateSaveButtonState()
         cancelButton.isEnabled = !isSaving
         modeControl.isEnabled = !isSaving
+        editProfileButton.isEnabled = !isSaving
         presetPopUp.isEnabled = !isSaving
         resolverURLField.isEnabled = !isSaving
         bootstrapServersField.isEnabled = !isSaving
+    }
+
+    private var hasUnsavedChanges: Bool {
+        if modeControl.selectedSegment == 0 {
+            return currentPolicy.mode != .profile
+        }
+        guard currentPolicy.mode == .encryptedHTTPS else { return true }
+        let resolverURL = resolverURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return resolverURL != currentPolicy.serverURL?.absoluteString
+            || parsedBootstrapServers() != currentPolicy.bootstrapServers
+    }
+
+    private func updateSaveButtonState() {
+        saveButton.isEnabled = !isSaving && hasUnsavedChanges
     }
 
     private func makeFieldLabel(_ text: String) -> NSTextField {
@@ -480,9 +759,11 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
     }
 
     func controlTextDidChange(_ notification: Notification) {
-        guard presetPopUp.indexOfSelectedItem != DNSProtectionPreset.allCases.count else { return }
-        presetPopUp.selectItem(at: DNSProtectionPreset.allCases.count)
-        updatePresetDescription()
+        if presetPopUp.indexOfSelectedItem != DNSProtectionPreset.allCases.count {
+            presetPopUp.selectItem(at: DNSProtectionPreset.allCases.count)
+            updatePresetDescription()
+        }
+        updateSaveButtonState()
     }
 }
 
@@ -930,8 +1211,12 @@ class TunnelDetailTableViewController: NSViewController {
     @objc private func dnsProtectionClicked() {
         let dnsViewController = MacDNSProtectionViewController(
             policy: tunnel.dnsProtectionPolicy,
+            profileSummary: tunnel.profileDNSRouteSummary,
             isTunnelActive: tunnel.status != .inactive
         )
+        dnsViewController.onEditProfileDNS = { [weak self] in
+            self?.handleEditTunnelAction()
+        }
         dnsViewController.onSave = { [weak self] policy, completion in
             guard let self else {
                 completion(TunnelDNSProtectionError.invalidStoredConfiguration)
