@@ -166,10 +166,23 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
 
     private let currentPolicy: DNSProtectionPolicy
     private let isTunnelActive: Bool
+    private var selectedPreset: DNSProtectionPreset?
     private let modeControl = UISegmentedControl(items: [
         tr("dnsProtectionProfileDNS"),
         tr("dnsProtectionEncryptedDNS")
     ])
+    private let presetButton: UIButton = {
+        var configuration = UIButton.Configuration.gray()
+        configuration.cornerStyle = .medium
+        configuration.image = UIImage(systemName: "chevron.up.chevron.down")
+        configuration.imagePlacement = .trailing
+        configuration.imagePadding = 10
+        configuration.titleAlignment = .leading
+        let button = UIButton(configuration: configuration)
+        button.contentHorizontalAlignment = .fill
+        button.showsMenuAsPrimaryAction = true
+        return button
+    }()
     private let resolverURLField: UITextField = {
         let field = UITextField()
         field.borderStyle = .roundedRect
@@ -213,6 +226,7 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
     init(policy: DNSProtectionPolicy, isTunnelActive: Bool) {
         currentPolicy = policy
         self.isTunnelActive = isTunnelActive
+        selectedPreset = DNSProtectionPreset.matching(policy)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -262,11 +276,13 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
 
         resolverURLField.delegate = self
         bootstrapServersField.delegate = self
+        configurePresetButton()
         if currentPolicy.mode == .encryptedHTTPS {
             resolverURLField.text = currentPolicy.serverURL?.absoluteString
             bootstrapServersField.text = currentPolicy.bootstrapServers.joined(separator: ", ")
         }
 
+        let presetLabel = makeFieldLabel(tr("dnsProtectionProvider"))
         let resolverLabel = makeFieldLabel(tr("dnsProtectionResolverURL"))
         let bootstrapLabel = makeFieldLabel(tr("dnsProtectionBootstrapServers"))
         let bootstrapHelp = UILabel()
@@ -278,6 +294,9 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
 
         resolverFieldsStack.axis = .vertical
         resolverFieldsStack.spacing = 8
+        resolverFieldsStack.addArrangedSubview(presetLabel)
+        resolverFieldsStack.addArrangedSubview(presetButton)
+        resolverFieldsStack.setCustomSpacing(16, after: presetButton)
         resolverFieldsStack.addArrangedSubview(resolverLabel)
         resolverFieldsStack.addArrangedSubview(resolverURLField)
         resolverFieldsStack.setCustomSpacing(16, after: resolverURLField)
@@ -330,6 +349,7 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
             cardStack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -20),
             iconView.widthAnchor.constraint(equalToConstant: 40),
             iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
+            presetButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
             resolverURLField.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             bootstrapServersField.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
         ])
@@ -357,6 +377,45 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
 
     @objc private func cancelTapped() {
         dismiss(animated: true)
+    }
+
+    private func configurePresetButton() {
+        let presetActions = DNSProtectionPreset.allCases.map { preset in
+            UIAction(
+                title: preset.localizedTitle,
+                subtitle: preset.localizedDescription,
+                state: selectedPreset == preset ? .on : .off
+            ) { [weak self] _ in
+                self?.applyPreset(preset)
+            }
+        }
+        let customAction = UIAction(
+            title: tr("dnsPresetCustom"),
+            subtitle: tr("dnsPresetCustomDescription"),
+            state: selectedPreset == nil ? .on : .off
+        ) { [weak self] _ in
+            self?.selectCustomPreset()
+        }
+        presetButton.menu = UIMenu(children: presetActions + [customAction])
+
+        var configuration = presetButton.configuration
+        configuration?.title = selectedPreset?.localizedTitle ?? tr("dnsPresetCustom")
+        configuration?.subtitle = selectedPreset?.localizedDescription ?? tr("dnsPresetCustomDescription")
+        presetButton.configuration = configuration
+    }
+
+    private func applyPreset(_ preset: DNSProtectionPreset) {
+        selectedPreset = preset
+        resolverURLField.text = preset.serverURLString
+        bootstrapServersField.text = preset.bootstrapServers.joined(separator: ", ")
+        errorLabel.isHidden = true
+        configurePresetButton()
+    }
+
+    private func selectCustomPreset() {
+        selectedPreset = nil
+        errorLabel.isHidden = true
+        configurePresetButton()
     }
 
     @objc private func saveTapped() {
@@ -410,6 +469,7 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
         saveButton.isEnabled = !isSaving
         navigationItem.leftBarButtonItem?.isEnabled = !isSaving
         modeControl.isEnabled = !isSaving
+        presetButton.isEnabled = !isSaving
         resolverURLField.isEnabled = !isSaving
         bootstrapServersField.isEnabled = !isSaving
     }
@@ -427,6 +487,18 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
             bootstrapServersField.becomeFirstResponder()
         } else {
             textField.resignFirstResponder()
+        }
+        return true
+    }
+
+    func textField(
+        _ textField: UITextField,
+        shouldChangeCharactersIn range: NSRange,
+        replacementString string: String
+    ) -> Bool {
+        if selectedPreset != nil {
+            selectedPreset = nil
+            configurePresetButton()
         }
         return true
     }

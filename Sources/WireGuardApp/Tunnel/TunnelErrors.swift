@@ -92,6 +92,46 @@ extension DNSProtectionPolicy {
     }
 }
 
+extension DNSProtectionPreset {
+    var localizedTitle: String {
+        switch self {
+        case .cloudflare:
+            return tr("dnsPresetCloudflare")
+        case .cloudflareSecurity:
+            return tr("dnsPresetCloudflareSecurity")
+        case .cloudflareFamily:
+            return tr("dnsPresetCloudflareFamily")
+        case .adGuard:
+            return tr("dnsPresetAdGuard")
+        case .adGuardFamily:
+            return tr("dnsPresetAdGuardFamily")
+        case .quad9:
+            return tr("dnsPresetQuad9")
+        case .google:
+            return tr("dnsPresetGoogle")
+        }
+    }
+
+    var localizedDescription: String {
+        switch self {
+        case .cloudflare:
+            return tr("dnsPresetCloudflareDescription")
+        case .cloudflareSecurity:
+            return tr("dnsPresetCloudflareSecurityDescription")
+        case .cloudflareFamily:
+            return tr("dnsPresetCloudflareFamilyDescription")
+        case .adGuard:
+            return tr("dnsPresetAdGuardDescription")
+        case .adGuardFamily:
+            return tr("dnsPresetAdGuardFamilyDescription")
+        case .quad9:
+            return tr("dnsPresetQuad9Description")
+        case .google:
+            return tr("dnsPresetGoogleDescription")
+        }
+    }
+}
+
 extension PacketTunnelProviderError: WireGuardAppError {
     var alertText: AlertText {
         switch self {

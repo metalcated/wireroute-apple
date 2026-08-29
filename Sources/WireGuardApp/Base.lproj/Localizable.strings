@@ -636,9 +636,10 @@
 "dnsProtectionProfileDNS" = "Profile DNS";
 "dnsProtectionEncryptedDNS" = "Encrypted DNS";
 "dnsProtectionProfileDescription" = "Use the DNS servers saved in this WireGuard profile.";
-"dnsProtectionEncryptedDescription" = "Send DNS queries to a custom DNS-over-HTTPS resolver while this VPN is connected.";
-"dnsProtectionIntro" = "Choose how this profile resolves domain names while connected.";
+"dnsProtectionEncryptedDescription" = "Send DNS queries to the selected DNS-over-HTTPS resolver while this VPN is connected.";
+"dnsProtectionIntro" = "Choose how this profile resolves domain names while connected. Encrypted DNS sends queries to the resolver you select.";
 "dnsProtectionMode" = "Protection mode";
+"dnsProtectionProvider" = "Resolver";
 "dnsProtectionResolverURL" = "Resolver URL";
 "dnsProtectionResolverURLPlaceholder" = "https://resolver.example/dns-query";
 "dnsProtectionBootstrapServers" = "Bootstrap addresses";
@@ -651,6 +652,22 @@
 "dnsProtectionInvalidBootstrapMessage (%@)" = "‘%@’ is not a valid IPv4 or IPv6 bootstrap address.";
 "dnsProtectionInvalidStoredMessage" = "The saved encrypted DNS settings are invalid. Open DNS Protection and save the resolver again.";
 "dnsProtectionSaveFailed" = "WireRoute could not save the DNS protection settings.";
+"dnsPresetCloudflare" = "Cloudflare";
+"dnsPresetCloudflareDescription" = "General-purpose encrypted DNS without content filtering.";
+"dnsPresetCloudflareSecurity" = "Cloudflare Security";
+"dnsPresetCloudflareSecurityDescription" = "Blocks domains associated with malware and phishing.";
+"dnsPresetCloudflareFamily" = "Cloudflare Family";
+"dnsPresetCloudflareFamilyDescription" = "Blocks malware and adult content.";
+"dnsPresetAdGuard" = "AdGuard DNS";
+"dnsPresetAdGuardDescription" = "Blocks ads and trackers.";
+"dnsPresetAdGuardFamily" = "AdGuard Family";
+"dnsPresetAdGuardFamilyDescription" = "Blocks ads, trackers, and adult content, with Safe Search where available.";
+"dnsPresetQuad9" = "Quad9 Secure";
+"dnsPresetQuad9Description" = "Blocks known malicious domains.";
+"dnsPresetGoogle" = "Google Public DNS";
+"dnsPresetGoogleDescription" = "General-purpose encrypted DNS.";
+"dnsPresetCustom" = "Custom";
+"dnsPresetCustomDescription" = "Enter any compatible HTTPS resolver endpoint.";
 
 // Mac alert
 

@@ -115,7 +115,7 @@ private final class MacSplitRouteEntryViewController: NSViewController {
 }
 
 @MainActor
-private final class MacDNSProtectionViewController: NSViewController {
+private final class MacDNSProtectionViewController: NSViewController, NSTextFieldDelegate {
     var onSave: ((DNSProtectionPolicy, @escaping @MainActor @Sendable (WireGuardAppError?) -> Void) -> Void)?
 
     private let currentPolicy: DNSProtectionPolicy
@@ -126,6 +126,13 @@ private final class MacDNSProtectionViewController: NSViewController {
         target: nil,
         action: nil
     )
+    private let presetPopUp = NSPopUpButton()
+    private let presetDescriptionLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        return label
+    }()
     private let resolverURLField = NSTextField()
     private let bootstrapServersField = NSTextField()
     private let resolverFieldsStack = NSStackView()
@@ -180,8 +187,11 @@ private final class MacDNSProtectionViewController: NSViewController {
         modeControl.target = self
         modeControl.action = #selector(modeChanged)
 
+        configurePresetPopUp()
         resolverURLField.placeholderString = tr("dnsProtectionResolverURLPlaceholder")
         bootstrapServersField.placeholderString = tr("dnsProtectionBootstrapPlaceholder")
+        resolverURLField.delegate = self
+        bootstrapServersField.delegate = self
         if currentPolicy.mode == .encryptedHTTPS {
             resolverURLField.stringValue = currentPolicy.serverURL?.absoluteString ?? ""
             bootstrapServersField.stringValue = currentPolicy.bootstrapServers.joined(separator: ", ")
@@ -194,6 +204,10 @@ private final class MacDNSProtectionViewController: NSViewController {
         resolverFieldsStack.orientation = .vertical
         resolverFieldsStack.alignment = .leading
         resolverFieldsStack.spacing = 8
+        resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionProvider")))
+        resolverFieldsStack.addArrangedSubview(presetPopUp)
+        resolverFieldsStack.addArrangedSubview(presetDescriptionLabel)
+        resolverFieldsStack.setCustomSpacing(16, after: presetDescriptionLabel)
         resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionResolverURL")))
         resolverFieldsStack.addArrangedSubview(resolverURLField)
         resolverFieldsStack.setCustomSpacing(16, after: resolverURLField)
@@ -242,6 +256,8 @@ private final class MacDNSProtectionViewController: NSViewController {
             iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
             modeControl.widthAnchor.constraint(equalTo: stack.widthAnchor),
             resolverFieldsStack.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            presetPopUp.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            presetDescriptionLabel.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
             resolverURLField.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
             bootstrapServersField.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
             bootstrapHelp.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
@@ -249,7 +265,7 @@ private final class MacDNSProtectionViewController: NSViewController {
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
 
-        container.frame = NSRect(x: 0, y: 0, width: 580, height: 440)
+        container.frame = NSRect(x: 0, y: 0, width: 580, height: 530)
         view = container
         updateMode()
     }
@@ -261,6 +277,46 @@ private final class MacDNSProtectionViewController: NSViewController {
 
     private func updateMode() {
         resolverFieldsStack.isHidden = modeControl.selectedSegment != 1
+    }
+
+    private func configurePresetPopUp() {
+        presetPopUp.removeAllItems()
+        presetPopUp.addItems(withTitles: DNSProtectionPreset.allCases.map(\.localizedTitle))
+        presetPopUp.addItem(withTitle: tr("dnsPresetCustom"))
+        presetPopUp.controlSize = .large
+        presetPopUp.font = .systemFont(ofSize: 13)
+        presetPopUp.target = self
+        presetPopUp.action = #selector(presetChanged)
+
+        if let preset = DNSProtectionPreset.matching(currentPolicy),
+           let index = DNSProtectionPreset.allCases.firstIndex(of: preset) {
+            presetPopUp.selectItem(at: index)
+        } else {
+            presetPopUp.selectItem(at: DNSProtectionPreset.allCases.count)
+        }
+        updatePresetDescription()
+    }
+
+    @objc private func presetChanged() {
+        let selectedIndex = presetPopUp.indexOfSelectedItem
+        guard DNSProtectionPreset.allCases.indices.contains(selectedIndex) else {
+            updatePresetDescription()
+            return
+        }
+        let preset = DNSProtectionPreset.allCases[selectedIndex]
+        resolverURLField.stringValue = preset.serverURLString
+        bootstrapServersField.stringValue = preset.bootstrapServers.joined(separator: ", ")
+        errorLabel.isHidden = true
+        updatePresetDescription()
+    }
+
+    private func updatePresetDescription() {
+        let selectedIndex = presetPopUp.indexOfSelectedItem
+        if DNSProtectionPreset.allCases.indices.contains(selectedIndex) {
+            presetDescriptionLabel.stringValue = DNSProtectionPreset.allCases[selectedIndex].localizedDescription
+        } else {
+            presetDescriptionLabel.stringValue = tr("dnsPresetCustomDescription")
+        }
     }
 
     @objc private func cancelClicked() {
@@ -318,6 +374,7 @@ private final class MacDNSProtectionViewController: NSViewController {
         saveButton.isEnabled = !isSaving
         cancelButton.isEnabled = !isSaving
         modeControl.isEnabled = !isSaving
+        presetPopUp.isEnabled = !isSaving
         resolverURLField.isEnabled = !isSaving
         bootstrapServersField.isEnabled = !isSaving
     }
@@ -326,6 +383,12 @@ private final class MacDNSProtectionViewController: NSViewController {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 12, weight: .semibold)
         return label
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        guard presetPopUp.indexOfSelectedItem != DNSProtectionPreset.allCases.count else { return }
+        presetPopUp.selectItem(at: DNSProtectionPreset.allCases.count)
+        updatePresetDescription()
     }
 }
 
