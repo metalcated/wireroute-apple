@@ -274,8 +274,6 @@ class TunnelsListTableViewController: UIViewController {
     }
 
     @objc func settingsButtonTapped(sender: UIBarButtonItem) {
-        guard tunnelsManager != nil else { return }
-
         let settingsVC = SettingsTableViewController(tunnelsManager: tunnelsManager)
         let settingsNC = UINavigationController(rootViewController: settingsVC)
         settingsNC.modalPresentationStyle = .formSheet

@@ -4,18 +4,73 @@
 import UIKit
 import os.log
 
+private final class WireRouteSettingsMarkView: UIView {
+    override var intrinsicContentSize: CGSize {
+        return CGSize(width: 50, height: 44)
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+
+        let scaleX = rect.width / 50
+        let scaleY = rect.height / 44
+        context.saveGState()
+        context.scaleBy(x: scaleX, y: scaleY)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+
+        let routePath = UIBezierPath()
+        routePath.move(to: CGPoint(x: 6, y: 7))
+        routePath.addLine(to: CGPoint(x: 25, y: 37))
+        routePath.addLine(to: CGPoint(x: 44, y: 7))
+        routePath.move(to: CGPoint(x: 13, y: 18))
+        routePath.addCurve(
+            to: CGPoint(x: 37, y: 18),
+            controlPoint1: CGPoint(x: 18, y: 11),
+            controlPoint2: CGPoint(x: 32, y: 11)
+        )
+        routePath.lineWidth = 3
+        WireRouteAppearance.signalBlue.setStroke()
+        routePath.stroke()
+
+        let nodePath = UIBezierPath()
+        for point in [CGPoint(x: 6, y: 7), CGPoint(x: 44, y: 7), CGPoint(x: 25, y: 37)] {
+            nodePath.append(UIBezierPath(ovalIn: CGRect(x: point.x - 3, y: point.y - 3, width: 6, height: 6)))
+        }
+        WireRouteAppearance.liveTeal.setFill()
+        nodePath.fill()
+
+        let shieldPath = UIBezierPath()
+        shieldPath.move(to: CGPoint(x: 25, y: 19))
+        shieldPath.addLine(to: CGPoint(x: 31, y: 21.5))
+        shieldPath.addLine(to: CGPoint(x: 30, y: 28))
+        shieldPath.addQuadCurve(to: CGPoint(x: 25, y: 32), controlPoint: CGPoint(x: 28.5, y: 30.5))
+        shieldPath.addQuadCurve(to: CGPoint(x: 20, y: 28), controlPoint: CGPoint(x: 21.5, y: 30.5))
+        shieldPath.addLine(to: CGPoint(x: 19, y: 21.5))
+        shieldPath.close()
+        UIColor.label.setFill()
+        shieldPath.fill()
+
+        context.restoreGState()
+    }
+}
+
 private final class WireRouteSettingsFooterView: UIView {
-    private let brandImageView: UIImageView = {
-        let imageView = UIImageView(image: UIImage(named: "WireRouteBrand"))
-        imageView.contentMode = .scaleAspectFit
-        imageView.clipsToBounds = true
-        imageView.layer.cornerRadius = 14
-        return imageView
-    }()
+    private let markView = WireRouteSettingsMarkView()
 
     private let productNameLabel: UILabel = {
         let label = UILabel()
-        label.font = .preferredFont(forTextStyle: .title2)
+        label.font = WireRouteAppearance.roundedFont(size: 26, weight: .semibold, textStyle: .title2)
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .label
         return label
@@ -25,24 +80,24 @@ private final class WireRouteSettingsFooterView: UIView {
         super.init(frame: frame)
 
         let productName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "WireRoute"
-        brandImageView.accessibilityLabel = productName
         productNameLabel.text = productName
+        isAccessibilityElement = true
+        accessibilityLabel = productName
 
-        let brandStack = UIStackView(arrangedSubviews: [brandImageView, productNameLabel])
+        let brandStack = UIStackView(arrangedSubviews: [markView, productNameLabel])
         brandStack.axis = .horizontal
         brandStack.alignment = .center
-        brandStack.spacing = 14
+        brandStack.spacing = 12
         addSubview(brandStack)
         brandStack.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            brandImageView.widthAnchor.constraint(equalToConstant: 64),
-            brandImageView.heightAnchor.constraint(equalTo: brandImageView.widthAnchor),
+            markView.widthAnchor.constraint(equalToConstant: 50),
+            markView.heightAnchor.constraint(equalToConstant: 44),
             brandStack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            brandStack.centerYAnchor.constraint(equalTo: centerYAnchor),
             brandStack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
-            brandStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -24),
-            brandStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -18),
-            brandStack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 12)
+            brandStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -24)
         ])
     }
 
@@ -104,17 +159,18 @@ class SettingsTableViewController: UITableViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let currentFooterHeight = brandFooterView.frame.height
-        let contentWithoutFooter = max(tableView.contentSize.height - currentFooterHeight, 0)
-        let visibleHeight = tableView.bounds.height
+        let footerHeight: CGFloat = 68
+        let bottomPadding = max(tableView.safeAreaInsets.bottom, 10)
+        let minimumContentHeight = tableView.bounds.height
             - tableView.adjustedContentInset.top
-            - tableView.adjustedContentInset.bottom
-        let footerHeight = max(112, visibleHeight - contentWithoutFooter)
+            - bottomPadding
+        let fullContentHeight = max(tableView.contentSize.height, minimumContentHeight)
         let footerWidth = tableView.bounds.width
-        let needsReload = abs(footerHeight - currentFooterHeight) > 0.5
+        let footerY = max(fullContentHeight - footerHeight, 0)
+        let needsReload = abs(footerHeight - brandFooterView.frame.height) > 0.5
             || abs(footerWidth - brandFooterView.frame.width) > 0.5
 
-        brandFooterView.frame = CGRect(x: 0, y: 0, width: footerWidth, height: footerHeight)
+        brandFooterView.frame = CGRect(x: 0, y: footerY, width: footerWidth, height: footerHeight)
 
         if needsReload {
             tableView.tableFooterView = brandFooterView
