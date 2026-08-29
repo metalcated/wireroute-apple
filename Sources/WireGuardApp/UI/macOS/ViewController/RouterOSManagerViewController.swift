@@ -5,6 +5,69 @@ import CoreImage.CIFilterBuiltins
 import UniformTypeIdentifiers
 
 @MainActor
+enum ConfigurationQRCodePresenter {
+    static func present(_ configuration: TunnelConfiguration, from sourceViewController: NSViewController) {
+        guard let window = sourceViewController.view.window else { return }
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(configuration.asWgQuickConfig().utf8)
+        filter.correctionLevel = "M"
+        guard let outputImage = filter.outputImage else {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = tr("macRouterOSQRCodeFailed")
+            alert.addButton(withTitle: tr("macRouterOSDone"))
+            alert.beginSheetModal(for: window) { _ in }
+            return
+        }
+        let scaledImage = outputImage.transformed(
+            by: CGAffineTransform(scaleX: 8, y: 8)
+        )
+        let representation = NSCIImageRep(ciImage: scaledImage)
+        let image = NSImage(size: representation.size)
+        image.addRepresentation(representation)
+
+        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: 320, height: 320))
+        imageView.image = image
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = configuration.name ?? tr("macRouterOSExistingPeerDefaultName")
+        alert.informativeText = tr("macRouterOSQRCodeMessage")
+        alert.accessoryView = imageView
+        alert.addButton(withTitle: tr("macRouterOSDone"))
+        alert.beginSheetModal(for: window) { _ in }
+    }
+}
+
+@MainActor
+enum SensitiveKeyClipboardPresenter {
+    static func confirmAndCopy(_ privateKey: String, from sourceViewController: NSViewController) {
+        guard let window = sourceViewController.view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr("macRouterOSCopyPrivateKeyTitle")
+        alert.informativeText = tr("macRouterOSCopyPrivateKeyMessage")
+        alert.addButton(withTitle: tr("macRouterOSCopyPrivateKeyConfirm"))
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            copy(privateKey)
+        }
+    }
+
+    static func copy(_ value: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+            let currentPasteboard = NSPasteboard.general
+            guard currentPasteboard.string(forType: .string) == value else { return }
+            currentPasteboard.clearContents()
+        }
+    }
+}
+
+@MainActor
 private final class RouterOSDiscoveryTableView: NSTableView {
     var contextMenuProvider: ((Int) -> NSMenu?)?
 
@@ -1554,56 +1617,15 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     private func showConfigurationQRCode(_ configuration: TunnelConfiguration) {
-        guard let window = view.window else { return }
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(configuration.asWgQuickConfig().utf8)
-        filter.correctionLevel = "M"
-        guard let outputImage = filter.outputImage else {
-            showError(tr("macRouterOSQRCodeFailed"))
-            return
-        }
-        let scaledImage = outputImage.transformed(
-            by: CGAffineTransform(scaleX: 8, y: 8)
-        )
-        let representation = NSCIImageRep(ciImage: scaledImage)
-        let image = NSImage(size: representation.size)
-        image.addRepresentation(representation)
-
-        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: 320, height: 320))
-        imageView.image = image
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = configuration.name ?? tr("macRouterOSExistingPeerDefaultName")
-        alert.informativeText = tr("macRouterOSQRCodeMessage")
-        alert.accessoryView = imageView
-        alert.addButton(withTitle: tr("macRouterOSDone"))
-        alert.beginSheetModal(for: window) { _ in }
+        ConfigurationQRCodePresenter.present(configuration, from: self)
     }
 
     private func confirmCopyPrivateKey(_ privateKey: String) {
-        guard let window = view.window else { return }
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = tr("macRouterOSCopyPrivateKeyTitle")
-        alert.informativeText = tr("macRouterOSCopyPrivateKeyMessage")
-        alert.addButton(withTitle: tr("macRouterOSCopyPrivateKeyConfirm"))
-        alert.addButton(withTitle: tr("macRouterOSCancel"))
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            self?.copySensitiveConfiguration(privateKey)
-        }
+        SensitiveKeyClipboardPresenter.confirmAndCopy(privateKey, from: self)
     }
 
     private func copySensitiveConfiguration(_ value: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(value, forType: .string)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
-            let currentPasteboard = NSPasteboard.general
-            guard currentPasteboard.string(forType: .string) == value else { return }
-            currentPasteboard.clearContents()
-        }
+        SensitiveKeyClipboardPresenter.copy(value)
     }
 
     private func saveConfiguration(_ configuration: WireGuardClientConfiguration) {

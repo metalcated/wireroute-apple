@@ -497,6 +497,42 @@ class TunnelsListTableViewController: NSViewController {
         exportTunnels(at: selectedIndices)
     }
 
+    @objc private func handleShowSelectedTunnelQRCodeAction() {
+        guard let configuration = selectedSingleTunnelConfiguration() else { return }
+        PrivateDataConfirmation.confirmAccess(to: tr("macRouterOSShowQRCodePrivateData")) { [weak self] in
+            guard let self else { return }
+            ConfigurationQRCodePresenter.present(configuration, from: self)
+        }
+    }
+
+    @objc private func handleCopySelectedTunnelPublicKeyAction() {
+        guard let configuration = selectedSingleTunnelConfiguration() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(
+            configuration.interface.privateKey.publicKey.base64Key,
+            forType: .string
+        )
+    }
+
+    @objc private func handleCopySelectedTunnelPrivateKeyAction() {
+        guard let configuration = selectedSingleTunnelConfiguration() else { return }
+        let privateKey = configuration.interface.privateKey.base64Key
+        PrivateDataConfirmation.confirmAccess(to: tr("macRouterOSCopyPrivateKeyAuthentication")) { [weak self] in
+            guard let self else { return }
+            SensitiveKeyClipboardPresenter.confirmAndCopy(privateKey, from: self)
+        }
+    }
+
+    private func selectedSingleTunnelConfiguration() -> TunnelConfiguration? {
+        let selectedIndices = tableView.selectedRowIndexes.sorted().filter {
+            $0 >= 0 && $0 < tunnelsManager.numberOfTunnels()
+        }
+        guard selectedIndices.count == 1 else { return nil }
+        let tunnel = tunnelsManager.tunnel(at: selectedIndices[0])
+        guard tunnel.isTunnelAvailableToUser else { return nil }
+        return tunnel.tunnelConfiguration
+    }
+
     @objc func handleViewLogAction() {
         let logVC = LogViewController()
         self.presentAsSheet(logVC)
@@ -571,8 +607,69 @@ class TunnelsListTableViewController: NSViewController {
                     accessibilityDescription: editItem.title
                 )
                 menu.addItem(.separator())
+
+                let qrItem = menu.addItem(
+                    withTitle: tr("macRouterOSContextShowQRCode"),
+                    action: #selector(handleShowSelectedTunnelQRCodeAction),
+                    keyEquivalent: ""
+                )
+                qrItem.target = self
+                qrItem.isEnabled = tunnel.tunnelConfiguration != nil
+                qrItem.image = NSImage(
+                    systemSymbolName: "qrcode",
+                    accessibilityDescription: qrItem.title
+                )
+
+                let copyPublicKeyItem = menu.addItem(
+                    withTitle: tr("macRouterOSContextCopyPublicKey"),
+                    action: #selector(handleCopySelectedTunnelPublicKeyAction),
+                    keyEquivalent: ""
+                )
+                copyPublicKeyItem.target = self
+                copyPublicKeyItem.isEnabled = tunnel.tunnelConfiguration != nil
+                copyPublicKeyItem.image = NSImage(
+                    systemSymbolName: "key.horizontal",
+                    accessibilityDescription: copyPublicKeyItem.title
+                )
+
+                let copyPrivateKeyItem = menu.addItem(
+                    withTitle: tr("macRouterOSContextCopyPrivateKey"),
+                    action: #selector(handleCopySelectedTunnelPrivateKeyAction),
+                    keyEquivalent: ""
+                )
+                copyPrivateKeyItem.target = self
+                copyPrivateKeyItem.isEnabled = tunnel.tunnelConfiguration != nil
+                copyPrivateKeyItem.image = NSImage(
+                    systemSymbolName: "key.horizontal.fill",
+                    accessibilityDescription: copyPrivateKeyItem.title
+                )
+                menu.addItem(.separator())
             }
         }
+
+        let addItem = menu.addItem(
+            withTitle: tr("macMenuAddEmptyTunnel"),
+            action: #selector(handleAddEmptyTunnelAction),
+            keyEquivalent: ""
+        )
+        addItem.target = self
+        addItem.image = NSImage(
+            systemSymbolName: "plus",
+            accessibilityDescription: addItem.title
+        )
+
+        let importItem = menu.addItem(
+            withTitle: tr("macMenuImportTunnels"),
+            action: #selector(handleImportTunnelAction),
+            keyEquivalent: ""
+        )
+        importItem.target = self
+        importItem.image = NSImage(
+            systemSymbolName: "square.and.arrow.down",
+            accessibilityDescription: importItem.title
+        )
+
+        menu.addItem(.separator())
 
         let exportKey = selectedIndices.count == 1
             ? "macTunnelContextExportProfile"
@@ -586,6 +683,52 @@ class TunnelsListTableViewController: NSViewController {
         exportItem.image = NSImage(
             systemSymbolName: "square.and.arrow.up",
             accessibilityDescription: exportItem.title
+        )
+
+        let exportAllItem = menu.addItem(
+            withTitle: tr("macMenuExportTunnels"),
+            action: #selector(handleExportTunnelsAction),
+            keyEquivalent: ""
+        )
+        exportAllItem.target = self
+        exportAllItem.image = NSImage(
+            systemSymbolName: "archivebox",
+            accessibilityDescription: exportAllItem.title
+        )
+
+        menu.addItem(.separator())
+
+        let viewLogItem = menu.addItem(
+            withTitle: tr("macMenuViewLog"),
+            action: #selector(handleViewLogAction),
+            keyEquivalent: ""
+        )
+        viewLogItem.target = self
+        viewLogItem.image = NSImage(
+            systemSymbolName: "doc.text.magnifyingglass",
+            accessibilityDescription: viewLogItem.title
+        )
+
+        let routerOSItem = menu.addItem(
+            withTitle: tr("macMenuRouterOSManager"),
+            action: #selector(AppDelegate.showRouterOSManager),
+            keyEquivalent: ""
+        )
+        routerOSItem.target = NSApp.delegate
+        routerOSItem.image = NSImage(
+            systemSymbolName: "server.rack",
+            accessibilityDescription: routerOSItem.title
+        )
+
+        let settingsItem = menu.addItem(
+            withTitle: tr("macMenuSettings"),
+            action: #selector(AppDelegate.showRouterOSSettings),
+            keyEquivalent: ""
+        )
+        settingsItem.target = NSApp.delegate
+        settingsItem.image = NSImage(
+            systemSymbolName: "gearshape",
+            accessibilityDescription: settingsItem.title
         )
 
         menu.addItem(.separator())
