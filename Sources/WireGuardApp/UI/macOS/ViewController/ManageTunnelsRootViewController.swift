@@ -179,7 +179,7 @@ private enum WireRouteFieldStyle {
         field.isBezeled = !WireRouteTheme.isBlueNordic
         field.isBordered = !WireRouteTheme.isBlueNordic
         field.drawsBackground = !WireRouteTheme.isBlueNordic
-        field.backgroundColor = WireRouteTheme.isBlueNordic ? .clear : .textBackgroundColor
+        field.backgroundColor = WireRouteTheme.isBlueNordic ? .clear : .controlBackgroundColor
         field.textColor = .controlTextColor
     }
 }
@@ -468,7 +468,7 @@ final class WireRouteTextEditorScrollView: NSScrollView, WireRouteThemeField {
         drawsBackground = true
         backgroundColor = WireRouteTheme.isBlueNordic
             ? WireRouteTheme.color(for: .inset)
-            : .textBackgroundColor
+            : .controlBackgroundColor
         contentView.drawsBackground = true
         contentView.backgroundColor = backgroundColor
 

@@ -646,8 +646,9 @@
 "dnsProtectionProfileDNS" = "Profile DNS";
 "dnsProtectionEncryptedDNS" = "Encrypted DNS";
 "dnsProtectionProfileDescription" = "Use the DNS servers saved in this WireGuard profile.";
-"dnsProtectionEncryptedDescription" = "Send DNS queries to the selected DNS-over-HTTPS resolver while this VPN is connected.";
+"dnsProtectionEncryptedDescription" = "Use the selected DNS-over-HTTPS resolver instead of profile DNS. Private hostnames require an encrypted resolver that can resolve them.";
 "dnsProtectionIntro" = "Choose how this profile resolves domain names while connected. Encrypted DNS sends queries to the resolver you select.";
+"dnsProtectionEncryptedInternalWarning" = "Encrypted DNS bypasses the DNS servers saved in this profile. Private hostnames and internal domains will not resolve unless the selected encrypted resolver can resolve them. Use Profile DNS when you need VPN-provided internal DNS.";
 "dnsProtectionMode" = "Protection mode";
 "dnsProtectionProvider" = "Resolver";
 "dnsProtectionResolverURL" = "Resolver URL";

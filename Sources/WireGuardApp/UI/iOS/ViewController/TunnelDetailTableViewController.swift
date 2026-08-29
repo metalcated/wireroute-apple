@@ -292,8 +292,27 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
         bootstrapHelp.textColor = .secondaryLabel
         bootstrapHelp.numberOfLines = 0
 
+        let internalDNSWarningIcon = UIImageView(image: UIImage(systemName: "exclamationmark.triangle.fill"))
+        internalDNSWarningIcon.tintColor = .systemOrange
+        internalDNSWarningIcon.contentMode = .scaleAspectFit
+        internalDNSWarningIcon.setContentHuggingPriority(.required, for: .horizontal)
+        internalDNSWarningIcon.isAccessibilityElement = false
+        let internalDNSWarningLabel = UILabel()
+        internalDNSWarningLabel.text = tr("dnsProtectionEncryptedInternalWarning")
+        internalDNSWarningLabel.font = UIFont.preferredFont(forTextStyle: .footnote)
+        internalDNSWarningLabel.adjustsFontForContentSizeCategory = true
+        internalDNSWarningLabel.textColor = .secondaryLabel
+        internalDNSWarningLabel.numberOfLines = 0
+        let internalDNSWarning = UIStackView(arrangedSubviews: [internalDNSWarningIcon, internalDNSWarningLabel])
+        internalDNSWarning.axis = .horizontal
+        internalDNSWarning.alignment = .top
+        internalDNSWarning.spacing = 8
+        internalDNSWarning.accessibilityLabel = tr("dnsProtectionEncryptedInternalWarning")
+
         resolverFieldsStack.axis = .vertical
         resolverFieldsStack.spacing = 8
+        resolverFieldsStack.addArrangedSubview(internalDNSWarning)
+        resolverFieldsStack.setCustomSpacing(16, after: internalDNSWarning)
         resolverFieldsStack.addArrangedSubview(presetLabel)
         resolverFieldsStack.addArrangedSubview(presetButton)
         resolverFieldsStack.setCustomSpacing(16, after: presetButton)
@@ -349,6 +368,8 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
             cardStack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -20),
             iconView.widthAnchor.constraint(equalToConstant: 40),
             iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
+            internalDNSWarningIcon.widthAnchor.constraint(equalToConstant: 18),
+            internalDNSWarningIcon.heightAnchor.constraint(equalTo: internalDNSWarningIcon.widthAnchor),
             presetButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
             resolverURLField.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             bootstrapServersField.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)

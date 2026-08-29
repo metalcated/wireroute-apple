@@ -196,9 +196,30 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         bootstrapHelp.font = .systemFont(ofSize: 11)
         bootstrapHelp.textColor = .secondaryLabelColor
 
+        let internalDNSWarningIcon = NSImageView()
+        internalDNSWarningIcon.image = NSImage(
+            systemSymbolName: "exclamationmark.triangle.fill",
+            accessibilityDescription: tr("dnsProtectionEncryptedInternalWarning")
+        )
+        internalDNSWarningIcon.contentTintColor = .systemOrange
+        internalDNSWarningIcon.imageScaling = .scaleProportionallyUpOrDown
+        internalDNSWarningIcon.setContentHuggingPriority(.required, for: .horizontal)
+        let internalDNSWarningLabel = NSTextField(
+            wrappingLabelWithString: tr("dnsProtectionEncryptedInternalWarning")
+        )
+        internalDNSWarningLabel.font = .systemFont(ofSize: 11)
+        internalDNSWarningLabel.textColor = .secondaryLabelColor
+        internalDNSWarningLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let internalDNSWarning = NSStackView(views: [internalDNSWarningIcon, internalDNSWarningLabel])
+        internalDNSWarning.orientation = .horizontal
+        internalDNSWarning.alignment = .top
+        internalDNSWarning.spacing = 8
+
         resolverFieldsStack.orientation = .vertical
         resolverFieldsStack.alignment = .leading
         resolverFieldsStack.spacing = 8
+        resolverFieldsStack.addArrangedSubview(internalDNSWarning)
+        resolverFieldsStack.setCustomSpacing(16, after: internalDNSWarning)
         resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionProvider")))
         resolverFieldsStack.addArrangedSubview(presetPopUp)
         resolverFieldsStack.addArrangedSubview(presetDescriptionLabel)
@@ -251,6 +272,9 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
             iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
             modeControl.widthAnchor.constraint(equalTo: stack.widthAnchor),
             resolverFieldsStack.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            internalDNSWarning.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            internalDNSWarningIcon.widthAnchor.constraint(equalToConstant: 16),
+            internalDNSWarningIcon.heightAnchor.constraint(equalTo: internalDNSWarningIcon.widthAnchor),
             presetPopUp.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
             presetDescriptionLabel.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
             resolverURLField.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
@@ -260,7 +284,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
 
-        container.frame = NSRect(x: 0, y: 0, width: 580, height: 530)
+        container.frame = NSRect(x: 0, y: 0, width: 580, height: 590)
         view = container
         updateMode()
     }
