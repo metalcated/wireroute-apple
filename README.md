@@ -6,6 +6,16 @@ WireRoute is based on the official [WireGuard Apple](https://git.zx2c4.com/wireg
 
 The project currently contains the inherited iOS and macOS applications, their packet-tunnel extensions, WireGuardKit, and a new Swift 6 `WireRouteCore` package for profile-derived routing policy. Environment-specific tunnel addresses, endpoints, keys, DNS servers, and routes belong to imported profiles or user settings—not source code.
 
+WireRoute is intended to remain free and open source under the MIT License.
+
+## Support, Privacy, and Legal
+
+- [Support and contact](SUPPORT.md)
+- [Privacy policy](PRIVACY.md)
+- [Security reporting](SECURITY.md)
+- [Legal and open-source notices](LEGAL.md)
+- [MIT License](COPYING)
+
 ## Building
 
 - Clone this repo:
