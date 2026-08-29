@@ -535,7 +535,12 @@ class TunnelDetailTableViewController: NSViewController {
     private let connectionButton: NSButton = {
         let button = NSButton(title: "", target: nil, action: nil)
         button.bezelStyle = .rounded
-        button.controlSize = .large
+        button.bezelColor = .systemBlue
+        button.image = NSImage(
+            systemSymbolName: "power",
+            accessibilityDescription: tr("macToggleStatusButtonActivate")
+        )
+        button.imagePosition = .imageLeading
         button.setContentHuggingPriority(.required, for: .horizontal)
         return button
     }()
@@ -635,7 +640,11 @@ class TunnelDetailTableViewController: NSViewController {
         identityText.spacing = 3
         let identitySpacer = NSView()
         identitySpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let identityRow = NSStackView(views: [identityImageView, identityText, identitySpacer, editButton])
+        let actionRow = NSStackView(views: [connectionButton, editButton])
+        actionRow.orientation = .horizontal
+        actionRow.alignment = .centerY
+        actionRow.spacing = 8
+        let identityRow = NSStackView(views: [identityImageView, identityText, identitySpacer, actionRow])
         identityRow.orientation = .horizontal
         identityRow.alignment = .centerY
         identityRow.spacing = 14
@@ -654,7 +663,7 @@ class TunnelDetailTableViewController: NSViewController {
         let descriptionSpacer = NSView()
         descriptionSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let descriptionRow = NSStackView(
-            views: [routeDescriptionLabel, descriptionSpacer, connectionButton]
+            views: [routeDescriptionLabel, descriptionSpacer]
         )
         descriptionRow.orientation = .horizontal
         descriptionRow.alignment = .centerY
@@ -895,16 +904,29 @@ class TunnelDetailTableViewController: NSViewController {
             accessibilityDescription: tr("macTunnelTrafficRouting")
         ) ?? NSImage(systemSymbolName: "network", accessibilityDescription: nil)
         connectionButton.title = Self.localizedToggleStatusActionText(for: tunnel)
+        connectionButton.toolTip = connectionButton.title
         connectionButton.isEnabled = tunnel.hasOnDemandRules
             || tunnel.status == .active
             || tunnel.status == .inactive
         switch tunnel.status {
         case .active, .restarting, .reasserting:
             statusLabel.textColor = .systemGreen
+            connectionButton.image = NSImage(
+                systemSymbolName: "stop.fill",
+                accessibilityDescription: connectionButton.title
+            )
         case .activating, .waiting, .deactivating:
             statusLabel.textColor = .systemOrange
+            connectionButton.image = NSImage(
+                systemSymbolName: "ellipsis",
+                accessibilityDescription: connectionButton.title
+            )
         case .inactive:
             statusLabel.textColor = .secondaryLabelColor
+            connectionButton.image = NSImage(
+                systemSymbolName: "power",
+                accessibilityDescription: connectionButton.title
+            )
         }
     }
 
