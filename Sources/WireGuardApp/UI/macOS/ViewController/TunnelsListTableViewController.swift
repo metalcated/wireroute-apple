@@ -24,6 +24,70 @@ private final class ProfileTableRowView: NSTableRowView {
 }
 
 private final class SidebarActionButton: NSButton {
+    private let leadingImageView = NSImageView()
+    private let buttonTitleLabel = NSTextField(labelWithString: "")
+    private let trailingImageView = NSImageView()
+    private var hoverTrackingArea: NSTrackingArea?
+    private var isPointerInside = false {
+        didSet {
+            trailingImageView.contentTintColor = isPointerInside ? .systemBlue : .tertiaryLabelColor
+            needsDisplay = true
+        }
+    }
+
+    init(title: String, leadingSymbolName: String) {
+        super.init(frame: .zero)
+
+        self.title = ""
+        isBordered = false
+        wantsLayer = true
+        focusRingType = .exterior
+        setAccessibilityLabel(title)
+
+        let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        leadingImageView.image = NSImage(systemSymbolName: leadingSymbolName, accessibilityDescription: title)?
+            .withSymbolConfiguration(symbolConfiguration)
+        leadingImageView.contentTintColor = .secondaryLabelColor
+        leadingImageView.imageScaling = .scaleProportionallyDown
+
+        buttonTitleLabel.stringValue = title
+        buttonTitleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        buttonTitleLabel.textColor = .labelColor
+        buttonTitleLabel.alignment = .center
+        buttonTitleLabel.lineBreakMode = .byTruncatingTail
+
+        trailingImageView.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)?
+            .withSymbolConfiguration(symbolConfiguration)
+        trailingImageView.contentTintColor = .tertiaryLabelColor
+        trailingImageView.imageScaling = .scaleProportionallyDown
+
+        addSubview(leadingImageView)
+        addSubview(buttonTitleLabel)
+        addSubview(trailingImageView)
+        leadingImageView.translatesAutoresizingMaskIntoConstraints = false
+        buttonTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        trailingImageView.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            leadingImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            leadingImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            leadingImageView.widthAnchor.constraint(equalToConstant: 18),
+            leadingImageView.heightAnchor.constraint(equalToConstant: 18),
+            trailingImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            trailingImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            trailingImageView.widthAnchor.constraint(equalTo: leadingImageView.widthAnchor),
+            trailingImageView.heightAnchor.constraint(equalTo: leadingImageView.heightAnchor),
+            buttonTitleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            buttonTitleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            buttonTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingImageView.trailingAnchor, constant: 10),
+            buttonTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingImageView.leadingAnchor, constant: -10)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     override var wantsUpdateLayer: Bool {
         return true
     }
@@ -32,9 +96,32 @@ private final class SidebarActionButton: NSButton {
         super.updateLayer()
         layer?.cornerRadius = 10
         layer?.cornerCurve = .continuous
-        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.14).cgColor
-        layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.32).cgColor
+        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(isPointerInside ? 0.17 : 0.10).cgColor
+        layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(isPointerInside ? 0.48 : 0.30).cgColor
         layer?.borderWidth = 1
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerInside = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerInside = false
     }
 }
 
@@ -85,14 +172,7 @@ class TunnelsListTableViewController: NSViewController {
     }()
 
     let routerOSButton: NSButton = {
-        let button = SidebarActionButton(title: tr("macButtonRouterOSPeers"), target: nil, action: nil)
-        button.isBordered = false
-        button.wantsLayer = true
-        button.controlSize = .large
-        button.font = .systemFont(ofSize: 12, weight: .semibold)
-        button.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: tr("macButtonRouterOSPeers"))
-        button.imagePosition = .imageLeading
-        button.contentTintColor = .labelColor
+        let button = SidebarActionButton(title: tr("macButtonRouterOSPeers"), leadingSymbolName: "server.rack")
         button.toolTip = tr("macMenuRouterOSManager")
         return button
     }()
