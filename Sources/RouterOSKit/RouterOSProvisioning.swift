@@ -275,6 +275,8 @@ public struct RouterOSClientAddressSuggestion: Equatable, Sendable {
 }
 
 public struct RouterOSPeerCreation: Equatable, Sendable {
+    public static let wireRouteManagedComment = "Managed by WireRoute"
+
     public let interfaceName: String
     public let name: String
     public let comment: String?
@@ -354,6 +356,13 @@ public struct RouterOSPeerCreation: Equatable, Sendable {
     static func isWireGuardKey(_ value: String) -> Bool {
         guard let data = Data(base64Encoded: value), data.count == 32 else { return false }
         return data.base64EncodedString() == value
+    }
+
+    public static func isWireRouteManagedComment(_ comment: String?) -> Bool {
+        guard let comment = comment?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return comment.caseInsensitiveCompare(wireRouteManagedComment) == .orderedSame
     }
 
     fileprivate static func overlaps(_ lhs: RoutePrefix, _ rhs: RoutePrefix) -> Bool {

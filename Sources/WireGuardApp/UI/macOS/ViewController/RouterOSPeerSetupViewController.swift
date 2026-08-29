@@ -363,7 +363,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         let peerCreation = try RouterOSPeerCreation(
             interfaceName: interface.name,
             name: nameField.stringValue,
-            comment: tr("macRouterOSManagedPeerComment"),
+            comment: RouterOSPeerCreation.wireRouteManagedComment,
             publicKey: clientPublicKey,
             clientAddress: clientAddress,
             persistentKeepalive: persistentKeepalive,

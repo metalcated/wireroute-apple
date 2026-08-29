@@ -9,6 +9,13 @@ final class RouterOSProvisioningTests: XCTestCase {
     private let clientPublicKey = Data(repeating: 2, count: 32).base64EncodedString()
     private let serverPublicKey = Data(repeating: 3, count: 32).base64EncodedString()
 
+    func testRecognizesWireRouteManagedPeerComment() {
+        XCTAssertTrue(RouterOSPeerCreation.isWireRouteManagedComment("Managed by WireRoute"))
+        XCTAssertTrue(RouterOSPeerCreation.isWireRouteManagedComment("  managed by wireroute  "))
+        XCTAssertFalse(RouterOSPeerCreation.isWireRouteManagedComment("Router1"))
+        XCTAssertFalse(RouterOSPeerCreation.isWireRouteManagedComment(nil))
+    }
+
     func testCreatesValidatedRouterPeerAndClientConfiguration() throws {
         let peer = try RouterOSPeerCreation(
             interfaceName: " wg-remote ",

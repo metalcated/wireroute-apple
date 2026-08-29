@@ -349,7 +349,7 @@
 "macRouterOSSettings" = "Settings…";
 "macRouterOSReadOnlyMessage" = "Discovery is read-only. Every RouterOS change requires a separate review and confirmation.";
 "macRouterOSNotConnected" = "Not connected";
-"macRouterOSEmptyDiscovery" = "Connect to securely discover WireGuard interfaces and peers.";
+"macRouterOSEmptyDiscovery" = "Connect to securely discover WireGuard peers.";
 "macRouterOSAddress" = "Router address";
 "macRouterOSUsername" = "Username";
 "macRouterOSPassword" = "Password";
@@ -375,10 +375,14 @@
 "macRouterOSCertificateNotTrusted" = "Connection cancelled. The router certificate was not trusted.";
 "macRouterOSCertificateTrustedConnecting" = "Certificate trusted for this router. Connecting securely…";
 "macRouterOSReconnectRequired" = "Connection details changed. Connect again to refresh discovery.";
-"macRouterOSDiscoverySummary (%d,%d)" = "%d WireGuard interfaces • %d peers";
-"macRouterOSColumnType" = "Type";
+"macRouterOSManagedPeersSummary (%d,%d)" = "%d WireRoute clients • %d total peers";
+"macRouterOSAllPeersSummary (%d)" = "%d peers";
+"macRouterOSShowAllPeers" = "Show all peers";
+"macRouterOSShowAllPeersHelp" = "Include site-to-site and manually created peers. WireRoute clients are identified by their RouterOS comment.";
+"macRouterOSNoPeers" = "No WireGuard peers were found on this router.";
+"macRouterOSNoManagedPeers" = "No WireRoute-managed clients were found. Select Show all peers to view site-to-site or manually created peers.";
 "macRouterOSColumnName" = "Name";
-"macRouterOSColumnInterface" = "Interface / Port";
+"macRouterOSColumnInterface" = "Interface";
 "macRouterOSColumnStatus" = "Status";
 "macRouterOSInterfaceType" = "Interface";
 "macRouterOSPeerType" = "Peer";
@@ -471,7 +475,6 @@
 "macRouterOSRouteModeSplit" = "Split";
 "macRouterOSRouteModeFull" = "Full";
 "macRouterOSFullRouteAutomatic" = "WireRoute will use the default route for the client address family.";
-"macRouterOSManagedPeerComment" = "Managed by WireRoute";
 "macRouterOSReviewPeer" = "Review Peer";
 "macRouterOSCancel" = "Cancel";
 "macRouterOSReviewTitle" = "Review RouterOS Change";

@@ -64,22 +64,10 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     private enum DiscoveryRow {
-        case interface(RouterOSWireGuardInterface)
         case peer(RouterOSWireGuardPeer)
-
-        var type: String {
-            switch self {
-            case .interface:
-                return tr("macRouterOSInterfaceType")
-            case .peer:
-                return tr("macRouterOSPeerType")
-            }
-        }
 
         var name: String {
             switch self {
-            case .interface(let interface):
-                return interface.name
             case .peer(let peer):
                 return peer.name ?? peer.comment ?? tr("macRouterOSUnnamedPeer")
             }
@@ -87,11 +75,6 @@ final class RouterOSManagerViewController: NSViewController {
 
         var detail: String {
             switch self {
-            case .interface(let interface):
-                if let port = interface.listenPort {
-                    return tr(format: "macRouterOSListenPort (%d)", port)
-                }
-                return "—"
             case .peer(let peer):
                 return peer.interfaceName
             }
@@ -99,11 +82,6 @@ final class RouterOSManagerViewController: NSViewController {
 
         var status: String {
             switch self {
-            case .interface(let interface):
-                if interface.isDisabled {
-                    return tr("macRouterOSDisabled")
-                }
-                return interface.isRunning ? tr("macRouterOSRunning") : tr("macRouterOSStopped")
             case .peer(let peer):
                 if peer.isDisabled {
                     return tr("macRouterOSDisabled")
@@ -124,6 +102,11 @@ final class RouterOSManagerViewController: NSViewController {
     private let settingsButton = NSButton(title: tr("macRouterOSSettings"), target: nil, action: nil)
     private let addPeerButton = NSButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
     private let importPeerButton = NSButton(title: tr("macRouterOSImportExistingPeer"), target: nil, action: nil)
+    private let showAllPeersButton = NSButton(
+        checkboxWithTitle: tr("macRouterOSShowAllPeers"),
+        target: nil,
+        action: nil
+    )
     private let progressIndicator = NSProgressIndicator()
     private let messageLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSReadOnlyMessage"))
     private let summaryLabel = NSTextField(labelWithString: tr("macRouterOSNotConnected"))
@@ -213,7 +196,17 @@ final class RouterOSManagerViewController: NSViewController {
         importPeerButton.isEnabled = false
         importPeerButton.toolTip = tr("macRouterOSImportExistingPeerHelp")
         importPeerButton.setContentHuggingPriority(.required, for: .horizontal)
-        let summaryRow = NSStackView(views: [summaryLabel, importPeerButton, addPeerButton])
+        showAllPeersButton.target = self
+        showAllPeersButton.action = #selector(showAllPeersChanged)
+        showAllPeersButton.state = .off
+        showAllPeersButton.isEnabled = false
+        showAllPeersButton.toolTip = tr("macRouterOSShowAllPeersHelp")
+        showAllPeersButton.setContentHuggingPriority(.required, for: .horizontal)
+        let summarySpacer = NSView()
+        summarySpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let summaryRow = NSStackView(
+            views: [summaryLabel, summarySpacer, showAllPeersButton, importPeerButton, addPeerButton]
+        )
         summaryRow.orientation = .horizontal
         summaryRow.alignment = .centerY
         summaryRow.spacing = 12
@@ -352,9 +345,8 @@ final class RouterOSManagerViewController: NSViewController {
         }
 
         let columns: [(String, String, CGFloat)] = [
-            ("type", tr("macRouterOSColumnType"), 100),
-            ("name", tr("macRouterOSColumnName"), 190),
-            ("detail", tr("macRouterOSColumnInterface"), 180),
+            ("name", tr("macRouterOSColumnName"), 240),
+            ("detail", tr("macRouterOSColumnInterface"), 200),
             ("status", tr("macRouterOSColumnStatus"), 220)
         ]
         for (identifier, title, width) in columns {
@@ -433,14 +425,8 @@ final class RouterOSManagerViewController: NSViewController {
                     credentials: credentials,
                     trustedCertificate: trustedCertificate
                 )
-                rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
-                reloadDiscoveryTable()
+                rebuildDiscoveryRows()
                 addPeerButton.isEnabled = !interfaces.isEmpty
-                summaryLabel.stringValue = tr(
-                    format: "macRouterOSDiscoverySummary (%d,%d)",
-                    interfaces.count,
-                    peers.count
-                )
                 messageLabel.stringValue = tr("macRouterOSConnectedReadOnly")
                 messageLabel.textColor = .systemGreen
 
@@ -476,6 +462,7 @@ final class RouterOSManagerViewController: NSViewController {
         usernameField.isEnabled = !isConnecting
         passwordField.isEnabled = !isConnecting
         addPeerButton.isEnabled = !isConnecting && connectedContext != nil && !interfaces.isEmpty
+        showAllPeersButton.isEnabled = !isConnecting && connectedContext != nil && !peers.isEmpty
         updateImportPeerButtonState()
         if isConnecting {
             progressIndicator.startAnimation(nil)
@@ -633,6 +620,11 @@ final class RouterOSManagerViewController: NSViewController {
         summaryLabel.stringValue = tr("macRouterOSNotConnected")
         addPeerButton.isEnabled = false
         importPeerButton.isEnabled = false
+        showAllPeersButton.isEnabled = false
+    }
+
+    @objc private func showAllPeersChanged() {
+        rebuildDiscoveryRows()
     }
 
     private var selectedPeer: RouterOSWireGuardPeer? {
@@ -1246,13 +1238,7 @@ final class RouterOSManagerViewController: NSViewController {
                 guard !Task.isCancelled else { return }
 
                 peers.append(createdPeer)
-                rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
-                reloadDiscoveryTable()
-                summaryLabel.stringValue = tr(
-                    format: "macRouterOSDiscoverySummary (%d,%d)",
-                    interfaces.count,
-                    peers.count
-                )
+                rebuildDiscoveryRows()
                 messageLabel.stringValue = tr("macRouterOSPeerImporting")
                 messageLabel.textColor = .secondaryLabelColor
                 importClientConfiguration(
@@ -1459,13 +1445,21 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     private func rebuildDiscoveryRows() {
-        rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
+        let displayedPeers = showAllPeersButton.state == .on
+            ? peers
+            : peers.filter(Self.isWireRouteManagedPeer)
+        rows = displayedPeers.map(DiscoveryRow.peer)
+        contextPeer = nil
+        tableView.deselectAll(nil)
         reloadDiscoveryTable()
-        summaryLabel.stringValue = tr(
-            format: "macRouterOSDiscoverySummary (%d,%d)",
-            interfaces.count,
-            peers.count
-        )
+        showAllPeersButton.isEnabled = !isBusy && connectedContext != nil && !peers.isEmpty
+        summaryLabel.stringValue = showAllPeersButton.state == .on
+            ? tr(format: "macRouterOSAllPeersSummary (%d)", peers.count)
+            : tr(format: "macRouterOSManagedPeersSummary (%d,%d)", displayedPeers.count, peers.count)
+    }
+
+    private static func isWireRouteManagedPeer(_ peer: RouterOSWireGuardPeer) -> Bool {
+        RouterOSPeerCreation.isWireRouteManagedComment(peer.comment)
     }
 
     private func showExistingPeerImportError(title: String, message: String) {
@@ -1618,6 +1612,13 @@ final class RouterOSManagerViewController: NSViewController {
     private func reloadDiscoveryTable() {
         tableView.usesAlternatingRowBackgroundColors = !rows.isEmpty
         emptyStateLabel.isHidden = !rows.isEmpty
+        if connectedContext == nil {
+            emptyStateLabel.stringValue = tr("macRouterOSEmptyDiscovery")
+        } else if peers.isEmpty {
+            emptyStateLabel.stringValue = tr("macRouterOSNoPeers")
+        } else {
+            emptyStateLabel.stringValue = tr("macRouterOSNoManagedPeers")
+        }
         tableView.reloadData()
         updateImportPeerButtonState()
     }
@@ -1634,8 +1635,6 @@ extension RouterOSManagerViewController: NSTableViewDataSource, NSTableViewDeleg
         let cell = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView ?? makeCell(identifier: identifier)
         let discoveryRow = rows[row]
         switch identifier.rawValue {
-        case "type":
-            cell.textField?.stringValue = discoveryRow.type
         case "name":
             cell.textField?.stringValue = discoveryRow.name
         case "detail":
