@@ -10,6 +10,7 @@ WireRoute is intended to remain free and open source under the MIT License.
 
 ## Support, Privacy, and Legal
 
+- [Secure RouterOS WireGuard setup](ROUTEROS_SETUP.md)
 - [Support and contact](SUPPORT.md)
 - [Privacy policy](PRIVACY.md)
 - [Security reporting](SECURITY.md)

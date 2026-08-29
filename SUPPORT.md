@@ -4,6 +4,7 @@ WireRoute is a free, open-source WireGuard client for iOS and macOS. It does not
 
 ## Get Help
 
+- Follow the [secure RouterOS WireGuard setup guide](ROUTEROS_SETUP.md) for a documentation-only example covering the VPN server, firewall, NAT, HTTPS REST access, and validation.
 - Search the [existing issues](https://github.com/metalcated/wireroute-apple/issues) for a known problem.
 - [Open a support request](https://github.com/metalcated/wireroute-apple/issues/new) for app issues, feedback, or feature requests.
 - Contact the project maintainer through the [metalcated GitHub profile](https://github.com/metalcated).
