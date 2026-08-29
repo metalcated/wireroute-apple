@@ -152,7 +152,11 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
     }
 
     override func loadView() {
-        let container = NSView()
+        let container = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
 
         let iconView = NSImageView()
         iconView.image = NSImage(
@@ -214,12 +218,30 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         internalDNSWarning.orientation = .horizontal
         internalDNSWarning.alignment = .top
         internalDNSWarning.spacing = 8
+        let internalDNSWarningPanel = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        internalDNSWarningPanel.adaptiveBorderColor = .separatorColor
+        internalDNSWarningPanel.adaptiveBorderAlpha = 0.65
+        internalDNSWarningPanel.layer?.borderWidth = 1
+        internalDNSWarningPanel.layer?.cornerRadius = 10
+        internalDNSWarningPanel.layer?.cornerCurve = .continuous
+        internalDNSWarningPanel.addSubview(internalDNSWarning)
+        internalDNSWarning.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            internalDNSWarning.leadingAnchor.constraint(equalTo: internalDNSWarningPanel.leadingAnchor, constant: 12),
+            internalDNSWarning.trailingAnchor.constraint(equalTo: internalDNSWarningPanel.trailingAnchor, constant: -12),
+            internalDNSWarning.topAnchor.constraint(equalTo: internalDNSWarningPanel.topAnchor, constant: 10),
+            internalDNSWarning.bottomAnchor.constraint(equalTo: internalDNSWarningPanel.bottomAnchor, constant: -10)
+        ])
 
         resolverFieldsStack.orientation = .vertical
         resolverFieldsStack.alignment = .leading
         resolverFieldsStack.spacing = 8
-        resolverFieldsStack.addArrangedSubview(internalDNSWarning)
-        resolverFieldsStack.setCustomSpacing(16, after: internalDNSWarning)
+        resolverFieldsStack.addArrangedSubview(internalDNSWarningPanel)
+        resolverFieldsStack.setCustomSpacing(16, after: internalDNSWarningPanel)
         resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionProvider")))
         resolverFieldsStack.addArrangedSubview(presetPopUp)
         resolverFieldsStack.addArrangedSubview(presetDescriptionLabel)
@@ -253,12 +275,36 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         footer.alignment = .centerY
         footer.spacing = 12
 
-        let stack = NSStackView(views: [header, modeLabel, modeControl, resolverFieldsStack, stateLabel, footer])
+        let configurationStack = NSStackView(views: [modeLabel, modeControl, resolverFieldsStack, stateLabel])
+        configurationStack.orientation = .vertical
+        configurationStack.alignment = .leading
+        configurationStack.spacing = 10
+        configurationStack.setCustomSpacing(18, after: modeControl)
+
+        let configurationCard = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
+        configurationCard.adaptiveBorderColor = .separatorColor
+        configurationCard.adaptiveBorderAlpha = 0.65
+        configurationCard.layer?.borderWidth = 1
+        configurationCard.layer?.cornerRadius = 14
+        configurationCard.layer?.cornerCurve = .continuous
+        configurationCard.addSubview(configurationStack)
+        configurationStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            configurationStack.leadingAnchor.constraint(equalTo: configurationCard.leadingAnchor, constant: 18),
+            configurationStack.trailingAnchor.constraint(equalTo: configurationCard.trailingAnchor, constant: -18),
+            configurationStack.topAnchor.constraint(equalTo: configurationCard.topAnchor, constant: 16),
+            configurationStack.bottomAnchor.constraint(equalTo: configurationCard.bottomAnchor, constant: -16)
+        ])
+
+        let stack = NSStackView(views: [header, configurationCard, footer])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 10
+        stack.spacing = 18
         stack.setCustomSpacing(22, after: header)
-        stack.setCustomSpacing(18, after: modeControl)
         container.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -270,9 +316,10 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
             header.widthAnchor.constraint(equalTo: stack.widthAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 42),
             iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
-            modeControl.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            resolverFieldsStack.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            internalDNSWarning.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            configurationCard.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            modeControl.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
+            resolverFieldsStack.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
+            internalDNSWarningPanel.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
             internalDNSWarningIcon.widthAnchor.constraint(equalToConstant: 16),
             internalDNSWarningIcon.heightAnchor.constraint(equalTo: internalDNSWarningIcon.widthAnchor),
             presetPopUp.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
@@ -280,7 +327,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
             resolverURLField.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
             bootstrapServersField.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
             bootstrapHelp.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
-            stateLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            stateLabel.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
 
