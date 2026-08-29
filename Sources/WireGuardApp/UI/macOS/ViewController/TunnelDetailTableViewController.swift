@@ -28,9 +28,9 @@ private final class MacSplitRouteEntryViewController: NSViewController {
     private let saveButton = NSButton(title: tr("macEditSave"), target: nil, action: nil)
 
     override func loadView() {
-        let container = NSView()
+        let container = AppearanceAwareLayerView()
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        container.adaptiveBackgroundColor = .windowBackgroundColor
 
         let titleLabel = NSTextField(labelWithString: tr("splitRouteEntryTitle"))
         titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
@@ -41,7 +41,7 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         hintLabel.font = .systemFont(ofSize: 11)
         hintLabel.textColor = .secondaryLabelColor
 
-        let scrollView = NSScrollView()
+        let scrollView = AppearanceAwareLayerScrollView()
         scrollView.documentView = routesTextView
         scrollView.hasVerticalScroller = true
         scrollView.borderType = .noBorder
@@ -49,7 +49,7 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         scrollView.layer?.cornerRadius = 12
         scrollView.layer?.cornerCurve = .continuous
         scrollView.layer?.borderWidth = 1
-        scrollView.layer?.borderColor = NSColor.separatorColor.cgColor
+        scrollView.adaptiveBorderColor = .separatorColor
 
         cancelButton.target = self
         cancelButton.action = #selector(cancelClicked)
@@ -373,9 +373,9 @@ class TunnelDetailTableViewController: NSViewController {
         heroCard.addSubview(heroStack)
         heroStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let containerView = NSView()
+        let containerView = AppearanceAwareLayerView()
         containerView.wantsLayer = true
-        containerView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        containerView.adaptiveBackgroundColor = .windowBackgroundColor
         containerView.addSubview(heroCard)
         containerView.addSubview(technicalDetailsLabel)
         containerView.addSubview(box)

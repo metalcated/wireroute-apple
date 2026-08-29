@@ -3,6 +3,56 @@
 
 import Cocoa
 
+@MainActor
+final class AppearanceAwareLayerView: NSView {
+    var adaptiveBackgroundColor: NSColor? {
+        didSet { needsDisplay = true }
+    }
+    var adaptiveBorderColor: NSColor? {
+        didSet { needsDisplay = true }
+    }
+
+    override var wantsUpdateLayer: Bool {
+        return true
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = adaptiveBackgroundColor?.cgColor
+            layer?.borderColor = adaptiveBorderColor?.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
+@MainActor
+final class AppearanceAwareLayerScrollView: NSScrollView {
+    var adaptiveBorderColor: NSColor? {
+        didSet { needsDisplay = true }
+    }
+
+    override var wantsUpdateLayer: Bool {
+        return true
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.borderColor = adaptiveBorderColor?.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
 class ManageTunnelsRootViewController: NSViewController {
 
     let tunnelsManager: TunnelsManager
@@ -32,9 +82,10 @@ class ManageTunnelsRootViewController: NSViewController {
     }
 
     override func loadView() {
-        view = NSView()
+        let rootView = AppearanceAwareLayerView()
+        rootView.adaptiveBackgroundColor = .windowBackgroundColor
+        view = rootView
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         let horizontalSpacing: CGFloat = 22
         let verticalSpacing: CGFloat = 22

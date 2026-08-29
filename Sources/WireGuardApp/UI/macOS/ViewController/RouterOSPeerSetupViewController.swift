@@ -75,9 +75,9 @@ final class RouterOSPeerSetupViewController: NSViewController {
     }
 
     override func loadView() {
-        let view = NSView()
+        let view = AppearanceAwareLayerView()
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        view.adaptiveBackgroundColor = .windowBackgroundColor
 
         let titleLabel = NSTextField(labelWithString: tr("macRouterOSSetupTitle"))
         titleLabel.font = .systemFont(ofSize: 25, weight: .bold)
@@ -186,12 +186,12 @@ final class RouterOSPeerSetupViewController: NSViewController {
     }
 
     private func makeForm() -> NSView {
-        let card = NSView()
+        let card = AppearanceAwareLayerView()
         card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        card.adaptiveBackgroundColor = .controlBackgroundColor
+        card.adaptiveBorderColor = .separatorColor
         card.layer?.cornerRadius = 14
         card.layer?.cornerCurve = .continuous
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
         card.layer?.borderWidth = 1
 
         let endpointRow = NSStackView(views: [endpointField, endpointPortField])

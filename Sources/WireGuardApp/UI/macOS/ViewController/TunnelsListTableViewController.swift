@@ -5,6 +5,10 @@ import Cocoa
 import UniformTypeIdentifiers
 
 private final class ProfileTableRowView: NSTableRowView {
+    override var interiorBackgroundStyle: NSView.BackgroundStyle {
+        return .normal
+    }
+
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
 
@@ -104,9 +108,17 @@ private final class SidebarActionButton: NSButton {
         layer?.cornerCurve = .continuous
         let fillAlpha: CGFloat = isDestinationSelected ? 0.18 : (isPointerInside ? 0.17 : 0.10)
         let borderAlpha: CGFloat = isDestinationSelected ? 0.48 : (isPointerInside ? 0.48 : 0.30)
-        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(fillAlpha).cgColor
-        layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(borderAlpha).cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(fillAlpha).cgColor
+            layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(borderAlpha).cgColor
+        }
         layer?.borderWidth = 1
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateSymbolColors()
+        needsDisplay = true
     }
 
     private func updateSymbolColors() {
@@ -266,12 +278,12 @@ class TunnelsListTableViewController: NSViewController {
         buttonBar.spacing = 8
         buttonBar.distribution = .fillEqually
 
-        let containerView = NSView()
+        let containerView = AppearanceAwareLayerView()
         containerView.wantsLayer = true
-        containerView.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.72).cgColor
+        containerView.adaptiveBackgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.72)
+        containerView.adaptiveBorderColor = NSColor.separatorColor.withAlphaComponent(0.45)
         containerView.layer?.cornerRadius = 16
         containerView.layer?.cornerCurve = .continuous
-        containerView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
         containerView.layer?.borderWidth = 1
         containerView.addSubview(sidebarHeader)
         containerView.addSubview(scrollView)

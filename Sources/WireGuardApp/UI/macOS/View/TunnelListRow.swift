@@ -75,7 +75,6 @@ class TunnelListRow: NSView {
         label.font = .systemFont(ofSize: 10, weight: .semibold)
         label.textColor = .systemBlue
         label.wantsLayer = true
-        label.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
         label.layer?.cornerRadius = 6
         label.layer?.cornerCurve = .continuous
         return label
@@ -124,6 +123,11 @@ class TunnelListRow: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateRoutingModeAppearance()
+    }
+
     static func image(for tunnel: TunnelContainer?) -> NSImage? {
         guard let tunnel = tunnel else { return nil }
         switch tunnel.status {
@@ -154,6 +158,13 @@ class TunnelListRow: NSView {
             ? tr("macTunnelRoutingFull")
             : tr("macTunnelRoutingSplit")
         statusImageView.image = Self.image(for: tunnel)
+        updateRoutingModeAppearance()
+    }
+
+    private func updateRoutingModeAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            routingModeLabel.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
+        }
     }
 
     private static func statusText(for tunnel: TunnelContainer) -> String {

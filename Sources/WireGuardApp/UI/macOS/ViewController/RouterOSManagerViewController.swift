@@ -148,9 +148,9 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     override func loadView() {
-        let view = NSView()
+        let view = AppearanceAwareLayerView()
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        view.adaptiveBackgroundColor = .windowBackgroundColor
 
         let titleLabel = NSTextField(labelWithString: tr("macRouterOSTitle"))
         titleLabel.font = .systemFont(ofSize: 28, weight: .bold)
@@ -163,9 +163,9 @@ final class RouterOSManagerViewController: NSViewController {
         readOnlyBadgeLabel.textColor = .systemBlue
         readOnlyBadgeLabel.alignment = .center
 
-        let readOnlyBadge = NSView()
+        let readOnlyBadge = AppearanceAwareLayerView()
         readOnlyBadge.wantsLayer = true
-        readOnlyBadge.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
+        readOnlyBadge.adaptiveBackgroundColor = NSColor.systemBlue.withAlphaComponent(0.12)
         readOnlyBadge.layer?.cornerRadius = 7
         readOnlyBadge.layer?.cornerCurve = .continuous
         readOnlyBadge.addSubview(readOnlyBadgeLabel)
@@ -286,12 +286,12 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     private func makeConnectionCard() -> NSView {
-        let card = NSView()
+        let card = AppearanceAwareLayerView()
         card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        card.adaptiveBackgroundColor = .controlBackgroundColor
+        card.adaptiveBorderColor = .separatorColor
         card.layer?.cornerRadius = 14
         card.layer?.cornerCurve = .continuous
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
         card.layer?.borderWidth = 1
 
         urlField.placeholderString = "https://router.example"
@@ -1727,9 +1727,9 @@ final class RouterOSSettingsViewController: NSViewController {
     }
 
     override func loadView() {
-        let view = NSView()
+        let view = AppearanceAwareLayerView()
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        view.adaptiveBackgroundColor = .windowBackgroundColor
 
         let titleLabel = NSTextField(labelWithString: tr("macRouterOSSettingsTitle"))
         titleLabel.font = .systemFont(ofSize: 25, weight: .bold)
@@ -1816,12 +1816,12 @@ final class RouterOSSettingsViewController: NSViewController {
     }
 
     private func makeForm() -> NSView {
-        let card = NSView()
+        let card = AppearanceAwareLayerView()
         card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        card.adaptiveBackgroundColor = .controlBackgroundColor
+        card.adaptiveBorderColor = .separatorColor
         card.layer?.cornerRadius = 14
         card.layer?.cornerCurve = .continuous
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
         card.layer?.borderWidth = 1
 
         let endpointStack = valueStack(
