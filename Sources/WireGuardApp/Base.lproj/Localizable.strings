@@ -356,6 +356,8 @@
 "macRouterOSUsernamePlaceholder" = "RouterOS API user";
 "macRouterOSPasswordPlaceholder" = "Stored in Keychain after connecting";
 "macRouterOSConnect" = "Connect";
+"macRouterOSConnected" = "Connected";
+"macRouterOSConnectedRefreshHelp" = "Connected to this router. Click to refresh discovery.";
 "macRouterOSConnectionTitle" = "RouterOS connection";
 "macRouterOSConnectionHelp" = "Set up and manage connections in Settings. Then choose a router here and Connect.";
 "macRouterOSConnectionSelectorHelp" = "Choose a saved RouterOS connection.";

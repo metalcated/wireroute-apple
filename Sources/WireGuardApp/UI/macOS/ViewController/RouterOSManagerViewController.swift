@@ -574,6 +574,7 @@ final class RouterOSManagerViewController: NSViewController {
         let hasConnections = !savedConnections.isEmpty
         connectionPopUp.isEnabled = hasConnections && !isBusy
         connectButton.isEnabled = hasConnections && !isBusy
+        updateConnectButtonPresentation()
         connectionPopUp.toolTip = hasConnections
             ? tr("macRouterOSConnectionSelectorHelp")
             : tr("macRouterOSNoConnectionsHelp")
@@ -674,6 +675,7 @@ final class RouterOSManagerViewController: NSViewController {
     private func setConnecting(_ isConnecting: Bool) {
         isBusy = isConnecting
         connectButton.isEnabled = !isConnecting && selectedConnection != nil
+        updateConnectButtonPresentation()
         connectionPopUp.isEnabled = !isConnecting && !savedConnections.isEmpty
         manageConnectionsButton.isEnabled = !isConnecting
         addPeerButton.isEnabled = !isConnecting && connectedContext != nil && !interfaces.isEmpty
@@ -684,6 +686,14 @@ final class RouterOSManagerViewController: NSViewController {
         } else {
             progressIndicator.stopAnimation(nil)
         }
+    }
+
+    private func updateConnectButtonPresentation() {
+        let isConnectedToSelection = connectedContext?.connectionID == selectedConnection?.id
+        connectButton.title = tr(isConnectedToSelection ? "macRouterOSConnected" : "macRouterOSConnect")
+        connectButton.toolTip = isConnectedToSelection
+            ? tr("macRouterOSConnectedRefreshHelp")
+            : tr("macRouterOSConnect")
     }
 
     private func showError(_ message: String) {
@@ -827,6 +837,7 @@ final class RouterOSManagerViewController: NSViewController {
 
     private func invalidateDiscovery() {
         connectedContext = nil
+        updateConnectButtonPresentation()
         interfaces = []
         peers = []
         publicEndpointSuggestion = nil
