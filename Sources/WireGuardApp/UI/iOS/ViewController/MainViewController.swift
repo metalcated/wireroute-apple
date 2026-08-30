@@ -1153,11 +1153,11 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         configuration.pointOfInterestFilter = .excludingAll
         configuration.showsTraffic = false
         mapView.preferredConfiguration = configuration
-        addNordicMapWash()
+        addPlainMapWash()
         showWorld(animated: false)
     }
 
-    private func addNordicMapWash() {
+    private func addPlainMapWash() {
         let westCoordinates = [
             CLLocationCoordinate2D(latitude: -85, longitude: -179.9),
             CLLocationCoordinate2D(latitude: -85, longitude: 0),
@@ -1485,7 +1485,7 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
     func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
         guard let polygon = overlay as? MKPolygon else { return MKOverlayRenderer(overlay: overlay) }
         let renderer = MKPolygonRenderer(polygon: polygon)
-        renderer.fillColor = WireRouteAppearance.background.withAlphaComponent(0.22)
+        renderer.fillColor = WireRouteAppearance.inset.withAlphaComponent(0.64)
         return renderer
     }
 
