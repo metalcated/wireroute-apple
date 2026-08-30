@@ -15,6 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var manageTunnelsRootVC: ManageTunnelsRootViewController?
     var manageTunnelsWindowObject: NSWindow?
     var onAppDeactivation: (() -> Void)?
+    private var aboutWindowController: NSWindowController?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         WireRouteTheme.applyStoredPreference()
@@ -248,16 +249,41 @@ extension AppDelegate {
         if let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
             appVersion += " (\(appBuild))"
         }
-        let appVersionString = [
-            tr(format: "macAppVersion (%@)", appVersion),
-            tr(format: "macGoBackendVersion (%@)", WIREGUARD_GO_VERSION)
-        ].joined(separator: "\n")
+
+        if let aboutWindowController {
+            NSApp.activate(ignoringOtherApps: true)
+            aboutWindowController.showWindow(nil)
+            aboutWindowController.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let aboutViewController = WireRouteAboutViewController(
+            appVersion: appVersion,
+            backendVersion: WIREGUARD_GO_VERSION
+        )
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 390),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = tr("macMenuAbout")
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.contentViewController = aboutViewController
+        panel.setContentSize(NSSize(width: 500, height: 390))
+        panel.center()
+        WireRouteTheme.apply(to: panel)
+
+        let windowController = NSWindowController(window: panel)
+        aboutWindowController = windowController
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationVersion: appVersionString,
-            .version: "",
-            .credits: ""
-        ])
+        windowController.showWindow(nil)
+        panel.makeKeyAndOrderFront(nil)
     }
 
     @objc func showRouterOSManager() {
@@ -272,6 +298,98 @@ extension AppDelegate {
             guard window != nil else { return }
             self?.manageTunnelsRootVC?.selectSettings()
         }
+    }
+}
+
+@MainActor
+private final class WireRouteAboutViewController: NSViewController {
+    private let appVersion: String
+    private let backendVersion: String
+
+    init(appVersion: String, backendVersion: String) {
+        self.appVersion = appVersion
+        self.backendVersion = backendVersion
+        super.init(nibName: nil, bundle: nil)
+        preferredContentSize = NSSize(width: 500, height: 390)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        let rootView = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .surface
+        )
+
+        let iconView = NSImageView(image: NSApp.applicationIconImage)
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+
+        let titleLabel = NSTextField(labelWithString: "WireRoute")
+        titleLabel.font = .systemFont(ofSize: 26, weight: .semibold)
+        titleLabel.textColor = .labelColor
+        titleLabel.alignment = .center
+
+        let appVersionLabel = makeLabel(
+            tr(format: "macAppVersion (%@)", appVersion),
+            font: .systemFont(ofSize: 14, weight: .regular)
+        )
+        let backendVersionLabel = makeLabel(
+            tr(format: "macGoBackendVersion (%@)", backendVersion),
+            font: .monospacedSystemFont(ofSize: 13, weight: .regular)
+        )
+
+        let versionStack = NSStackView(views: [appVersionLabel, backendVersionLabel])
+        versionStack.orientation = .vertical
+        versionStack.alignment = .centerX
+        versionStack.spacing = 5
+
+        let copyright = Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String ?? ""
+        let copyrightLabel = makeLabel(
+            copyright,
+            font: .systemFont(ofSize: 12, weight: .regular),
+            color: .secondaryLabelColor
+        )
+        copyrightLabel.maximumNumberOfLines = 2
+        copyrightLabel.lineBreakMode = .byWordWrapping
+
+        let contentStack = NSStackView(views: [iconView, titleLabel, versionStack, copyrightLabel])
+        contentStack.orientation = .vertical
+        contentStack.alignment = .centerX
+        contentStack.spacing = 14
+        contentStack.setCustomSpacing(18, after: iconView)
+        contentStack.setCustomSpacing(20, after: versionStack)
+
+        rootView.addSubview(contentStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        copyrightLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            contentStack.centerXAnchor.constraint(equalTo: rootView.centerXAnchor),
+            contentStack.centerYAnchor.constraint(equalTo: rootView.centerYAnchor, constant: 5),
+            contentStack.leadingAnchor.constraint(greaterThanOrEqualTo: rootView.leadingAnchor, constant: 44),
+            contentStack.trailingAnchor.constraint(lessThanOrEqualTo: rootView.trailingAnchor, constant: -44),
+            iconView.widthAnchor.constraint(equalToConstant: 96),
+            iconView.heightAnchor.constraint(equalToConstant: 96),
+            copyrightLabel.widthAnchor.constraint(equalToConstant: 400)
+        ])
+
+        view = rootView
+    }
+
+    private func makeLabel(
+        _ text: String,
+        font: NSFont,
+        color: NSColor = .labelColor
+    ) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = font
+        label.textColor = color
+        label.alignment = .center
+        return label
     }
 }
 
