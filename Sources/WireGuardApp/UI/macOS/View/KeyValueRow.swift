@@ -16,13 +16,7 @@ class EditableKeyValueRow: NSView {
         return keyLabel
     }()
 
-    let valueLabel: NSTextField = {
-        let valueLabel = NSTextField()
-        valueLabel.isSelectable = true
-        valueLabel.maximumNumberOfLines = 1
-        valueLabel.lineBreakMode = .byTruncatingTail
-        return valueLabel
-    }()
+    let valueLabel: NSTextField
 
     let valueImageView: NSImageView?
 
@@ -59,12 +53,17 @@ class EditableKeyValueRow: NSView {
     }
 
     convenience init() {
-        self.init(hasValueImage: false)
+        self.init(hasValueImage: false, usesThemedEditor: true)
     }
 
-    fileprivate init(hasValueImage: Bool) {
+    fileprivate init(hasValueImage: Bool, usesThemedEditor: Bool) {
         valueImageView = hasValueImage ? NSImageView() : nil
+        valueLabel = usesThemedEditor ? WireRouteTextField() : NSTextField()
         super.init(frame: CGRect.zero)
+
+        valueLabel.isSelectable = true
+        valueLabel.maximumNumberOfLines = 1
+        valueLabel.lineBreakMode = .byTruncatingTail
 
         addSubview(keyLabel)
         addSubview(valueLabel)
@@ -118,7 +117,7 @@ class EditableKeyValueRow: NSView {
 
 class KeyValueRow: EditableKeyValueRow {
     init() {
-        super.init(hasValueImage: false)
+        super.init(hasValueImage: false, usesThemedEditor: false)
         valueLabel.isEditable = false
         valueLabel.isBordered = false
         valueLabel.backgroundColor = .clear
@@ -131,7 +130,7 @@ class KeyValueRow: EditableKeyValueRow {
 
 class KeyValueImageRow: EditableKeyValueRow {
     init() {
-        super.init(hasValueImage: true)
+        super.init(hasValueImage: true, usesThemedEditor: false)
         valueLabel.isEditable = false
         valueLabel.isBordered = false
         valueLabel.backgroundColor = .clear

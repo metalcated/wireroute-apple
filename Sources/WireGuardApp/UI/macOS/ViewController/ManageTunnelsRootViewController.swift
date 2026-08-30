@@ -378,6 +378,50 @@ final class WireRouteTextField: NSTextField, WireRouteThemeField {
 }
 
 @MainActor
+final class WireRouteTokenField: NSTokenField, WireRouteThemeField {
+    convenience init() {
+        self.init(frame: .zero)
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureThemeUpdates()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.height = max(size.height, WireRouteFieldStyle.minimumHeight(for: controlSize))
+        return size
+    }
+
+    func updateWireRouteTheme() {
+        WireRouteFieldStyle.apply(to: self)
+        needsDisplay = true
+    }
+
+    @objc private func themeDidChange() {
+        updateWireRouteTheme()
+    }
+
+    private func configureThemeUpdates() {
+        focusRingType = .default
+        isEditable = true
+        isSelectable = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
+        updateWireRouteTheme()
+    }
+}
+
+@MainActor
 final class WireRouteSecureTextField: NSSecureTextField, WireRouteThemeField {
     convenience init() {
         self.init(frame: .zero)
