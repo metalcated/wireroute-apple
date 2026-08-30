@@ -171,11 +171,19 @@ private final class WireRouteDepthCardView: UIView {
             case .hero: return CGSize(width: 0, height: 14)
             }
         }
+
+        var surfaceColor: UIColor {
+            switch self {
+            case .standard: return WireRouteAppearance.card
+            case .hero: return WireRouteAppearance.raised
+            }
+        }
     }
 
-    private let surfaceLayer = CAGradientLayer()
-    private let lightLayer = CAGradientLayer()
+    private let surfaceLayer = CALayer()
     private let rimLayer = CAShapeLayer()
+    private let topEdgeLayer = CAShapeLayer()
+    private let bottomEdgeLayer = CAShapeLayer()
     private let elevation: Elevation
 
     init(elevation: Elevation) {
@@ -189,35 +197,28 @@ private final class WireRouteDepthCardView: UIView {
         layer.shadowRadius = elevation.shadowRadius
         layer.shadowOffset = elevation.shadowOffset
 
-        surfaceLayer.colors = [
-            WireRouteAppearance.raised.cgColor,
-            WireRouteAppearance.card.cgColor,
-            WireRouteAppearance.inset.cgColor
-        ]
-        surfaceLayer.locations = [0, 0.56, 1]
-        surfaceLayer.startPoint = CGPoint(x: 0.05, y: 0)
-        surfaceLayer.endPoint = CGPoint(x: 0.95, y: 1)
+        surfaceLayer.backgroundColor = elevation.surfaceColor.cgColor
         surfaceLayer.cornerRadius = 20
         surfaceLayer.cornerCurve = .continuous
 
-        lightLayer.colors = [
-            UIColor.white.withAlphaComponent(elevation == .hero ? 0.16 : 0.11).cgColor,
-            UIColor.white.withAlphaComponent(0.025).cgColor,
-            UIColor.clear.cgColor
-        ]
-        lightLayer.locations = [0, 0.32, 0.72]
-        lightLayer.startPoint = CGPoint(x: 0, y: 0)
-        lightLayer.endPoint = CGPoint(x: 0.78, y: 0.86)
-        lightLayer.cornerRadius = 20
-        lightLayer.cornerCurve = .continuous
-
         rimLayer.fillColor = UIColor.clear.cgColor
-        rimLayer.strokeColor = UIColor.white.withAlphaComponent(0.12).cgColor
+        rimLayer.strokeColor = WireRouteAppearance.border.withAlphaComponent(0.78).cgColor
         rimLayer.lineWidth = 1
 
+        topEdgeLayer.fillColor = UIColor.clear.cgColor
+        topEdgeLayer.strokeColor = UIColor.white.withAlphaComponent(elevation == .hero ? 0.18 : 0.12).cgColor
+        topEdgeLayer.lineWidth = 1
+        topEdgeLayer.lineCap = .round
+
+        bottomEdgeLayer.fillColor = UIColor.clear.cgColor
+        bottomEdgeLayer.strokeColor = UIColor.black.withAlphaComponent(elevation == .hero ? 0.34 : 0.24).cgColor
+        bottomEdgeLayer.lineWidth = 1
+        bottomEdgeLayer.lineCap = .round
+
         layer.insertSublayer(surfaceLayer, at: 0)
-        layer.insertSublayer(lightLayer, above: surfaceLayer)
-        layer.insertSublayer(rimLayer, above: lightLayer)
+        layer.insertSublayer(rimLayer, above: surfaceLayer)
+        layer.insertSublayer(topEdgeLayer, above: rimLayer)
+        layer.insertSublayer(bottomEdgeLayer, above: topEdgeLayer)
     }
 
     required init?(coder: NSCoder) {
@@ -228,10 +229,21 @@ private final class WireRouteDepthCardView: UIView {
         super.layoutSubviews()
 
         surfaceLayer.frame = bounds
-        lightLayer.frame = bounds
         rimLayer.frame = bounds
+        topEdgeLayer.frame = bounds
+        bottomEdgeLayer.frame = bounds
         let rimRect = bounds.insetBy(dx: 0.5, dy: 0.5)
         rimLayer.path = UIBezierPath(roundedRect: rimRect, cornerRadius: 19.5).cgPath
+
+        let topEdgePath = UIBezierPath()
+        topEdgePath.move(to: CGPoint(x: 20, y: 1))
+        topEdgePath.addLine(to: CGPoint(x: max(20, bounds.width - 20), y: 1))
+        topEdgeLayer.path = topEdgePath.cgPath
+
+        let bottomEdgePath = UIBezierPath()
+        bottomEdgePath.move(to: CGPoint(x: 20, y: max(1, bounds.height - 1)))
+        bottomEdgePath.addLine(to: CGPoint(x: max(20, bounds.width - 20), y: max(1, bounds.height - 1)))
+        bottomEdgeLayer.path = bottomEdgePath.cgPath
         layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: 20).cgPath
     }
 }
