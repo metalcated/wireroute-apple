@@ -268,9 +268,7 @@ class TunnelsListTableViewController: UIViewController {
         switch tableState {
         case .normal:
             navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addButtonTapped(sender:)))
-            let settingsButton = UIBarButtonItem(image: UIImage(systemName: "gearshape"), style: .plain, target: self, action: #selector(settingsButtonTapped(sender:)))
-            settingsButton.accessibilityLabel = tr("tunnelsListSettingsButtonTitle")
-            navigationItem.leftBarButtonItem = settingsButton
+            navigationItem.leftBarButtonItem = nil
         case .rowSwiped:
             navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneButtonTapped))
             navigationItem.leftBarButtonItem = UIBarButtonItem(title: tr("tunnelsListSelectButtonTitle"), style: .plain, target: self, action: #selector(selectButtonTapped))

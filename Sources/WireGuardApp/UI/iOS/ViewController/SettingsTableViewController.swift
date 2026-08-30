@@ -107,6 +107,147 @@ private final class WireRouteSettingsFooterView: UIView {
     }
 }
 
+private final class WireRouteSettingsIntroView: UIView {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        let iconView = UIImageView(image: UIImage(systemName: "shield.checkered"))
+        iconView.tintColor = WireRouteAppearance.signalBlue
+        iconView.contentMode = .scaleAspectFit
+
+        let messageLabel = UILabel()
+        messageLabel.text = tr("iosSettingsSubtitle")
+        messageLabel.font = UIFont.preferredFont(forTextStyle: .body)
+        messageLabel.adjustsFontForContentSizeCategory = true
+        messageLabel.textColor = .secondaryLabel
+        messageLabel.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [iconView, messageLabel])
+        stack.axis = .horizontal
+        stack.alignment = .top
+        stack.spacing = 12
+        addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            iconView.widthAnchor.constraint(equalToConstant: 24),
+            iconView.heightAnchor.constraint(equalToConstant: 24)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+private final class WireRouteSettingsItemCell: UITableViewCell {
+    var onTapped: (() -> Void)?
+
+    let actionButton = UIButton(type: .custom)
+    private let iconContainer = UIView()
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let detailLabel = UILabel()
+    private let trailingImageView = UIImageView()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+        selectionStyle = .none
+        backgroundColor = WireRouteAppearance.card
+        contentView.backgroundColor = WireRouteAppearance.card
+
+        iconContainer.layer.cornerRadius = 12
+        iconContainer.layer.cornerCurve = .continuous
+        iconView.contentMode = .scaleAspectFit
+
+        titleLabel.font = WireRouteAppearance.roundedFont(size: 16, weight: .medium, textStyle: .body)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.numberOfLines = 1
+        detailLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        detailLabel.adjustsFontForContentSizeCategory = true
+        detailLabel.textColor = .secondaryLabel
+        detailLabel.numberOfLines = 2
+        trailingImageView.contentMode = .scaleAspectFit
+        trailingImageView.tintColor = .tertiaryLabel
+
+        iconContainer.addSubview(iconView)
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, detailLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 3
+        let contentStack = UIStackView(arrangedSubviews: [iconContainer, textStack, UIView(), trailingImageView])
+        contentStack.axis = .horizontal
+        contentStack.alignment = .center
+        contentStack.spacing = 13
+
+        actionButton.addSubview(contentStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(actionButton)
+        actionButton.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            actionButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            actionButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            actionButton.topAnchor.constraint(equalTo: contentView.topAnchor),
+            actionButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: actionButton.layoutMarginsGuide.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: actionButton.layoutMarginsGuide.trailingAnchor),
+            contentStack.topAnchor.constraint(equalTo: actionButton.layoutMarginsGuide.topAnchor, constant: 7),
+            contentStack.bottomAnchor.constraint(equalTo: actionButton.layoutMarginsGuide.bottomAnchor, constant: -7),
+            iconContainer.widthAnchor.constraint(equalToConstant: 42),
+            iconContainer.heightAnchor.constraint(equalTo: iconContainer.widthAnchor),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 20),
+            iconView.heightAnchor.constraint(equalToConstant: 20),
+            trailingImageView.widthAnchor.constraint(equalToConstant: 16),
+            trailingImageView.heightAnchor.constraint(equalToConstant: 16)
+        ])
+
+        actionButton.addTarget(self, action: #selector(buttonTapped), for: .touchUpInside)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        actionButton.menu = nil
+        actionButton.showsMenuAsPrimaryAction = false
+        onTapped = nil
+    }
+
+    func configure(
+        title: String,
+        detail: String,
+        symbolName: String,
+        trailingSymbol: String?,
+        isInteractive: Bool
+    ) {
+        titleLabel.text = title
+        detailLabel.text = detail
+        iconView.image = UIImage(systemName: symbolName)
+        iconView.tintColor = WireRouteAppearance.signalBlue
+        iconContainer.backgroundColor = WireRouteAppearance.signalBlue.withAlphaComponent(0.14)
+        trailingImageView.image = trailingSymbol.flatMap { UIImage(systemName: $0) }
+        trailingImageView.isHidden = trailingSymbol == nil
+        actionButton.isUserInteractionEnabled = isInteractive
+        actionButton.accessibilityLabel = title
+        actionButton.accessibilityValue = detail
+        actionButton.accessibilityTraits = isInteractive ? .button : .staticText
+    }
+
+    @objc private func buttonTapped() {
+        onTapped?()
+    }
+}
+
 class SettingsTableViewController: UITableViewController {
 
     enum SettingsFields {
@@ -144,6 +285,7 @@ class SettingsTableViewController: UITableViewController {
 
     private(set) var tunnelsManager: TunnelsManager?
     private let showsDoneButton: Bool
+    private let introHeaderView = WireRouteSettingsIntroView()
     private let brandFooterView = WireRouteSettingsFooterView()
 
     init(tunnelsManager: TunnelsManager?, showsDoneButton: Bool = true) {
@@ -165,18 +307,25 @@ class SettingsTableViewController: UITableViewController {
             navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
         }
 
-        tableView.estimatedRowHeight = 44
+        tableView.backgroundColor = WireRouteAppearance.background
+        tableView.separatorColor = WireRouteAppearance.border.withAlphaComponent(0.52)
+        tableView.separatorInset = UIEdgeInsets(top: 0, left: 70, bottom: 0, right: 20)
+        tableView.sectionHeaderTopPadding = 18
+        tableView.estimatedRowHeight = 72
         tableView.rowHeight = UITableView.automaticDimension
         tableView.allowsSelection = false
 
-        tableView.register(KeyValueCell.self)
-        tableView.register(ButtonCell.self)
+        tableView.register(WireRouteSettingsItemCell.self)
 
+        introHeaderView.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 72)
+        tableView.tableHeaderView = introHeaderView
         tableView.tableFooterView = brandFooterView
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        updateIntroHeaderSize()
+
         let footerHeight: CGFloat = 68
         let bottomPadding = max(tableView.safeAreaInsets.bottom, 10)
         let minimumContentHeight = tableView.bounds.height
@@ -193,6 +342,22 @@ class SettingsTableViewController: UITableViewController {
         if needsReload {
             tableView.tableFooterView = brandFooterView
         }
+    }
+
+    private func updateIntroHeaderSize() {
+        let targetWidth = tableView.bounds.width
+        guard targetWidth > 0 else { return }
+
+        introHeaderView.frame.size.width = targetWidth
+        let targetSize = introHeaderView.systemLayoutSizeFitting(
+            CGSize(width: targetWidth, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+        guard abs(introHeaderView.frame.height - targetSize.height) > 0.5 else { return }
+
+        introHeaderView.frame.size.height = targetSize.height
+        tableView.tableHeaderView = introHeaderView
     }
 
     @objc func doneTapped() {
@@ -248,13 +413,16 @@ class SettingsTableViewController: UITableViewController {
         }
     }
 
-    private func configureActivityRetentionButton(_ cell: ButtonCell) {
+    private func configureActivityRetentionButton(_ cell: WireRouteSettingsItemCell) {
         let selectedRetention = WireRouteActivityPreference.loadRetention()
-        cell.buttonText = tr(
-            format: "iosSettingsActivityRetentionValue (%@)",
-            activityRetentionTitle(selectedRetention)
+        cell.configure(
+            title: tr("iosSettingsActivityRetention"),
+            detail: activityRetentionTitle(selectedRetention),
+            symbolName: "clock.arrow.circlepath",
+            trailingSymbol: "chevron.up.chevron.down",
+            isInteractive: true
         )
-        cell.button.menu = UIMenu(children: WireRouteActivityRetention.allCases.map { retention in
+        cell.actionButton.menu = UIMenu(children: WireRouteActivityRetention.allCases.map { retention in
             UIAction(
                 title: activityRetentionTitle(retention),
                 state: retention == selectedRetention ? .on : .off
@@ -263,7 +431,7 @@ class SettingsTableViewController: UITableViewController {
                 self?.tableView.reloadData()
             }
         })
-        cell.button.showsMenuAsPrimaryAction = true
+        cell.actionButton.showsMenuAsPrimaryAction = true
     }
 }
 
@@ -293,59 +461,101 @@ extension SettingsTableViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let field = settingsFieldsBySection[indexPath.section][indexPath.row]
-        if field == .iosAppVersion || field == .goBackendVersion || field == .appearance {
-            let cell: KeyValueCell = tableView.dequeueReusableCell(for: indexPath)
-            cell.copyableGesture = false
-            cell.key = field.localizedUIString
-            if field == .iosAppVersion {
-                var appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown version"
-                if let appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
-                    appVersion += " (\(appBuild))"
-                }
-                cell.value = appVersion
-            } else if field == .goBackendVersion {
-                cell.value = WIREGUARD_GO_VERSION
-            } else {
-                cell.value = tr("iosSettingsAppearanceNordicBlue")
+        let cell: WireRouteSettingsItemCell = tableView.dequeueReusableCell(for: indexPath)
+
+        switch field {
+        case .iosAppVersion:
+            var appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown version"
+            if let appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
+                appVersion += " (\(appBuild))"
             }
-            return cell
-        } else if field == .activityRetention {
-            let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.configure(
+                title: field.localizedUIString,
+                detail: appVersion,
+                symbolName: "app.badge",
+                trailingSymbol: nil,
+                isInteractive: false
+            )
+        case .goBackendVersion:
+            cell.configure(
+                title: field.localizedUIString,
+                detail: WIREGUARD_GO_VERSION,
+                symbolName: "bolt.horizontal.circle",
+                trailingSymbol: nil,
+                isInteractive: false
+            )
+        case .appearance:
+            cell.configure(
+                title: field.localizedUIString,
+                detail: tr("iosSettingsAppearanceNordicBlue"),
+                symbolName: "paintpalette",
+                trailingSymbol: nil,
+                isInteractive: false
+            )
+        case .activityRetention:
             configureActivityRetentionButton(cell)
-            return cell
-        } else if field == .exportZipArchive {
-            let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
-            cell.button.menu = nil
-            cell.button.showsMenuAsPrimaryAction = false
-            cell.buttonText = field.localizedUIString
+        case .exportZipArchive:
+            cell.configure(
+                title: field.localizedUIString,
+                detail: tr("iosSettingsExportDescription"),
+                symbolName: "square.and.arrow.up",
+                trailingSymbol: "chevron.right",
+                isInteractive: true
+            )
             cell.onTapped = { [weak self] in
-                self?.exportConfigurationsAsZipFile(sourceView: cell.button)
+                self?.exportConfigurationsAsZipFile(sourceView: cell.actionButton)
             }
-            return cell
-        } else if field == .viewLog {
-            let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
-            cell.button.menu = nil
-            cell.button.showsMenuAsPrimaryAction = false
-            cell.buttonText = field.localizedUIString
+        case .viewLog:
+            cell.configure(
+                title: field.localizedUIString,
+                detail: tr("iosSettingsLogDescription"),
+                symbolName: "doc.text.magnifyingglass",
+                trailingSymbol: "chevron.right",
+                isInteractive: true
+            )
             cell.onTapped = { [weak self] in
                 self?.presentLogView()
             }
-            return cell
-        } else if field == .support || field == .privacy || field == .legal {
-            let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
-            cell.button.menu = nil
-            cell.button.showsMenuAsPrimaryAction = false
-            cell.buttonText = field.localizedUIString
+        case .support:
+            cell.configure(
+                title: field.localizedUIString,
+                detail: tr("iosSettingsSupportDescription"),
+                symbolName: "lifepreserver",
+                trailingSymbol: "chevron.right",
+                isInteractive: true
+            )
             cell.onTapped = { [weak self] in
-                switch field {
-                case .support: self?.presentProjectDocument(path: "SUPPORT.md")
-                case .privacy: self?.presentProjectDocument(path: "PRIVACY.md")
-                case .legal: self?.presentProjectDocument(path: "LEGAL.md")
-                default: break
-                }
+                self?.presentProjectDocument(path: "SUPPORT.md")
             }
-            return cell
+        case .privacy:
+            cell.configure(
+                title: field.localizedUIString,
+                detail: tr("iosSettingsPrivacyDescription"),
+                symbolName: "hand.raised",
+                trailingSymbol: "chevron.right",
+                isInteractive: true
+            )
+            cell.onTapped = { [weak self] in
+                self?.presentProjectDocument(path: "PRIVACY.md")
+            }
+        case .legal:
+            cell.configure(
+                title: field.localizedUIString,
+                detail: tr("iosSettingsLegalDescription"),
+                symbolName: "doc.text",
+                trailingSymbol: "chevron.right",
+                isInteractive: true
+            )
+            cell.onTapped = { [weak self] in
+                self?.presentProjectDocument(path: "LEGAL.md")
+            }
         }
-        fatalError()
+        return cell
+    }
+
+    override func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
+        guard let header = view as? UITableViewHeaderFooterView else { return }
+        header.textLabel?.font = WireRouteAppearance.roundedFont(size: 14, weight: .medium, textStyle: .subheadline)
+        header.textLabel?.textColor = .secondaryLabel
     }
 }

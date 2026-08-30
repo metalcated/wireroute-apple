@@ -773,13 +773,19 @@
 "iosSettingsSectionPreferences" = "Preferences";
 "iosSettingsSectionData" = "Data and diagnostics";
 "iosSettingsSectionHelp" = "Help and policies";
+"iosSettingsSubtitle" = "Manage how WireRoute looks, stores local activity, and handles diagnostics and support.";
 "iosSettingsAppearance" = "Appearance";
 "iosSettingsAppearanceNordicBlue" = "Nordic Blue";
 "iosSettingsActivityRetention" = "Activity retention";
 "iosSettingsActivityRetentionValue (%@)" = "Keep activity for %@";
+"iosSettingsExportDescription" = "Save all profiles in a portable zip archive.";
+"iosSettingsLogDescription" = "Review app and tunnel diagnostics.";
 "iosSettingsSupport" = "Support";
+"iosSettingsSupportDescription" = "Setup guidance and ways to get help.";
 "iosSettingsPrivacy" = "Privacy";
+"iosSettingsPrivacyDescription" = "See what WireRoute stores and never uploads.";
 "iosSettingsLegal" = "Legal and open-source notices";
+"iosSettingsLegalDescription" = "Licenses, notices, and project terms.";
 
 "activityTitle" = "Activity";
 "activityIntro" = "See live transfer rates and recent connection history for this profile. Activity stays on this device.";
