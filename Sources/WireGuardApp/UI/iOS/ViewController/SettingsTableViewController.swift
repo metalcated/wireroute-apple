@@ -260,7 +260,9 @@ class SettingsTableViewController: UITableViewController {
         case viewLog
         case support
         case privacy
+        case security
         case legal
+        case routerOSSetup
 
         var localizedUIString: String {
             switch self {
@@ -272,8 +274,22 @@ class SettingsTableViewController: UITableViewController {
             case .viewLog: return tr("settingsViewLogButtonTitle")
             case .support: return tr("iosSettingsSupport")
             case .privacy: return tr("iosSettingsPrivacy")
+            case .security: return tr("iosSettingsSecurity")
             case .legal: return tr("iosSettingsLegal")
+            case .routerOSSetup: return tr("iosSettingsRouterOSSetup")
             }
+        }
+    }
+
+    private enum ProjectDocument: String {
+        case privacy = "PRIVACY.md"
+        case support = "SUPPORT.md"
+        case security = "SECURITY.md"
+        case legal = "LEGAL.md"
+        case routerOSSetup = "ROUTEROS_SETUP.md"
+
+        var url: URL? {
+            URL(string: "https://github.com/metalcated/wireroute-apple/blob/main/\(rawValue)")
         }
     }
 
@@ -281,7 +297,7 @@ class SettingsTableViewController: UITableViewController {
         [.iosAppVersion, .goBackendVersion],
         [.appearance, .activityRetention],
         [.exportZipArchive, .viewLog],
-        [.support, .privacy, .legal]
+        [.support, .privacy, .security, .legal, .routerOSSetup]
     ]
 
     private(set) var tunnelsManager: TunnelsManager?
@@ -399,8 +415,8 @@ class SettingsTableViewController: UITableViewController {
 
     }
 
-    private func presentProjectDocument(path: String) {
-        guard let url = URL(string: "https://github.com/metalcated/wireroute-apple/blob/master/\(path)") else { return }
+    private func presentProjectDocument(_ document: ProjectDocument) {
+        guard let url = document.url else { return }
         let browser = SFSafariViewController(url: url)
         browser.preferredControlTintColor = WireRouteAppearance.signalBlue
         present(browser, animated: true)
@@ -430,6 +446,26 @@ class SettingsTableViewController: UITableViewController {
             ) { [weak self] _ in
                 WireRouteActivityPreference.saveRetention(retention)
                 self?.tableView.reloadData()
+            }
+        })
+        cell.actionButton.showsMenuAsPrimaryAction = true
+    }
+
+    private func configureAppearanceButton(_ cell: WireRouteSettingsItemCell) {
+        let selectedAppearance = WireRouteAppearance.style
+        cell.configure(
+            title: tr("iosSettingsAppearance"),
+            detail: selectedAppearance.localizedTitle,
+            symbolName: "paintpalette",
+            trailingSymbol: "chevron.up.chevron.down",
+            isInteractive: true
+        )
+        cell.actionButton.menu = UIMenu(children: WireRouteAppearanceStyle.allCases.map { appearance in
+            UIAction(
+                title: appearance.localizedTitle,
+                state: appearance == selectedAppearance ? .on : .off
+            ) { _ in
+                (UIApplication.shared.delegate as? AppDelegate)?.applyAppearance(appearance)
             }
         })
         cell.actionButton.showsMenuAsPrimaryAction = true
@@ -486,13 +522,7 @@ extension SettingsTableViewController {
                 isInteractive: false
             )
         case .appearance:
-            cell.configure(
-                title: field.localizedUIString,
-                detail: tr("iosSettingsAppearanceNordicBlue"),
-                symbolName: "paintpalette",
-                trailingSymbol: nil,
-                isInteractive: false
-            )
+            configureAppearanceButton(cell)
         case .activityRetention:
             configureActivityRetentionButton(cell)
         case .exportZipArchive:
@@ -526,7 +556,7 @@ extension SettingsTableViewController {
                 isInteractive: true
             )
             cell.onTapped = { [weak self] in
-                self?.presentProjectDocument(path: "SUPPORT.md")
+                self?.presentProjectDocument(.support)
             }
         case .privacy:
             cell.configure(
@@ -537,7 +567,18 @@ extension SettingsTableViewController {
                 isInteractive: true
             )
             cell.onTapped = { [weak self] in
-                self?.presentProjectDocument(path: "PRIVACY.md")
+                self?.presentProjectDocument(.privacy)
+            }
+        case .security:
+            cell.configure(
+                title: field.localizedUIString,
+                detail: tr("iosSettingsSecurityDescription"),
+                symbolName: "lock.shield",
+                trailingSymbol: "chevron.right",
+                isInteractive: true
+            )
+            cell.onTapped = { [weak self] in
+                self?.presentProjectDocument(.security)
             }
         case .legal:
             cell.configure(
@@ -548,7 +589,18 @@ extension SettingsTableViewController {
                 isInteractive: true
             )
             cell.onTapped = { [weak self] in
-                self?.presentProjectDocument(path: "LEGAL.md")
+                self?.presentProjectDocument(.legal)
+            }
+        case .routerOSSetup:
+            cell.configure(
+                title: field.localizedUIString,
+                detail: tr("iosSettingsRouterOSSetupDescription"),
+                symbolName: "network",
+                trailingSymbol: "chevron.right",
+                isInteractive: true
+            )
+            cell.onTapped = { [weak self] in
+                self?.presentProjectDocument(.routerOSSetup)
             }
         }
         return cell

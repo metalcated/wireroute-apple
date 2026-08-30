@@ -20,9 +20,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             }
         }
 
-        WireRouteAppearance.applyGlobalStyle()
+        WireRouteAppearance.applyStoredPreference()
         let window = UIWindow(frame: UIScreen.main.bounds)
-        window.overrideUserInterfaceStyle = .dark
+        window.overrideUserInterfaceStyle = WireRouteAppearance.preferredUserInterfaceStyle
         window.backgroundColor = WireRouteAppearance.background
         window.tintColor = WireRouteAppearance.signalBlue
         self.window = window
@@ -34,6 +34,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         self.mainVC = mainVC
 
         return true
+    }
+
+    @MainActor
+    func applyAppearance(_ appearance: WireRouteAppearanceStyle) {
+        guard appearance != WireRouteAppearance.style, let window else { return }
+
+        let selectedTab = mainVC?.selectedIndex ?? 0
+        let tunnelsManager = mainVC?.tunnelsManager
+        WireRouteAppearance.apply(appearance)
+        window.overrideUserInterfaceStyle = WireRouteAppearance.preferredUserInterfaceStyle
+        window.backgroundColor = WireRouteAppearance.background
+        window.tintColor = WireRouteAppearance.signalBlue
+
+        let replacement = MainViewController(tunnelsManager: tunnelsManager)
+        replacement.selectedIndex = selectedTab
+        window.rootViewController = replacement
+        mainVC = replacement
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {

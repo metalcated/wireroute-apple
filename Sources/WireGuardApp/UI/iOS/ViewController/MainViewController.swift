@@ -174,6 +174,7 @@ private final class WireRouteDepthCardView: UIView {
             }
         }
 
+        @MainActor
         var surfaceColor: UIColor {
             switch self {
             case .standard: return WireRouteAppearance.card
@@ -1141,7 +1142,7 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
 
     private func configureMap() {
         mapView.delegate = self
-        mapView.overrideUserInterfaceStyle = .dark
+        mapView.overrideUserInterfaceStyle = WireRouteAppearance.preferredUserInterfaceStyle
         mapView.isRotateEnabled = false
         mapView.isPitchEnabled = false
         mapView.showsCompass = false
@@ -1655,12 +1656,14 @@ class MainViewController: UITabBarController {
     var onTunnelsManagerReady: ((TunnelsManager) -> Void)?
     let tunnelsListVC: TunnelsListTableViewController
 
+    private let initialTunnelsManager: TunnelsManager?
     private let homeViewController = WireRouteHomeViewController()
     private let activityViewController = WireRouteActivityDashboardViewController()
     private let settingsViewController = SettingsTableViewController(tunnelsManager: nil, showsDoneButton: false)
     private let profilesViewController: WireRouteProfilesSplitViewController
 
-    init() {
+    init(tunnelsManager: TunnelsManager? = nil) {
+        initialTunnelsManager = tunnelsManager
         let tunnelsListViewController = TunnelsListTableViewController()
         tunnelsListVC = tunnelsListViewController
         profilesViewController = WireRouteProfilesSplitViewController(
@@ -1690,22 +1693,31 @@ class MainViewController: UITabBarController {
             self?.activityViewController.reloadTunnels()
         }
 
+        if let initialTunnelsManager {
+            installTunnelsManager(initialTunnelsManager)
+            return
+        }
+
         TunnelsManager.create { [weak self] result in
             guard let self else { return }
             switch result {
             case .failure(let error):
                 ErrorPresenter.showErrorAlert(error: error, from: self)
             case .success(let tunnelsManager):
-                self.tunnelsManager = tunnelsManager
-                self.tunnelsListVC.setTunnelsManager(tunnelsManager: tunnelsManager)
-                self.homeViewController.setTunnelsManager(tunnelsManager)
-                self.activityViewController.setTunnelsManager(tunnelsManager)
-                self.settingsViewController.setTunnelsManager(tunnelsManager)
-                tunnelsManager.activationDelegate = self
-                self.onTunnelsManagerReady?(tunnelsManager)
-                self.onTunnelsManagerReady = nil
+                self.installTunnelsManager(tunnelsManager)
             }
         }
+    }
+
+    private func installTunnelsManager(_ tunnelsManager: TunnelsManager) {
+        self.tunnelsManager = tunnelsManager
+        tunnelsListVC.setTunnelsManager(tunnelsManager: tunnelsManager)
+        homeViewController.setTunnelsManager(tunnelsManager)
+        activityViewController.setTunnelsManager(tunnelsManager)
+        settingsViewController.setTunnelsManager(tunnelsManager)
+        tunnelsManager.activationDelegate = self
+        onTunnelsManagerReady?(tunnelsManager)
+        onTunnelsManagerReady = nil
     }
 
     private func configureTabs() {

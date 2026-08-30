@@ -3,17 +3,67 @@
 
 import UIKit
 
-enum WireRouteAppearance {
-    static let signalBlue = UIColor(red: 0x4C / 255, green: 0x83 / 255, blue: 0xF3 / 255, alpha: 1)
-    static let liveTeal = UIColor(red: 0x2A / 255, green: 0x9D / 255, blue: 0x8F / 255, alpha: 1)
-    static let warningAmber = UIColor(red: 0xD6 / 255, green: 0x8B / 255, blue: 0x29 / 255, alpha: 1)
+enum WireRouteAppearanceStyle: String, CaseIterable {
+    case system
+    case blueNordic
 
-    static let background = UIColor(red: 0x11 / 255, green: 0x1B / 255, blue: 0x2A / 255, alpha: 1)
-    static let sidebar = UIColor(red: 0x10 / 255, green: 0x1A / 255, blue: 0x28 / 255, alpha: 1)
-    static let inset = UIColor(red: 0x14 / 255, green: 0x22 / 255, blue: 0x35 / 255, alpha: 1)
-    static let card = UIColor(red: 0x18 / 255, green: 0x26 / 255, blue: 0x38 / 255, alpha: 1)
-    static let raised = UIColor(red: 0x21 / 255, green: 0x32 / 255, blue: 0x48 / 255, alpha: 1)
-    static let border = UIColor(red: 0x35 / 255, green: 0x4A / 255, blue: 0x62 / 255, alpha: 1)
+    var localizedTitle: String {
+        switch self {
+        case .system:
+            return tr("iosSettingsAppearanceSystem")
+        case .blueNordic:
+            return tr("iosSettingsAppearanceNordicBlue")
+        }
+    }
+}
+
+enum WireRouteAppearancePreference {
+    private static let key = "WireRoute.Appearance"
+
+    static func load(from defaults: UserDefaults = .standard) -> WireRouteAppearanceStyle {
+        guard let rawValue = defaults.string(forKey: key),
+              let appearance = WireRouteAppearanceStyle(rawValue: rawValue) else {
+            return .blueNordic
+        }
+        return appearance
+    }
+
+    static func save(_ appearance: WireRouteAppearanceStyle, to defaults: UserDefaults = .standard) {
+        defaults.set(appearance.rawValue, forKey: key)
+    }
+}
+
+@MainActor
+enum WireRouteAppearance {
+    private(set) static var style = WireRouteAppearancePreference.load()
+
+    static var isBlueNordic: Bool { style == .blueNordic }
+    static var preferredUserInterfaceStyle: UIUserInterfaceStyle { isBlueNordic ? .dark : .unspecified }
+
+    static var signalBlue: UIColor { isBlueNordic ? blueNordicSignal : .systemBlue }
+    static var liveTeal: UIColor { isBlueNordic ? blueNordicLive : .systemGreen }
+    static var warningAmber: UIColor { isBlueNordic ? blueNordicWarning : .systemOrange }
+
+    static var background: UIColor { isBlueNordic ? blueNordicBackground : .systemBackground }
+    static var sidebar: UIColor { isBlueNordic ? blueNordicSidebar : .secondarySystemBackground }
+    static var inset: UIColor { isBlueNordic ? blueNordicInset : .secondarySystemBackground }
+    static var card: UIColor { isBlueNordic ? blueNordicCard : .secondarySystemGroupedBackground }
+    static var raised: UIColor { isBlueNordic ? blueNordicRaised : .tertiarySystemBackground }
+    static var border: UIColor { isBlueNordic ? blueNordicBorder : .separator }
+
+    @MainActor
+    static func applyStoredPreference() {
+        apply(WireRouteAppearancePreference.load(), persist: false)
+    }
+
+    @MainActor
+    static func apply(_ newStyle: WireRouteAppearanceStyle, persist: Bool = true) {
+        style = newStyle
+        if persist {
+            WireRouteAppearancePreference.save(newStyle)
+        }
+        applyGlobalStyle()
+    }
 
     @MainActor
     static func applyGlobalStyle() {
@@ -59,6 +109,16 @@ enum WireRouteAppearance {
         UITableViewCell.appearance().backgroundColor = card
         UISwitch.appearance().onTintColor = signalBlue
     }
+
+    private static let blueNordicSignal = UIColor(red: 0x4C / 255, green: 0x83 / 255, blue: 0xF3 / 255, alpha: 1)
+    private static let blueNordicLive = UIColor(red: 0x2A / 255, green: 0x9D / 255, blue: 0x8F / 255, alpha: 1)
+    private static let blueNordicWarning = UIColor(red: 0xD6 / 255, green: 0x8B / 255, blue: 0x29 / 255, alpha: 1)
+    private static let blueNordicBackground = UIColor(red: 0x11 / 255, green: 0x1B / 255, blue: 0x2A / 255, alpha: 1)
+    private static let blueNordicSidebar = UIColor(red: 0x10 / 255, green: 0x1A / 255, blue: 0x28 / 255, alpha: 1)
+    private static let blueNordicInset = UIColor(red: 0x14 / 255, green: 0x22 / 255, blue: 0x35 / 255, alpha: 1)
+    private static let blueNordicCard = UIColor(red: 0x18 / 255, green: 0x26 / 255, blue: 0x38 / 255, alpha: 1)
+    private static let blueNordicRaised = UIColor(red: 0x21 / 255, green: 0x32 / 255, blue: 0x48 / 255, alpha: 1)
+    private static let blueNordicBorder = UIColor(red: 0x35 / 255, green: 0x4A / 255, blue: 0x62 / 255, alpha: 1)
 
     static func roundedFont(size: CGFloat, weight: UIFont.Weight, textStyle: UIFont.TextStyle) -> UIFont {
         let baseFont = UIFont.systemFont(ofSize: size, weight: weight)
