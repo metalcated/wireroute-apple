@@ -20,7 +20,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             }
         }
 
+        WireRouteAppearance.applyGlobalStyle()
         let window = UIWindow(frame: UIScreen.main.bounds)
+        window.overrideUserInterfaceStyle = .dark
         window.backgroundColor = WireRouteAppearance.background
         window.tintColor = WireRouteAppearance.signalBlue
         self.window = window

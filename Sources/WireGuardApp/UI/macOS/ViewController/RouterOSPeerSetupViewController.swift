@@ -47,6 +47,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         action: nil
     )
     private let routesTextView = NSTextView()
+    private let routeGuidanceView = NSView()
     private let keepaliveField = WireRouteTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private let reviewButton = NSButton(title: tr("macRouterOSReviewPeer"), target: nil, action: nil)
@@ -70,7 +71,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         clientPrivateKey = privateKey.base64Key
         clientPublicKey = privateKey.publicKey.base64Key
         super.init(nibName: nil, bundle: nil)
-        preferredContentSize = NSSize(width: 700, height: 710)
+        preferredContentSize = NSSize(width: 700, height: 790)
     }
 
     required init?(coder: NSCoder) {
@@ -226,11 +227,13 @@ final class RouterOSPeerSetupViewController: NSViewController {
         routesScrollView.updateWireRouteTheme()
         routesScrollView.heightAnchor.constraint(equalToConstant: 76).isActive = true
 
-        let routeStack = NSStackView(views: [routeModeControl, routesScrollView])
+        configureRouteGuidanceView()
+        let routeStack = NSStackView(views: [routeModeControl, routesScrollView, routeGuidanceView])
         routeStack.orientation = .vertical
         routeStack.alignment = .leading
         routeStack.spacing = 8
         routesScrollView.widthAnchor.constraint(equalTo: routeStack.widthAnchor).isActive = true
+        routeGuidanceView.widthAnchor.constraint(equalTo: routeStack.widthAnchor).isActive = true
 
         let keepaliveRow = NSStackView(views: [keepaliveField, NSTextField(labelWithString: tr("macRouterOSSeconds"))])
         keepaliveRow.orientation = .horizontal
@@ -263,6 +266,59 @@ final class RouterOSPeerSetupViewController: NSViewController {
             nameField.widthAnchor.constraint(greaterThanOrEqualToConstant: 390)
         ])
         return card
+    }
+
+    private func configureRouteGuidanceView() {
+        guard routeGuidanceView.subviews.isEmpty else { return }
+        routeGuidanceView.wantsLayer = true
+        routeGuidanceView.layer?.backgroundColor = WireRouteTheme.accentColor.withAlphaComponent(0.08).cgColor
+        routeGuidanceView.layer?.borderColor = WireRouteTheme.accentColor.withAlphaComponent(0.32).cgColor
+        routeGuidanceView.layer?.borderWidth = 1
+        routeGuidanceView.layer?.cornerRadius = 10
+        routeGuidanceView.layer?.cornerCurve = .continuous
+
+        let iconView = NSImageView()
+        iconView.image = NSImage(
+            systemSymbolName: "questionmark.circle.fill",
+            accessibilityDescription: tr("splitRouteEntryGuidanceTitle")
+        )
+        iconView.contentTintColor = WireRouteTheme.accentColor
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.setContentHuggingPriority(.required, for: .horizontal)
+
+        let titleLabel = NSTextField(labelWithString: tr("splitRouteEntryGuidanceTitle"))
+        titleLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        let messageLabel = NSTextField(
+            wrappingLabelWithString: tr("splitRouteEntryGuidanceMessage")
+        )
+        messageLabel.font = .systemFont(ofSize: 10.5)
+        messageLabel.textColor = .secondaryLabelColor
+        let exampleLabel = NSTextField(
+            wrappingLabelWithString: tr("splitRouteEntryGuidanceExample")
+        )
+        exampleLabel.font = .monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        exampleLabel.textColor = .secondaryLabelColor
+
+        let textStack = NSStackView(views: [titleLabel, messageLabel, exampleLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 3
+        let contentStack = NSStackView(views: [iconView, textStack])
+        contentStack.orientation = .horizontal
+        contentStack.alignment = .top
+        contentStack.spacing = 9
+        routeGuidanceView.addSubview(contentStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            contentStack.leadingAnchor.constraint(equalTo: routeGuidanceView.leadingAnchor, constant: 11),
+            contentStack.trailingAnchor.constraint(equalTo: routeGuidanceView.trailingAnchor, constant: -11),
+            contentStack.topAnchor.constraint(equalTo: routeGuidanceView.topAnchor, constant: 9),
+            contentStack.bottomAnchor.constraint(equalTo: routeGuidanceView.bottomAnchor, constant: -9),
+            iconView.widthAnchor.constraint(equalToConstant: 17),
+            iconView.heightAnchor.constraint(equalToConstant: 17),
+            messageLabel.widthAnchor.constraint(equalTo: textStack.widthAnchor),
+            exampleLabel.widthAnchor.constraint(equalTo: textStack.widthAnchor)
+        ])
     }
 
     private func label(_ value: String) -> NSTextField {
@@ -332,6 +388,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         let isSplit = routeModeControl.selectedSegment == 0
         routesTextView.isEditable = isSplit
         routesTextView.textColor = isSplit ? .labelColor : .tertiaryLabelColor
+        routeGuidanceView.isHidden = !isSplit
         if !isSplit {
             routesTextView.string = tr("macRouterOSFullRouteAutomatic")
         } else if routesTextView.string == tr("macRouterOSFullRouteAutomatic") {

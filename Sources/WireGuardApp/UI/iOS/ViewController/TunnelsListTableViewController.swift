@@ -507,7 +507,7 @@ extension TunnelsListTableViewController: TunnelsManagerListDelegate {
                 (splitViewController.viewControllers[0] as? UINavigationController)?.popToRootViewController(animated: false)
             } else {
                 let detailVC = UIViewController()
-                detailVC.view.backgroundColor = .systemBackground
+                detailVC.view.backgroundColor = WireRouteAppearance.background
                 let detailNC = UINavigationController(rootViewController: detailVC)
                 splitViewController.showDetailViewController(detailNC, sender: self)
             }

@@ -4,20 +4,60 @@
 import UIKit
 
 enum WireRouteAppearance {
-    static let signalBlue = UIColor(red: 0x35 / 255, green: 0x6F / 255, blue: 0xAE / 255, alpha: 1)
+    static let signalBlue = UIColor(red: 0x4C / 255, green: 0x83 / 255, blue: 0xF3 / 255, alpha: 1)
     static let liveTeal = UIColor(red: 0x2A / 255, green: 0x9D / 255, blue: 0x8F / 255, alpha: 1)
     static let warningAmber = UIColor(red: 0xD6 / 255, green: 0x8B / 255, blue: 0x29 / 255, alpha: 1)
 
-    static let background = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0x0B / 255, green: 0x12 / 255, blue: 0x19 / 255, alpha: 1)
-            : UIColor(red: 0xF4 / 255, green: 0xF7 / 255, blue: 0xF8 / 255, alpha: 1)
-    }
+    static let background = UIColor(red: 0x11 / 255, green: 0x1B / 255, blue: 0x2A / 255, alpha: 1)
+    static let sidebar = UIColor(red: 0x10 / 255, green: 0x1A / 255, blue: 0x28 / 255, alpha: 1)
+    static let inset = UIColor(red: 0x14 / 255, green: 0x22 / 255, blue: 0x35 / 255, alpha: 1)
+    static let card = UIColor(red: 0x18 / 255, green: 0x26 / 255, blue: 0x38 / 255, alpha: 1)
+    static let raised = UIColor(red: 0x21 / 255, green: 0x32 / 255, blue: 0x48 / 255, alpha: 1)
+    static let border = UIColor(red: 0x35 / 255, green: 0x4A / 255, blue: 0x62 / 255, alpha: 1)
 
-    static let card = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0x15 / 255, green: 0x20 / 255, blue: 0x2B / 255, alpha: 1)
-            : .white
+    @MainActor
+    static func applyGlobalStyle() {
+        let navigationAppearance = UINavigationBarAppearance()
+        navigationAppearance.configureWithOpaqueBackground()
+        navigationAppearance.backgroundColor = background
+        navigationAppearance.shadowColor = border.withAlphaComponent(0.45)
+        navigationAppearance.titleTextAttributes = [
+            .font: roundedFont(size: 17, weight: .semibold, textStyle: .headline),
+            .foregroundColor: UIColor.label
+        ]
+        navigationAppearance.largeTitleTextAttributes = [
+            .font: roundedFont(size: 34, weight: .bold, textStyle: .largeTitle),
+            .foregroundColor: UIColor.label
+        ]
+        let navigationBar = UINavigationBar.appearance()
+        navigationBar.standardAppearance = navigationAppearance
+        navigationBar.scrollEdgeAppearance = navigationAppearance
+        navigationBar.compactAppearance = navigationAppearance
+        navigationBar.tintColor = signalBlue
+
+        let tabAppearance = UITabBarAppearance()
+        tabAppearance.configureWithOpaqueBackground()
+        tabAppearance.backgroundColor = sidebar
+        tabAppearance.shadowColor = border.withAlphaComponent(0.45)
+        for itemAppearance in [
+            tabAppearance.stackedLayoutAppearance,
+            tabAppearance.inlineLayoutAppearance,
+            tabAppearance.compactInlineLayoutAppearance
+        ] {
+            itemAppearance.normal.iconColor = .secondaryLabel
+            itemAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor.secondaryLabel]
+            itemAppearance.selected.iconColor = signalBlue
+            itemAppearance.selected.titleTextAttributes = [.foregroundColor: signalBlue]
+        }
+        let tabBar = UITabBar.appearance()
+        tabBar.standardAppearance = tabAppearance
+        tabBar.scrollEdgeAppearance = tabAppearance
+        tabBar.tintColor = signalBlue
+
+        UITableView.appearance().backgroundColor = background
+        UITableView.appearance().separatorColor = border.withAlphaComponent(0.55)
+        UITableViewCell.appearance().backgroundColor = card
+        UISwitch.appearance().onTintColor = signalBlue
     }
 
     static func roundedFont(size: CGFloat, weight: UIFont.Weight, textStyle: UIFont.TextStyle) -> UIFont {

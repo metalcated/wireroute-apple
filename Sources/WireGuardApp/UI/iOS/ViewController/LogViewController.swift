@@ -40,7 +40,8 @@ class LogViewController: UIViewController {
 
     override func loadView() {
         view = UIView()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = WireRouteAppearance.background
+        textView.backgroundColor = WireRouteAppearance.background
         view.addSubview(textView)
         textView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -86,7 +87,9 @@ class LogViewController: UIViewController {
             let bodyFont = UIFont.preferredFont(forTextStyle: UIFont.TextStyle.body)
             let captionFont = UIFont.preferredFont(forTextStyle: UIFont.TextStyle.caption1)
             for logEntry in fetchedLogEntries {
-                let bgColor: UIColor = self.isNextLineHighlighted ? .systemGray3 : .systemBackground
+                let bgColor: UIColor = self.isNextLineHighlighted
+                    ? WireRouteAppearance.raised
+                    : WireRouteAppearance.background
                 let fgColor: UIColor = .label
                 let timestampText = NSAttributedString(string: logEntry.timestamp + "\n", attributes: [.font: captionFont, .backgroundColor: bgColor, .foregroundColor: fgColor, .paragraphStyle: self.paragraphStyle])
                 let messageText = NSAttributedString(string: logEntry.message + "\n", attributes: [.font: bodyFont, .backgroundColor: bgColor, .foregroundColor: fgColor, .paragraphStyle: self.paragraphStyle])

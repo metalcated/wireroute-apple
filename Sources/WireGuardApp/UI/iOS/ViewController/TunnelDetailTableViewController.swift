@@ -317,7 +317,7 @@ private final class DNSProtectionViewController: UIViewController, UITextFieldDe
         navigationItem.rightBarButtonItem = saveButton
 
         let iconView = UIImageView(image: UIImage(systemName: "lock.shield.fill"))
-        iconView.tintColor = .systemBlue
+        iconView.tintColor = WireRouteAppearance.signalBlue
         iconView.contentMode = .scaleAspectFit
         iconView.setContentHuggingPriority(.required, for: .horizontal)
 
@@ -1374,12 +1374,7 @@ extension TunnelDetailTableViewController {
         }
 
         let navigationController = UINavigationController(rootViewController: routeEntryViewController)
-        navigationController.modalPresentationStyle = .formSheet
-        navigationController.preferredContentSize = CGSize(width: 540, height: 520)
-        if let sheet = navigationController.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-        }
+        navigationController.modalPresentationStyle = .fullScreen
         present(navigationController, animated: true)
     }
 
