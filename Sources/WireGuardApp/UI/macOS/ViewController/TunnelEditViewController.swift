@@ -62,18 +62,18 @@ class TunnelEditViewController: NSViewController {
     }()
 
     let discardButton: NSButton = {
-        let button = NSButton()
+        let button = WireRouteButton()
         button.title = tr("macEditDiscard")
         button.setButtonType(.momentaryPushIn)
-        button.bezelStyle = .rounded
+        button.bezelStyle = .regularSquare
         return button
     }()
 
     let saveButton: NSButton = {
-        let button = NSButton()
+        let button = WireRouteButton()
         button.title = tr("macEditSave")
         button.setButtonType(.momentaryPushIn)
-        button.bezelStyle = .rounded
+        button.bezelStyle = .regularSquare
         button.keyEquivalent = "s"
         button.keyEquivalentModifierMask = [.command]
         return button

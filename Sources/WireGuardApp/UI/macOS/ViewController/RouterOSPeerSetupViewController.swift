@@ -50,7 +50,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let routeGuidanceView = NSView()
     private let keepaliveField = WireRouteTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
-    private let reviewButton = NSButton(title: tr("macRouterOSReviewPeer"), target: nil, action: nil)
+    private let reviewButton = WireRouteButton(title: tr("macRouterOSReviewPeer"), target: nil, action: nil)
     private var lastSuggestedClientAddress: String?
 
     init(
@@ -94,12 +94,12 @@ final class RouterOSPeerSetupViewController: NSViewController {
         configureFields()
         let form = makeForm()
 
-        let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: self, action: #selector(cancelClicked))
-        cancelButton.bezelStyle = .rounded
+        let cancelButton = WireRouteButton(title: tr("macRouterOSCancel"), target: self, action: #selector(cancelClicked))
+        cancelButton.bezelStyle = .regularSquare
         cancelButton.controlSize = .large
         reviewButton.target = self
         reviewButton.action = #selector(reviewClicked)
-        reviewButton.bezelStyle = .rounded
+        reviewButton.bezelStyle = .regularSquare
         reviewButton.controlSize = .large
         reviewButton.keyEquivalent = "\r"
 

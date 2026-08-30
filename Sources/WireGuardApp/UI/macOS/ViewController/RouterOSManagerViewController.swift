@@ -206,14 +206,14 @@ final class RouterOSManagerViewController: NSViewController {
 
     private let tunnelsManager: TunnelsManager
     private let connectionPopUp = WireRoutePopUpButton()
-    private let connectButton = NSButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
-    private let manageConnectionsButton = NSButton(
+    private let connectButton = WireRouteButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
+    private let manageConnectionsButton = WireRouteButton(
         title: tr("macRouterOSManageConnections"),
         target: nil,
         action: nil
     )
-    private let addPeerButton = NSButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
-    private let importPeerButton = NSButton(title: tr("macRouterOSImportExistingPeer"), target: nil, action: nil)
+    private let addPeerButton = WireRouteButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
+    private let importPeerButton = WireRouteButton(title: tr("macRouterOSImportExistingPeer"), target: nil, action: nil)
     private let showAllPeersButton = NSButton(
         checkboxWithTitle: tr("macRouterOSShowAllPeers"),
         target: nil,
@@ -295,13 +295,13 @@ final class RouterOSManagerViewController: NSViewController {
         summaryLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         addPeerButton.target = self
         addPeerButton.action = #selector(addPeerClicked)
-        addPeerButton.bezelStyle = .rounded
+        addPeerButton.bezelStyle = .regularSquare
         addPeerButton.controlSize = .large
         addPeerButton.isEnabled = false
         addPeerButton.setContentHuggingPriority(.required, for: .horizontal)
         importPeerButton.target = self
         importPeerButton.action = #selector(importExistingPeerClicked)
-        importPeerButton.bezelStyle = .rounded
+        importPeerButton.bezelStyle = .regularSquare
         importPeerButton.controlSize = .large
         importPeerButton.isEnabled = false
         importPeerButton.toolTip = tr("macRouterOSImportExistingPeerHelp")
@@ -440,13 +440,13 @@ final class RouterOSManagerViewController: NSViewController {
 
         connectButton.target = self
         connectButton.action = #selector(connectClicked)
-        connectButton.bezelStyle = .rounded
+        connectButton.bezelStyle = .regularSquare
         connectButton.controlSize = .large
         connectButton.keyEquivalent = "\r"
 
         manageConnectionsButton.target = self
         manageConnectionsButton.action = #selector(manageConnectionsClicked)
-        manageConnectionsButton.bezelStyle = .rounded
+        manageConnectionsButton.bezelStyle = .regularSquare
         manageConnectionsButton.controlSize = .large
 
         progressIndicator.style = .spinning
@@ -1910,7 +1910,7 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
     private let usernameField = WireRouteTextField()
     private let passwordField = WireRouteSecureTextField()
     private let defaultInterfacePopUp = WireRoutePopUpButton()
-    private let loadInterfacesButton = NSButton(
+    private let loadInterfacesButton = WireRouteButton(
         title: tr("macRouterOSLoadInterfaces"),
         target: nil,
         action: nil
@@ -1918,7 +1918,7 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
     private let interfaceProgressIndicator = NSProgressIndicator()
     private let defaultInterfaceHelpLabel = NSTextField(wrappingLabelWithString: "")
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
-    private let saveButton = NSButton(title: tr("macRouterOSSaveConnection"), target: nil, action: nil)
+    private let saveButton = WireRouteButton(title: tr("macRouterOSSaveConnection"), target: nil, action: nil)
     private let onSave: (RouterOSStoredConnection) throws -> Void
     private var interfaceTask: Task<Void, Never>?
 
@@ -1976,7 +1976,7 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
         defaultInterfacePopUp.font = .systemFont(ofSize: 14)
         loadInterfacesButton.target = self
         loadInterfacesButton.action = #selector(loadInterfacesClicked)
-        loadInterfacesButton.bezelStyle = .rounded
+        loadInterfacesButton.bezelStyle = .regularSquare
         loadInterfacesButton.controlSize = .large
         interfaceProgressIndicator.style = .spinning
         interfaceProgressIndicator.controlSize = .small
@@ -2035,11 +2035,11 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
         errorLabel.textColor = .systemRed
         errorLabel.isHidden = true
 
-        let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: self, action: #selector(cancelClicked))
-        cancelButton.bezelStyle = .rounded
+        let cancelButton = WireRouteButton(title: tr("macRouterOSCancel"), target: self, action: #selector(cancelClicked))
+        cancelButton.bezelStyle = .regularSquare
         saveButton.target = self
         saveButton.action = #selector(saveClicked)
-        saveButton.bezelStyle = .rounded
+        saveButton.bezelStyle = .regularSquare
         saveButton.keyEquivalent = "\r"
         let buttonSpacer = NSView()
         buttonSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -2401,9 +2401,9 @@ final class RouterOSSettingsViewController: NSViewController {
     private let statusIconPopUp = WireRoutePopUpButton()
     private let connectionsTableView = NSTableView()
     private let connectionsEmptyLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionsEmpty"))
-    private let addConnectionButton = NSButton(title: tr("macRouterOSAddConnection"), target: nil, action: nil)
-    private let editConnectionButton = NSButton(title: tr("macRouterOSEditConnection"), target: nil, action: nil)
-    private let removeConnectionButton = NSButton(title: tr("macRouterOSRemoveConnection"), target: nil, action: nil)
+    private let addConnectionButton = WireRouteButton(title: tr("macRouterOSAddConnection"), target: nil, action: nil)
+    private let editConnectionButton = WireRouteButton(title: tr("macRouterOSEditConnection"), target: nil, action: nil)
+    private let removeConnectionButton = WireRouteButton(title: tr("macRouterOSRemoveConnection"), target: nil, action: nil)
     private let endpointField = WireRouteTextField()
     private let dnsField = WireRouteTextField()
     private let routesField = WireRouteTextField()
@@ -2439,18 +2439,18 @@ final class RouterOSSettingsViewController: NSViewController {
         let connectionsTitle = sectionTitle(tr("macRouterOSConnectionsTitle"))
         let peerDefaultsTitle = sectionTitle(tr("macRouterOSSettingsTitle"))
 
-        let restoreButton = NSButton(
+        let restoreButton = WireRouteButton(
             title: tr("macRouterOSRestoreDefaults"),
             target: self,
             action: #selector(restoreDefaultsClicked)
         )
-        restoreButton.bezelStyle = .rounded
-        let saveButton = NSButton(
+        restoreButton.bezelStyle = .regularSquare
+        let saveButton = WireRouteButton(
             title: tr("macSettingsSave"),
             target: self,
             action: #selector(saveClicked)
         )
-        saveButton.bezelStyle = .rounded
+        saveButton.bezelStyle = .regularSquare
         saveButton.keyEquivalent = "\r"
 
         errorLabel.textColor = .systemRed
@@ -2691,7 +2691,7 @@ final class RouterOSSettingsViewController: NSViewController {
         removeConnectionButton.target = self
         removeConnectionButton.action = #selector(removeConnectionClicked)
         for button in [addConnectionButton, editConnectionButton, removeConnectionButton] {
-            button.bezelStyle = .rounded
+            button.bezelStyle = .regularSquare
         }
         let buttonSpacer = NSView()
         buttonSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)

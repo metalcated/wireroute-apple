@@ -183,7 +183,7 @@ private final class SidebarActionButton: NSButton {
 
     override func updateLayer() {
         super.updateLayer()
-        layer?.cornerRadius = 7
+        layer?.cornerRadius = 6
         layer?.cornerCurve = .continuous
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let backgroundColor: NSColor
@@ -244,83 +244,17 @@ private final class SidebarActionButton: NSButton {
     }
 }
 
-private final class SidebarMenuButton: NSPopUpButton {
-    private var hoverTrackingArea: NSTrackingArea?
-    private var isPointerInside = false {
-        didSet { needsDisplay = true }
-    }
-
+private final class SidebarMenuButton: WireRoutePopUpButton {
     override init(frame buttonFrame: NSRect, pullsDown flag: Bool) {
         super.init(frame: buttonFrame, pullsDown: flag)
-        isBordered = false
-        bezelStyle = .smallSquare
-        controlSize = .regular
-        font = .systemFont(ofSize: 12, weight: .medium)
+        controlSize = .large
+        font = .systemFont(ofSize: 13, weight: .medium)
         imagePosition = .imageLeading
-        focusRingType = .exterior
-        wantsLayer = true
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(themeDidChange),
-            name: .wireRouteAppearanceDidChange,
-            object: nil
-        )
+        updateWireRouteTheme()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    override var wantsUpdateLayer: Bool {
-        return true
-    }
-
-    override func updateLayer() {
-        super.updateLayer()
-        layer?.cornerRadius = 7
-        layer?.cornerCurve = .continuous
-        layer?.borderWidth = 1
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            let fillColor = WireRouteTheme.isBlueNordic
-                ? WireRouteTheme.color(for: .raised).withAlphaComponent(isPointerInside ? 0.96 : 0.78)
-                : NSColor.controlBackgroundColor.withAlphaComponent(isPointerInside ? 0.96 : 0.76)
-            layer?.backgroundColor = fillColor.cgColor
-            layer?.borderColor = WireRouteTheme.isBlueNordic
-                ? WireRouteTheme.borderColor.withAlphaComponent(isPointerInside ? 0.82 : 0.55).cgColor
-                : NSColor.separatorColor.withAlphaComponent(isPointerInside ? 0.72 : 0.42).cgColor
-        }
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let hoverTrackingArea {
-            removeTrackingArea(hoverTrackingArea)
-        }
-        let trackingArea = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(trackingArea)
-        hoverTrackingArea = trackingArea
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        isPointerInside = true
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        isPointerInside = false
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
-    }
-
-    @objc private func themeDidChange() {
-        needsDisplay = true
     }
 }
 
@@ -507,7 +441,7 @@ class TunnelsListTableViewController: NSViewController {
             scrollView.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: -10),
             buttonBar.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
             buttonBar.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
-            buttonBar.heightAnchor.constraint(equalToConstant: 34),
+            buttonBar.heightAnchor.constraint(equalToConstant: 38),
             sectionDivider.topAnchor.constraint(equalTo: buttonBar.bottomAnchor, constant: 14),
             sectionDivider.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
             sectionDivider.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),

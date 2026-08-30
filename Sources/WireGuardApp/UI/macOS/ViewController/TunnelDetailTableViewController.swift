@@ -24,8 +24,8 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         label.isHidden = true
         return label
     }()
-    private let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
-    private let saveButton = NSButton(title: tr("macEditSave"), target: nil, action: nil)
+    private let cancelButton = WireRouteButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
+    private let saveButton = WireRouteButton(title: tr("macEditSave"), target: nil, action: nil)
 
     override func loadView() {
         let container = AppearanceAwareMaterialView(
@@ -110,7 +110,7 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         saveButton.target = self
         saveButton.action = #selector(saveClicked)
         saveButton.keyEquivalent = "\r"
-        saveButton.bezelStyle = .rounded
+        saveButton.bezelStyle = .regularSquare
         let buttonRow = NSStackView(views: [cancelButton, saveButton])
         buttonRow.orientation = .horizontal
         buttonRow.alignment = .centerY
@@ -227,13 +227,13 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         label.isHidden = true
         return label
     }()
-    private let editProfileButton = NSButton(
+    private let editProfileButton = WireRouteButton(
         title: tr("dnsProtectionEditProfileDNS"),
         target: nil,
         action: nil
     )
-    private let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
-    private let saveButton = NSButton(title: tr("dnsProtectionSave"), target: nil, action: nil)
+    private let cancelButton = WireRouteButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
+    private let saveButton = WireRouteButton(title: tr("dnsProtectionSave"), target: nil, action: nil)
     private var isSaving = false
 
     init(
@@ -380,7 +380,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         saveButton.target = self
         saveButton.action = #selector(saveClicked)
         saveButton.keyEquivalent = "\r"
-        saveButton.bezelStyle = .rounded
+        saveButton.bezelStyle = .regularSquare
         let buttonRow = NSStackView(views: [cancelButton, saveButton])
         buttonRow.orientation = .horizontal
         buttonRow.alignment = .centerY
@@ -549,7 +549,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
 
         editProfileButton.target = self
         editProfileButton.action = #selector(editProfileDNSClicked)
-        editProfileButton.bezelStyle = .rounded
+        editProfileButton.bezelStyle = .regularSquare
         if let lastView = profileFieldsStack.arrangedSubviews.last {
             profileFieldsStack.setCustomSpacing(18, after: lastView)
         }
@@ -881,10 +881,10 @@ class TunnelDetailTableViewController: NSViewController {
     }()
 
     let editButton: NSButton = {
-        let button = NSButton()
+        let button = WireRouteButton()
         button.title = tr("macButtonEdit")
         button.setButtonType(.momentaryPushIn)
-        button.bezelStyle = .rounded
+        button.bezelStyle = .regularSquare
         button.toolTip = tr("macToolTipEditTunnel")
         return button
     }()
@@ -958,8 +958,8 @@ class TunnelDetailTableViewController: NSViewController {
         return label
     }()
     private let dnsProtectionButton: NSButton = {
-        let button = NSButton(title: "", target: nil, action: nil)
-        button.bezelStyle = .rounded
+        let button = WireRouteButton(title: "", target: nil, action: nil)
+        button.bezelStyle = .regularSquare
         button.image = NSImage(
             systemSymbolName: "lock.shield",
             accessibilityDescription: tr("dnsProtectionTitle")
@@ -968,8 +968,8 @@ class TunnelDetailTableViewController: NSViewController {
         return button
     }()
     private let connectionButton: NSButton = {
-        let button = NSButton(title: "", target: nil, action: nil)
-        button.bezelStyle = .rounded
+        let button = WireRouteButton(title: "", target: nil, action: nil)
+        button.bezelStyle = .regularSquare
         button.bezelColor = WireRouteTheme.accentColor
         button.image = NSImage(
             systemSymbolName: "power",

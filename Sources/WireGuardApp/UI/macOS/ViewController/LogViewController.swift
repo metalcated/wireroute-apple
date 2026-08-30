@@ -26,7 +26,7 @@ private final class LogTableScrollView: NSScrollView {
 
     func updateWireRouteTheme() {
         wantsLayer = true
-        layer?.cornerRadius = WireRouteTheme.isBlueNordic ? 8 : 0
+        layer?.cornerRadius = WireRouteTheme.isBlueNordic ? 6 : 0
         layer?.cornerCurve = .continuous
         layer?.borderWidth = WireRouteTheme.isBlueNordic ? 1 : 0
         layer?.borderColor = WireRouteTheme.isBlueNordic
@@ -161,18 +161,18 @@ class LogViewController: NSViewController {
     }()
 
     let closeButton: NSButton = {
-        let button = NSButton()
+        let button = WireRouteButton()
         button.title = tr("macLogButtonTitleClose")
         button.setButtonType(.momentaryPushIn)
-        button.bezelStyle = .rounded
+        button.bezelStyle = .regularSquare
         return button
     }()
 
     let saveButton: NSButton = {
-        let button = NSButton()
+        let button = WireRouteButton()
         button.title = tr("macLogButtonTitleSave")
         button.setButtonType(.momentaryPushIn)
-        button.bezelStyle = .rounded
+        button.bezelStyle = .regularSquare
         return button
     }()
 

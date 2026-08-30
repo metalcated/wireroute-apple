@@ -184,12 +184,12 @@ final class WireRouteActivityDashboardView: NSView {
         titleText.spacing = 2
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let historyButton = NSButton(
+        let historyButton = WireRouteButton(
             title: tr("activityHistoryButton"),
             target: self,
             action: #selector(openHistory)
         )
-        historyButton.bezelStyle = .rounded
+        historyButton.bezelStyle = .regularSquare
         historyButton.isHidden = !showsHistoryButton
         let header = NSStackView(views: [titleText, spacer, historyButton])
         header.orientation = .horizontal
@@ -314,7 +314,7 @@ final class ActivityMonitorViewController: NSViewController {
     private let store: WireRouteActivityStore?
     private let dashboard: WireRouteActivityDashboardView
     private let historyStack = NSStackView()
-    private let retentionPopUp = NSPopUpButton()
+    private let retentionPopUp = WireRoutePopUpButton()
     private var refreshTimer: Timer?
 
     init(tunnel: TunnelContainer) {
@@ -344,8 +344,8 @@ final class ActivityMonitorViewController: NSViewController {
         titleStack.alignment = .leading
         titleStack.spacing = 4
 
-        let close = NSButton(title: tr("activityDone"), target: self, action: #selector(closeSheet))
-        close.bezelStyle = .rounded
+        let close = WireRouteButton(title: tr("activityDone"), target: self, action: #selector(closeSheet))
+        close.bezelStyle = .regularSquare
         let titleSpacer = NSView()
         titleSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let header = NSStackView(views: [titleStack, titleSpacer, close])
@@ -358,8 +358,8 @@ final class ActivityMonitorViewController: NSViewController {
         retentionPopUp.target = self
         retentionPopUp.action = #selector(retentionChanged)
         configureRetentionPopUp()
-        let clear = NSButton(title: tr("activityClearHistory"), target: self, action: #selector(clearHistory))
-        clear.bezelStyle = .rounded
+        let clear = WireRouteButton(title: tr("activityClearHistory"), target: self, action: #selector(clearHistory))
+        clear.bezelStyle = .regularSquare
         let historySpacer = NSView()
         historySpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let historyHeader = NSStackView(views: [historyTitle, historySpacer, retentionPopUp, clear])

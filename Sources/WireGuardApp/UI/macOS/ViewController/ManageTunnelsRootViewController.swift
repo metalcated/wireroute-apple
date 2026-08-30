@@ -123,6 +123,35 @@ private protocol WireRouteThemeField: AnyObject {
 }
 
 @MainActor
+private enum WireRouteControlGeometry {
+    static let cornerRadius: CGFloat = 6
+
+    static func minimumHeight(for controlSize: NSControl.ControlSize) -> CGFloat {
+        switch controlSize {
+        case .extraLarge:
+            return 40
+        case .large:
+            return 36
+        case .regular:
+            return 30
+        case .small:
+            return 26
+        case .mini:
+            return 22
+        @unknown default:
+            return 30
+        }
+    }
+
+    static func apply(to view: NSView) {
+        view.wantsLayer = true
+        view.layer?.cornerRadius = cornerRadius
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
+    }
+}
+
+@MainActor
 private enum WireRouteFieldStyle {
     static func contentRect(from drawingRect: NSRect, naturalHeight: CGFloat) -> NSRect {
         var contentRect = drawingRect
@@ -139,20 +168,7 @@ private enum WireRouteFieldStyle {
     }
 
     static func minimumHeight(for controlSize: NSControl.ControlSize) -> CGFloat {
-        switch controlSize {
-        case .extraLarge:
-            return 36
-        case .large:
-            return 32
-        case .regular:
-            return 26
-        case .small:
-            return 22
-        case .mini:
-            return 20
-        @unknown default:
-            return 26
-        }
+        return WireRouteControlGeometry.minimumHeight(for: controlSize)
     }
 
     static func configureEditableCell(_ cell: NSTextFieldCell) {
@@ -165,7 +181,7 @@ private enum WireRouteFieldStyle {
 
     static func apply(to field: NSTextField) {
         field.wantsLayer = true
-        field.layer?.cornerRadius = WireRouteTheme.isBlueNordic ? 8 : 0
+        field.layer?.cornerRadius = WireRouteTheme.isBlueNordic ? WireRouteControlGeometry.cornerRadius : 0
         field.layer?.cornerCurve = .continuous
         field.layer?.borderWidth = WireRouteTheme.isBlueNordic ? 1 : 0
         field.layer?.borderColor = WireRouteTheme.isBlueNordic
@@ -181,6 +197,57 @@ private enum WireRouteFieldStyle {
         field.drawsBackground = !WireRouteTheme.isBlueNordic
         field.backgroundColor = WireRouteTheme.isBlueNordic ? .clear : .controlBackgroundColor
         field.textColor = .controlTextColor
+    }
+}
+
+@MainActor
+final class WireRouteButton: NSButton, WireRouteThemeField {
+    convenience init() {
+        self.init(frame: .zero)
+    }
+
+    convenience init(title: String, target: AnyObject?, action: Selector?) {
+        self.init(frame: .zero)
+        self.title = title
+        self.target = target
+        self.action = action
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureThemeUpdates()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.height = max(size.height, WireRouteControlGeometry.minimumHeight(for: controlSize))
+        return size
+    }
+
+    func updateWireRouteTheme() {
+        bezelStyle = .regularSquare
+        WireRouteControlGeometry.apply(to: self)
+        needsDisplay = true
+    }
+
+    @objc private func themeDidChange() {
+        updateWireRouteTheme()
+    }
+
+    private func configureThemeUpdates() {
+        setButtonType(.momentaryPushIn)
+        focusRingType = .exterior
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
+        updateWireRouteTheme()
     }
 }
 
@@ -357,7 +424,7 @@ final class WireRouteSecureTextField: NSSecureTextField, WireRouteThemeField {
 }
 
 @MainActor
-final class WireRoutePopUpButton: NSPopUpButton, WireRouteThemeField {
+class WireRoutePopUpButton: NSPopUpButton, WireRouteThemeField {
     convenience init() {
         self.init(frame: .zero, pullsDown: false)
     }
@@ -371,7 +438,15 @@ final class WireRoutePopUpButton: NSPopUpButton, WireRouteThemeField {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.height = max(size.height, WireRouteControlGeometry.minimumHeight(for: controlSize))
+        return size
+    }
+
     func updateWireRouteTheme() {
+        bezelStyle = .regularSquare
+        WireRouteControlGeometry.apply(to: self)
         bezelColor = WireRouteTheme.isBlueNordic ? WireRouteTheme.color(for: .raised) : nil
         contentTintColor = WireRouteTheme.isBlueNordic ? .controlTextColor : nil
         needsDisplay = true
@@ -382,6 +457,7 @@ final class WireRoutePopUpButton: NSPopUpButton, WireRouteThemeField {
     }
 
     private func configureThemeUpdates() {
+        focusRingType = .exterior
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(themeDidChange),
@@ -419,7 +495,15 @@ final class WireRouteSegmentedControl: NSSegmentedControl, WireRouteThemeField {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.height = max(size.height, WireRouteControlGeometry.minimumHeight(for: controlSize))
+        return size
+    }
+
     func updateWireRouteTheme() {
+        segmentStyle = .rounded
+        WireRouteControlGeometry.apply(to: self)
         selectedSegmentBezelColor = WireRouteTheme.isBlueNordic ? WireRouteTheme.accentColor : nil
         needsDisplay = true
     }
@@ -456,7 +540,7 @@ final class WireRouteTextEditorScrollView: NSScrollView, WireRouteThemeField {
 
     func updateWireRouteTheme() {
         wantsLayer = true
-        layer?.cornerRadius = WireRouteTheme.isBlueNordic ? 8 : 0
+        layer?.cornerRadius = WireRouteTheme.isBlueNordic ? WireRouteControlGeometry.cornerRadius : 0
         layer?.cornerCurve = .continuous
         layer?.borderWidth = WireRouteTheme.isBlueNordic ? 1 : 0
         layer?.borderColor = WireRouteTheme.isBlueNordic
