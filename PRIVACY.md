@@ -6,9 +6,9 @@ This policy describes the data practices of the WireRoute applications for iOS a
 
 ## Summary
 
-WireRoute does not require an account and does not operate a developer-controlled VPN, analytics, advertising, telemetry, or crash-reporting service. The project does not collect or sell personal data, track users, or use third-party advertising or analytics SDKs.
+WireRoute does not require an account and does not operate a developer-controlled VPN, analytics, advertising, telemetry, or crash-reporting service. The project does not collect or sell personal data, track users, or use third-party advertising or analytics SDKs. The optional, user-initiated endpoint-location feature is the only exception to the otherwise local or user-configured network behavior and is described below.
 
-Under Apple's App Store privacy definition, data processed only on the device is not collected. Based on the current source and data-flow audit, neither the WireRoute project nor an integrated third-party partner receives data from the app for storage or later access.
+Under Apple's App Store privacy definition, data processed only on the device is not collected. The WireRoute project does not receive data from the app for storage or later access. If you explicitly choose to locate a public VPN endpoint, the lookup provider and Apple MapKit receive the network requests necessary to return and display that approximate location.
 
 ## Data Stored on Your Device
 
@@ -40,6 +40,7 @@ WireRoute makes network connections only to provide user-requested functionality
 - VPN traffic is sent to the WireGuard endpoint configured in the selected profile.
 - DNS requests may be sent to DNS servers configured in that profile.
 - On macOS, the optional RouterOS Peer Manager connects over HTTPS to the RouterOS address you enter. It reads the selected router's WireGuard configuration and performs only peer changes that you separately review and confirm.
+- On iOS, if you tap **Locate endpoint** and confirm the disclosure, WireRoute sends the selected profile's resolved public endpoint IP address to ipwho.is over HTTPS. The response can include an approximate city, state or region, country, latitude, and longitude. Private and reserved addresses are rejected before lookup. Results remain in memory for the current app session and are not added to activity history. Apple MapKit supplies the map and may make its own network requests under Apple's terms. IP geolocation is inherently approximate and must not be treated as a physical address.
 
 Those systems are selected and controlled by you or your network administrator. Their operators and network providers may process traffic according to their own policies. The WireRoute project cannot access those systems or traffic.
 

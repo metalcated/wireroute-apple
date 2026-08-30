@@ -2,6 +2,8 @@
 // Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
 
 import UIKit
+import MapKit
+import Network
 
 private enum WireRouteMainTab: Int {
     case home
@@ -249,7 +251,7 @@ private final class WireRouteDepthCardView: UIView {
 }
 
 @MainActor
-private final class WireRouteHomeViewController: UIViewController {
+private final class WireRouteLegacyHomeViewController: UIViewController {
     var onShowProfiles: (() -> Void)?
     var onAddProfile: (() -> Void)?
     var onShowProfileDetail: ((TunnelContainer) -> Void)?
@@ -731,6 +733,734 @@ private final class WireRouteHomeViewController: UIViewController {
 
     @objc private func addProfileTapped() {
         onAddProfile?()
+    }
+}
+
+private struct WireRouteEndpointLocation: Sendable {
+    let latitude: Double
+    let longitude: Double
+    let city: String?
+    let region: String?
+    let country: String?
+
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+
+    var displayName: String {
+        let components = [city, region, country].compactMap { $0 }
+        var uniqueComponents = [String]()
+        for component in components where !component.isEmpty {
+            if !uniqueComponents.contains(component) {
+                uniqueComponents.append(component)
+            }
+        }
+        return uniqueComponents.joined(separator: ", ")
+    }
+}
+
+private enum WireRouteEndpointLocationService {
+    private struct Response: Decodable, Sendable {
+        let success: Bool?
+        let city: String?
+        let region: String?
+        let country: String?
+        let latitude: Double?
+        let longitude: Double?
+    }
+
+    enum LookupError: LocalizedError, Sendable {
+        case unavailable
+        case privateAddress
+        case invalidResponse
+
+        var errorDescription: String? {
+            switch self {
+            case .unavailable: return tr("iosHomeLocationRequiresAddress")
+            case .privateAddress: return tr("iosHomeLocationPrivateAddress")
+            case .invalidResponse: return tr("iosHomeLocationLookupFailed")
+            }
+        }
+    }
+
+    static func locate(_ endpoint: Endpoint) async throws -> WireRouteEndpointLocation {
+        let resolvedEndpoint: Endpoint
+        do {
+            resolvedEndpoint = try await Task.detached(priority: .userInitiated) {
+                try endpoint.resolvedForEndpointLocation()
+            }.value
+        } catch {
+            throw LookupError.unavailable
+        }
+        guard let address = publicAddress(from: resolvedEndpoint) else {
+            throw LookupError.privateAddress
+        }
+
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "ipwho.is"
+        components.path = "/\(address)"
+        guard let url = components.url else {
+            throw LookupError.unavailable
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200 ... 299).contains(httpResponse.statusCode) else {
+            throw LookupError.invalidResponse
+        }
+
+        let decoded = try JSONDecoder().decode(Response.self, from: data)
+        guard decoded.success == true,
+              let latitude = decoded.latitude,
+              let longitude = decoded.longitude,
+              (-90 ... 90).contains(latitude),
+              (-180 ... 180).contains(longitude) else {
+            throw LookupError.invalidResponse
+        }
+
+        return WireRouteEndpointLocation(
+            latitude: latitude,
+            longitude: longitude,
+            city: decoded.city,
+            region: decoded.region,
+            country: decoded.country
+        )
+    }
+
+    private static func publicAddress(from endpoint: Endpoint) -> String? {
+        switch endpoint.host {
+        case .name:
+            return nil
+        case .ipv4(let address):
+            return isPublicIPv4(address) ? "\(address)" : nil
+        case .ipv6(let address):
+            return isPublicIPv6(address) ? "\(address)" : nil
+        @unknown default:
+            return nil
+        }
+    }
+
+    private static func isPublicIPv4(_ address: IPv4Address) -> Bool {
+        let bytes = [UInt8](address.rawValue)
+        guard bytes.count == 4 else { return false }
+
+        if bytes[0] == 0 || bytes[0] == 10 || bytes[0] == 127 || bytes[0] >= 224 { return false }
+        if bytes[0] == 100, (64 ... 127).contains(bytes[1]) { return false }
+        if bytes[0] == 169, bytes[1] == 254 { return false }
+        if bytes[0] == 172, (16 ... 31).contains(bytes[1]) { return false }
+        if bytes[0] == 192, bytes[1] == 168 { return false }
+        if bytes[0] == 192, bytes[1] == 0, bytes[2] == 2 { return false }
+        if bytes[0] == 198, (18 ... 19).contains(bytes[1]) { return false }
+        if bytes[0] == 198, bytes[1] == 51, bytes[2] == 100 { return false }
+        if bytes[0] == 203, bytes[1] == 0, bytes[2] == 113 { return false }
+        return true
+    }
+
+    private static func isPublicIPv6(_ address: IPv6Address) -> Bool {
+        let bytes = [UInt8](address.rawValue)
+        guard bytes.count == 16 else { return false }
+
+        if bytes.allSatisfy({ $0 == 0 }) { return false }
+        if bytes.dropLast().allSatisfy({ $0 == 0 }), bytes.last == 1 { return false }
+        if bytes.prefix(10).allSatisfy({ $0 == 0 }), bytes[10] == 0xff, bytes[11] == 0xff,
+           let mappedAddress = IPv4Address(Data(bytes.suffix(4))) {
+            return isPublicIPv4(mappedAddress)
+        }
+        if bytes[0] & 0xfe == 0xfc { return false }
+        if bytes[0] == 0xfe, bytes[1] & 0xc0 == 0x80 { return false }
+        if bytes[0] == 0xff { return false }
+        if bytes[0] == 0x20, bytes[1] == 0x01, bytes[2] == 0x0d, bytes[3] == 0xb8 { return false }
+        return true
+    }
+}
+
+private final class WireRouteEndpointAnnotation: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D
+    let title: String?
+    let subtitle: String?
+
+    init(location: WireRouteEndpointLocation) {
+        coordinate = location.coordinate
+        title = location.displayName
+        subtitle = tr("iosHomeLocationApproximate")
+    }
+}
+
+@MainActor
+private final class WireRouteHomeViewController: UIViewController, MKMapViewDelegate {
+    var onShowProfiles: (() -> Void)?
+    var onAddProfile: (() -> Void)?
+    var onShowProfileDetail: ((TunnelContainer) -> Void)?
+    var onShowActivity: ((TunnelContainer) -> Void)?
+
+    private var tunnelsManager: TunnelsManager?
+    private var selectedTunnel: TunnelContainer?
+    private var statusObservation: NSKeyValueObservation?
+    private var currentEndpoint: Endpoint?
+    private var currentEndpointKey: String?
+    private var locatedEndpointKey: String?
+    private var locationLookupTask: Task<Void, Never>?
+    private var approvedLocationLookup = false
+
+    private let mapView = MKMapView()
+    private let mapLocationLabel = UILabel()
+    private let locationButton = UIButton(type: .system)
+    private let profileButton = UIButton(type: .system)
+    private let profileDetailsButton = UIButton(type: .system)
+    private let statusImageView = UIImageView()
+    private let statusLabel = UILabel()
+    private let endpointValueLabel = UILabel()
+    private let routingValueLabel = UILabel()
+    private let dnsValueLabel = UILabel()
+    private let connectionButton = UIButton(type: .system)
+    private let contentStack = UIStackView()
+    private let emptyStateStack = UIStackView()
+
+    override func loadView() {
+        view = UIView()
+        view.backgroundColor = WireRouteAppearance.background
+
+        let brandLabel = UILabel()
+        brandLabel.text = tr("iosHomeTitle")
+        brandLabel.font = WireRouteAppearance.roundedFont(size: 30, weight: .semibold, textStyle: .largeTitle)
+        brandLabel.adjustsFontForContentSizeCategory = true
+
+        statusImageView.image = UIImage(systemName: "lock.open")
+        statusImageView.contentMode = .scaleAspectFit
+        statusImageView.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        statusImageView.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        statusLabel.font = WireRouteAppearance.roundedFont(size: 14, weight: .medium, textStyle: .subheadline)
+        statusLabel.adjustsFontForContentSizeCategory = true
+        let statusStack = UIStackView(arrangedSubviews: [statusImageView, statusLabel])
+        statusStack.axis = .horizontal
+        statusStack.alignment = .center
+        statusStack.spacing = 7
+        let statusPill = UIView()
+        statusPill.backgroundColor = WireRouteAppearance.card
+        statusPill.layer.cornerRadius = 18
+        statusPill.layer.cornerCurve = .continuous
+        statusPill.layer.borderWidth = 1
+        statusPill.layer.borderColor = WireRouteAppearance.border.withAlphaComponent(0.7).cgColor
+        statusPill.addSubview(statusStack)
+        statusStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            statusStack.leadingAnchor.constraint(equalTo: statusPill.leadingAnchor, constant: 12),
+            statusStack.trailingAnchor.constraint(equalTo: statusPill.trailingAnchor, constant: -12),
+            statusStack.topAnchor.constraint(equalTo: statusPill.topAnchor, constant: 8),
+            statusStack.bottomAnchor.constraint(equalTo: statusPill.bottomAnchor, constant: -8)
+        ])
+
+        let header = UIStackView(arrangedSubviews: [brandLabel, UIView(), statusPill])
+        header.axis = .horizontal
+        header.alignment = .center
+        header.spacing = 12
+
+        configureMap()
+        let mapContainer = UIView()
+        mapContainer.backgroundColor = WireRouteAppearance.card
+        mapContainer.layer.cornerRadius = 28
+        mapContainer.layer.cornerCurve = .continuous
+        mapContainer.layer.masksToBounds = true
+        mapContainer.layer.borderWidth = 1
+        mapContainer.layer.borderColor = WireRouteAppearance.border.withAlphaComponent(0.65).cgColor
+        mapContainer.addSubview(mapView)
+        mapView.translatesAutoresizingMaskIntoConstraints = false
+
+        mapLocationLabel.text = tr("iosHomeMapWaiting")
+        mapLocationLabel.font = WireRouteAppearance.roundedFont(size: 14, weight: .medium, textStyle: .subheadline)
+        mapLocationLabel.adjustsFontForContentSizeCategory = true
+        mapLocationLabel.textColor = .white
+        mapLocationLabel.numberOfLines = 2
+        mapLocationLabel.backgroundColor = WireRouteAppearance.background.withAlphaComponent(0.86)
+        mapLocationLabel.layer.cornerRadius = 14
+        mapLocationLabel.layer.cornerCurve = .continuous
+        mapLocationLabel.layer.masksToBounds = true
+        mapLocationLabel.textAlignment = .center
+
+        var locationConfiguration = UIButton.Configuration.tinted()
+        locationConfiguration.title = tr("iosHomeLocateEndpoint")
+        locationConfiguration.image = UIImage(systemName: "location.magnifyingglass")
+        locationConfiguration.imagePadding = 7
+        locationConfiguration.baseForegroundColor = .white
+        locationConfiguration.baseBackgroundColor = WireRouteAppearance.signalBlue.withAlphaComponent(0.78)
+        locationConfiguration.cornerStyle = .capsule
+        locationConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 9, leading: 14, bottom: 9, trailing: 14)
+        locationButton.configuration = locationConfiguration
+        locationButton.addTarget(self, action: #selector(locationButtonTapped), for: .touchUpInside)
+
+        mapContainer.addSubview(mapLocationLabel)
+        mapContainer.addSubview(locationButton)
+        mapLocationLabel.translatesAutoresizingMaskIntoConstraints = false
+        locationButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            mapView.leadingAnchor.constraint(equalTo: mapContainer.leadingAnchor),
+            mapView.trailingAnchor.constraint(equalTo: mapContainer.trailingAnchor),
+            mapView.topAnchor.constraint(equalTo: mapContainer.topAnchor),
+            mapView.bottomAnchor.constraint(equalTo: mapContainer.bottomAnchor),
+            mapContainer.heightAnchor.constraint(equalToConstant: 365),
+            mapLocationLabel.leadingAnchor.constraint(greaterThanOrEqualTo: mapContainer.leadingAnchor, constant: 18),
+            mapLocationLabel.trailingAnchor.constraint(lessThanOrEqualTo: mapContainer.trailingAnchor, constant: -18),
+            mapLocationLabel.centerXAnchor.constraint(equalTo: mapContainer.centerXAnchor),
+            mapLocationLabel.topAnchor.constraint(equalTo: mapContainer.topAnchor, constant: 16),
+            mapLocationLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 190),
+            mapLocationLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 38),
+            locationButton.centerXAnchor.constraint(equalTo: mapContainer.centerXAnchor),
+            locationButton.bottomAnchor.constraint(equalTo: mapContainer.bottomAnchor, constant: -16)
+        ])
+
+        var profileConfiguration = UIButton.Configuration.plain()
+        profileConfiguration.image = UIImage(systemName: "chevron.down")
+        profileConfiguration.imagePlacement = .trailing
+        profileConfiguration.imagePadding = 8
+        profileConfiguration.baseForegroundColor = .label
+        profileConfiguration.contentInsets = .zero
+        profileButton.configuration = profileConfiguration
+        profileButton.contentHorizontalAlignment = .leading
+
+        var detailsConfiguration = UIButton.Configuration.tinted()
+        detailsConfiguration.image = UIImage(systemName: "slider.horizontal.3")
+        detailsConfiguration.baseForegroundColor = WireRouteAppearance.signalBlue
+        detailsConfiguration.baseBackgroundColor = WireRouteAppearance.signalBlue.withAlphaComponent(0.13)
+        detailsConfiguration.cornerStyle = .capsule
+        profileDetailsButton.configuration = detailsConfiguration
+        profileDetailsButton.accessibilityLabel = tr("iosHomeProfileDetails")
+        profileDetailsButton.addTarget(self, action: #selector(profileDetailsTapped), for: .touchUpInside)
+
+        let profileRow = UIStackView(arrangedSubviews: [profileButton, UIView(), profileDetailsButton])
+        profileRow.axis = .horizontal
+        profileRow.alignment = .center
+        profileRow.spacing = 12
+
+        endpointValueLabel.font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        endpointValueLabel.adjustsFontForContentSizeCategory = true
+        endpointValueLabel.textColor = .secondaryLabel
+        endpointValueLabel.numberOfLines = 2
+
+        let endpointTitle = makeLabel(tr("iosHomeEndpoint"), style: .caption1, color: .secondaryLabel)
+        let endpointStack = UIStackView(arrangedSubviews: [endpointTitle, endpointValueLabel])
+        endpointStack.axis = .vertical
+        endpointStack.spacing = 4
+
+        let summaryRow = UIStackView(arrangedSubviews: [
+            makeSummary(title: tr("iosHomeRouting"), valueLabel: routingValueLabel),
+            makeSummary(title: tr("dnsProtectionTitle"), valueLabel: dnsValueLabel)
+        ])
+        summaryRow.axis = .horizontal
+        summaryRow.alignment = .top
+        summaryRow.distribution = .fillEqually
+        summaryRow.spacing = 18
+
+        configureConnectionButton()
+        let connectionContent = UIStackView(arrangedSubviews: [profileRow, endpointStack, summaryRow, connectionButton])
+        connectionContent.axis = .vertical
+        connectionContent.spacing = 18
+        let connectionCard = makeDepthCard(containing: connectionContent)
+
+        contentStack.axis = .vertical
+        contentStack.spacing = 16
+        contentStack.addArrangedSubview(mapContainer)
+        contentStack.addArrangedSubview(connectionCard)
+
+        let emptyIcon = UIImageView(image: UIImage(systemName: "point.3.connected.trianglepath.dotted"))
+        emptyIcon.tintColor = WireRouteAppearance.signalBlue
+        emptyIcon.contentMode = .scaleAspectFit
+        emptyIcon.heightAnchor.constraint(equalToConstant: 52).isActive = true
+        let emptyTitle = makeLabel(tr("iosHomeNoProfiles"), style: .title2, color: .label)
+        emptyTitle.textAlignment = .center
+        let emptyDescription = makeLabel(tr("iosHomeNoProfilesDescription"), style: .body, color: .secondaryLabel)
+        emptyDescription.numberOfLines = 0
+        emptyDescription.textAlignment = .center
+        let addButton = UIButton(type: .system)
+        var addConfiguration = UIButton.Configuration.filled()
+        addConfiguration.title = tr("iosHomeAddProfile")
+        addConfiguration.image = UIImage(systemName: "plus")
+        addConfiguration.imagePadding = 8
+        addConfiguration.baseBackgroundColor = WireRouteAppearance.signalBlue
+        addConfiguration.baseForegroundColor = .white
+        addConfiguration.cornerStyle = .large
+        addConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 24, bottom: 14, trailing: 24)
+        addButton.configuration = addConfiguration
+        addButton.addTarget(self, action: #selector(addProfileTapped), for: .touchUpInside)
+        emptyStateStack.axis = .vertical
+        emptyStateStack.alignment = .center
+        emptyStateStack.spacing = 14
+        emptyStateStack.addArrangedSubview(emptyIcon)
+        emptyStateStack.addArrangedSubview(emptyTitle)
+        emptyStateStack.addArrangedSubview(emptyDescription)
+        emptyStateStack.addArrangedSubview(addButton)
+        emptyStateStack.setCustomSpacing(22, after: emptyDescription)
+
+        let rootStack = UIStackView(arrangedSubviews: [header, contentStack, emptyStateStack])
+        rootStack.axis = .vertical
+        rootStack.spacing = 18
+
+        let scrollView = UIScrollView()
+        scrollView.alwaysBounceVertical = true
+        scrollView.addSubview(rootStack)
+        view.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        rootStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            rootStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 20),
+            rootStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -20),
+            rootStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 16),
+            rootStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -30),
+            rootStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -40)
+        ])
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+        resolveSelection(preferredTunnel: selectedTunnel)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        locationLookupTask?.cancel()
+    }
+
+    func setTunnelsManager(_ tunnelsManager: TunnelsManager) {
+        self.tunnelsManager = tunnelsManager
+        resolveSelection(preferredTunnel: selectedTunnel)
+    }
+
+    func selectTunnel(_ tunnel: TunnelContainer?) {
+        resolveSelection(preferredTunnel: tunnel)
+    }
+
+    func reloadTunnels() {
+        resolveSelection(preferredTunnel: selectedTunnel)
+    }
+
+    private func configureMap() {
+        mapView.delegate = self
+        mapView.overrideUserInterfaceStyle = .dark
+        mapView.isRotateEnabled = false
+        mapView.showsCompass = false
+        mapView.showsScale = false
+        mapView.showsTraffic = false
+        let configuration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
+        configuration.pointOfInterestFilter = .excludingAll
+        configuration.showsTraffic = false
+        mapView.preferredConfiguration = configuration
+        showWorld(animated: false)
+    }
+
+    private func showWorld(animated: Bool) {
+        let region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 18, longitude: 0),
+            span: MKCoordinateSpan(latitudeDelta: 125, longitudeDelta: 330)
+        )
+        mapView.setRegion(region, animated: animated)
+    }
+
+    private func allTunnels() -> [TunnelContainer] {
+        guard let tunnelsManager else { return [] }
+        return (0 ..< tunnelsManager.numberOfTunnels()).map { tunnelsManager.tunnel(at: $0) }
+    }
+
+    private func resolveSelection(preferredTunnel: TunnelContainer?) {
+        let tunnels = allTunnels()
+        let savedName = UserDefaults.standard.string(forKey: "WireRoute.iOS.selectedProfile")
+        let resolvedTunnel: TunnelContainer?
+        if let preferredTunnel, tunnels.contains(where: { $0 === preferredTunnel }) {
+            resolvedTunnel = preferredTunnel
+        } else if let activeTunnel = tunnels.first(where: { $0.status != .inactive }) {
+            resolvedTunnel = activeTunnel
+        } else if let savedName, let savedTunnel = tunnels.first(where: { $0.name == savedName }) {
+            resolvedTunnel = savedTunnel
+        } else {
+            resolvedTunnel = tunnels.first
+        }
+
+        if selectedTunnel !== resolvedTunnel {
+            selectedTunnel = resolvedTunnel
+            observeSelectedTunnel()
+        }
+        if let resolvedTunnel {
+            UserDefaults.standard.set(resolvedTunnel.name, forKey: "WireRoute.iOS.selectedProfile")
+        }
+        updateProfileMenu(tunnels)
+        render()
+    }
+
+    private func observeSelectedTunnel() {
+        statusObservation = selectedTunnel?.observe(\.status, options: [.initial, .new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.render()
+            }
+        }
+    }
+
+    private func updateProfileMenu(_ tunnels: [TunnelContainer]) {
+        let actions = tunnels.map { tunnel in
+            UIAction(title: tunnel.name, state: tunnel === selectedTunnel ? .on : .off) { [weak self] _ in
+                self?.selectTunnel(tunnel)
+            }
+        }
+        profileButton.menu = UIMenu(title: tr("iosHomeChooseProfile"), children: actions)
+        profileButton.showsMenuAsPrimaryAction = true
+    }
+
+    private func render() {
+        guard let tunnel = selectedTunnel else {
+            contentStack.isHidden = true
+            emptyStateStack.isHidden = false
+            statusLabel.text = tr("iosHomeNoProfiles")
+            statusImageView.image = UIImage(systemName: "lock.open")
+            statusImageView.tintColor = .secondaryLabel
+            mapLocationLabel.text = tr("iosHomeMapWaiting")
+            resetLocatedEndpoint()
+            return
+        }
+
+        contentStack.isHidden = false
+        emptyStateStack.isHidden = true
+        profileButton.configuration?.title = tunnel.name
+        statusLabel.text = statusText(for: tunnel.status)
+        statusImageView.image = UIImage(systemName: tunnel.status == .active ? "lock.fill" : "lock.open")
+        statusImageView.tintColor = statusColor(for: tunnel.status)
+
+        connectionButton.configuration?.title = connectionButtonTitle(for: tunnel.status)
+        connectionButton.configuration?.image = UIImage(systemName: "power")
+        connectionButton.configuration?.baseBackgroundColor = tunnel.status == .active
+            ? WireRouteAppearance.raised
+            : WireRouteAppearance.signalBlue
+        connectionButton.configuration?.baseForegroundColor = tunnel.status == .active
+            ? WireRouteAppearance.liveTeal
+            : .white
+        connectionButton.isEnabled = tunnel.status == .inactive || tunnel.status == .active
+
+        routingValueLabel.text = tunnel.routingMode == .full
+            ? tr("tunnelRoutingFullTunnel")
+            : tr("iosHomeSplitTunnel")
+
+        let configuration = tunnel.tunnelConfiguration
+        let policy = tunnel.dnsProtectionPolicy
+        if policy.mode == .profile {
+            let servers = configuration?.interface.dns.map(\.stringRepresentation) ?? []
+            dnsValueLabel.text = servers.isEmpty ? tr("iosHomeNotConfigured") : policy.localizedTitle
+        } else {
+            dnsValueLabel.text = policy.localizedTitle
+        }
+
+        let endpoint = configuration?.peers.compactMap(\.endpoint).first
+        let endpointKey = endpoint?.stringRepresentation
+        currentEndpoint = endpoint
+        endpointValueLabel.text = endpointKey ?? tr("iosHomeNotConfigured")
+        locationButton.isEnabled = endpoint != nil
+
+        if endpointKey != currentEndpointKey {
+            currentEndpointKey = endpointKey
+            resetLocatedEndpoint()
+        }
+    }
+
+    private func resetLocatedEndpoint() {
+        locationLookupTask?.cancel()
+        locationLookupTask = nil
+        locatedEndpointKey = nil
+        mapView.removeAnnotations(mapView.annotations)
+        mapLocationLabel.text = currentEndpoint == nil ? tr("iosHomeMapWaiting") : tr("iosHomeMapReady")
+        locationButton.configuration?.title = tr("iosHomeLocateEndpoint")
+        locationButton.configuration?.image = UIImage(systemName: "location.magnifyingglass")
+        locationButton.isEnabled = currentEndpoint != nil
+        showWorld(animated: false)
+    }
+
+    private func beginLocationLookup() {
+        guard let endpoint = currentEndpoint, let endpointKey = currentEndpointKey else { return }
+        if locatedEndpointKey == endpointKey, let annotation = mapView.annotations.first {
+            mapView.setRegion(region(around: annotation.coordinate), animated: true)
+            return
+        }
+
+        locationLookupTask?.cancel()
+        mapLocationLabel.text = tr("iosHomeLocationLoading")
+        locationButton.configuration?.title = tr("iosHomeLocationLoadingShort")
+        locationButton.configuration?.image = UIImage(systemName: "hourglass")
+        locationButton.isEnabled = false
+
+        locationLookupTask = Task { [weak self] in
+            do {
+                let location = try await WireRouteEndpointLocationService.locate(endpoint)
+                guard !Task.isCancelled, let self, self.currentEndpointKey == endpointKey else { return }
+                self.apply(location, endpointKey: endpointKey)
+            } catch {
+                guard !Task.isCancelled, let self, self.currentEndpointKey == endpointKey else { return }
+                self.mapLocationLabel.text = (error as? LocalizedError)?.errorDescription
+                    ?? tr("iosHomeLocationLookupFailed")
+                self.locationButton.configuration?.title = tr("iosHomeTryLocationAgain")
+                self.locationButton.configuration?.image = UIImage(systemName: "arrow.clockwise")
+                self.locationButton.isEnabled = true
+            }
+        }
+    }
+
+    private func apply(_ location: WireRouteEndpointLocation, endpointKey: String) {
+        let annotation = WireRouteEndpointAnnotation(location: location)
+        mapView.removeAnnotations(mapView.annotations)
+        mapView.addAnnotation(annotation)
+        mapView.setRegion(region(around: location.coordinate), animated: true)
+        locatedEndpointKey = endpointKey
+        let displayName = location.displayName.isEmpty ? tr("iosHomeEndpoint") : location.displayName
+        mapLocationLabel.text = "\(displayName)\n\(tr("iosHomeLocationApproximate"))"
+        locationButton.configuration?.title = tr("iosHomeRecenterEndpoint")
+        locationButton.configuration?.image = UIImage(systemName: "scope")
+        locationButton.isEnabled = true
+    }
+
+    private func region(around coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: coordinate,
+            span: MKCoordinateSpan(latitudeDelta: 7.5, longitudeDelta: 7.5)
+        )
+    }
+
+    private func configureConnectionButton() {
+        var configuration = UIButton.Configuration.filled()
+        configuration.image = UIImage(systemName: "power")
+        configuration.imagePadding = 9
+        configuration.baseBackgroundColor = WireRouteAppearance.signalBlue
+        configuration.baseForegroundColor = .white
+        configuration.cornerStyle = .large
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 15, leading: 24, bottom: 15, trailing: 24)
+        connectionButton.configuration = configuration
+        connectionButton.addTarget(self, action: #selector(connectionButtonTapped), for: .touchUpInside)
+    }
+
+    private func makeSummary(title: String, valueLabel: UILabel) -> UIView {
+        let titleLabel = makeLabel(title, style: .caption1, color: .secondaryLabel)
+        valueLabel.font = WireRouteAppearance.roundedFont(size: 15, weight: .regular, textStyle: .subheadline)
+        valueLabel.adjustsFontForContentSizeCategory = true
+        valueLabel.numberOfLines = 2
+        let stack = UIStackView(arrangedSubviews: [titleLabel, valueLabel])
+        stack.axis = .vertical
+        stack.spacing = 5
+        return stack
+    }
+
+    private func makeDepthCard(containing content: UIView) -> UIView {
+        let card = WireRouteDepthCardView(elevation: .hero)
+        card.addSubview(content)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 20),
+            content.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -20),
+            content.topAnchor.constraint(equalTo: card.topAnchor, constant: 20),
+            content.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -20)
+        ])
+        return card
+    }
+
+    private func makeLabel(_ text: String, style: UIFont.TextStyle, color: UIColor) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = UIFont.preferredFont(forTextStyle: style)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = color
+        return label
+    }
+
+    private func statusText(for status: TunnelStatus) -> String {
+        switch status {
+        case .inactive: return tr("tunnelStatusInactive")
+        case .activating: return tr("tunnelStatusActivating")
+        case .active: return tr("tunnelStatusActive")
+        case .deactivating: return tr("tunnelStatusDeactivating")
+        case .reasserting: return tr("tunnelStatusReasserting")
+        case .restarting: return tr("tunnelStatusRestarting")
+        case .waiting: return tr("tunnelStatusWaiting")
+        }
+    }
+
+    private func statusColor(for status: TunnelStatus) -> UIColor {
+        switch status {
+        case .active: return WireRouteAppearance.liveTeal
+        case .activating, .deactivating, .reasserting, .restarting, .waiting: return WireRouteAppearance.warningAmber
+        case .inactive: return .secondaryLabel
+        }
+    }
+
+    private func connectionButtonTitle(for status: TunnelStatus) -> String {
+        switch status {
+        case .active: return tr("iosHomeDisconnect")
+        case .inactive: return tr("iosHomeConnect")
+        default: return statusText(for: status)
+        }
+    }
+
+    @objc private func locationButtonTapped() {
+        guard currentEndpoint != nil else { return }
+        if approvedLocationLookup {
+            beginLocationLookup()
+            return
+        }
+
+        let alert = UIAlertController(
+            title: tr("iosHomeLocationConsentTitle"),
+            message: tr("iosHomeLocationConsentMessage"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: tr("iosHomeLocationNotNow"), style: .cancel))
+        alert.addAction(UIAlertAction(title: tr("iosHomeLocationContinue"), style: .default) { [weak self] _ in
+            self?.approvedLocationLookup = true
+            self?.beginLocationLookup()
+        })
+        present(alert, animated: true)
+    }
+
+    @objc private func connectionButtonTapped() {
+        guard let tunnelsManager, let tunnel = selectedTunnel else { return }
+        switch tunnel.status {
+        case .inactive:
+            tunnelsManager.startActivation(of: tunnel)
+        case .active:
+            if tunnel.isActivateOnDemandEnabled {
+                tunnelsManager.setOnDemandEnabled(false, on: tunnel) { [weak self] error in
+                    if error == nil {
+                        self?.tunnelsManager?.startDeactivation(of: tunnel)
+                    }
+                }
+            } else {
+                tunnelsManager.startDeactivation(of: tunnel)
+            }
+        default:
+            break
+        }
+    }
+
+    @objc private func profileDetailsTapped() {
+        guard let selectedTunnel else { return }
+        onShowProfileDetail?(selectedTunnel)
+    }
+
+    @objc private func addProfileTapped() {
+        onAddProfile?()
+    }
+
+    func mapView(_ mapView: MKMapView, viewFor annotation: any MKAnnotation) -> MKAnnotationView? {
+        let identifier = "WireRouteEndpoint"
+        let marker = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+            ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+        marker.annotation = annotation
+        marker.markerTintColor = WireRouteAppearance.signalBlue
+        marker.glyphTintColor = .white
+        marker.glyphImage = UIImage(systemName: "shield.fill")
+        marker.animatesWhenAdded = true
+        marker.canShowCallout = true
+        return marker
     }
 }
 
