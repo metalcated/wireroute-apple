@@ -3,11 +3,10 @@
 
 import Cocoa
 
-private let fontSize: CGFloat = 15
+private let fontSize: CGFloat = 14
 
 class ConfTextStorage: NSTextStorage {
-    let defaultFont = NSFontManager.shared.convertWeight(true, of: NSFont.systemFont(ofSize: fontSize))
-    private let boldFont = NSFont.boldSystemFont(ofSize: fontSize)
+    let defaultFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
     private lazy var italicFont = NSFontManager.shared.convert(defaultFont, toHaveTrait: .italicFontMask)
 
     private var textColorTheme: ConfTextColorTheme.Type?
@@ -37,7 +36,7 @@ class ConfTextStorage: NSTextStorage {
     func nonColorAttributes(for highlightType: highlight_type) -> [NSAttributedString.Key: Any] {
         switch highlightType.rawValue {
         case HighlightSection.rawValue, HighlightField.rawValue:
-            return [.font: boldFont]
+            return [.font: defaultFont]
         case HighlightPublicKey.rawValue, HighlightPrivateKey.rawValue, HighlightPresharedKey.rawValue,
              HighlightIP.rawValue, HighlightCidr.rawValue, HighlightHost.rawValue, HighlightPort.rawValue,
              HighlightMTU.rawValue, HighlightKeepalive.rawValue, HighlightDelimiter.rawValue:

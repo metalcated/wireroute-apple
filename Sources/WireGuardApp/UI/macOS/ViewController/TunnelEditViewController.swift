@@ -37,6 +37,7 @@ class TunnelEditViewController: NSViewController {
             textContainer.size = NSSize(width: minWidth, height: CGFloat.greatestFiniteMagnitude)
             textContainer.widthTracksTextView = true
         }
+        textView.textContainerInset = NSSize(width: 12, height: 12)
         NSLayoutConstraint.activate([
             textView.widthAnchor.constraint(greaterThanOrEqualToConstant: minWidth),
             textView.heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight)
@@ -166,32 +167,120 @@ class TunnelEditViewController: NSViewController {
 
         onDemandControlsRow.onDemandViewModel = onDemandViewModel
 
-        let margin: CGFloat = 20
-        let internalSpacing: CGFloat = 10
+        nameRow.keyLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        nameRow.keyLabel.textColor = .secondaryLabelColor
+        nameRow.valueLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        publicKeyRow.keyLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        publicKeyRow.keyLabel.textColor = .secondaryLabelColor
+        publicKeyRow.valueLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        publicKeyRow.valueLabel.textColor = .secondaryLabelColor
+        onDemandControlsRow.keyLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        onDemandControlsRow.keyLabel.textColor = .secondaryLabelColor
 
-        let editorStackView = NSStackView(views: [nameRow, publicKeyRow, onDemandControlsRow, scrollView])
-        editorStackView.orientation = .vertical
-        editorStackView.setHuggingPriority(.defaultHigh, for: .horizontal)
-        editorStackView.setHuggingPriority(.defaultLow, for: .vertical)
-        editorStackView.spacing = internalSpacing
+        saveButton.bezelColor = WireRouteTheme.accentColor
 
-        let editorCard = AppearanceAwareMaterialView(
+        let margin: CGFloat = 24
+        let internalSpacing: CGFloat = 12
+
+        let headerIcon = NSImageView()
+        headerIcon.image = NSImage(
+            systemSymbolName: tunnel == nil ? "plus.square.on.square" : "slider.horizontal.3",
+            accessibilityDescription: tr(tunnel == nil ? "newTunnelViewTitle" : "editTunnelViewTitle")
+        )
+        headerIcon.contentTintColor = WireRouteTheme.accentColor
+        headerIcon.imageScaling = .scaleProportionallyUpOrDown
+
+        let iconSurface = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        iconSurface.adaptiveBorderColor = .separatorColor
+        iconSurface.adaptiveBorderAlpha = 0.45
+        iconSurface.layer?.borderWidth = 1
+        iconSurface.layer?.cornerRadius = 8
+        iconSurface.layer?.cornerCurve = .continuous
+        iconSurface.addSubview(headerIcon)
+        headerIcon.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            iconSurface.widthAnchor.constraint(equalToConstant: 38),
+            iconSurface.heightAnchor.constraint(equalToConstant: 38),
+            headerIcon.centerXAnchor.constraint(equalTo: iconSurface.centerXAnchor),
+            headerIcon.centerYAnchor.constraint(equalTo: iconSurface.centerYAnchor),
+            headerIcon.widthAnchor.constraint(equalToConstant: 18),
+            headerIcon.heightAnchor.constraint(equalTo: headerIcon.widthAnchor)
+        ])
+
+        let titleLabel = NSTextField(
+            labelWithString: tr(tunnel == nil ? "newTunnelViewTitle" : "editTunnelViewTitle")
+        )
+        titleLabel.font = .systemFont(ofSize: 22, weight: .medium)
+        titleLabel.textColor = .labelColor
+
+        let headerSpacer = NSView()
+        headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let headerRow = NSStackView(views: [iconSurface, titleLabel, headerSpacer])
+        headerRow.orientation = .horizontal
+        headerRow.alignment = .centerY
+        headerRow.spacing = 12
+
+        let profileStackView = NSStackView(views: [nameRow, publicKeyRow, onDemandControlsRow])
+        profileStackView.orientation = .vertical
+        profileStackView.setHuggingPriority(.defaultHigh, for: .horizontal)
+        profileStackView.spacing = internalSpacing
+
+        let profileCard = AppearanceAwareMaterialView(
             material: .contentBackground,
             blendingMode: .withinWindow,
             nordicSurface: .surface
         )
-        editorCard.adaptiveBorderColor = .separatorColor
-        editorCard.adaptiveBorderAlpha = 0.65
-        editorCard.layer?.borderWidth = 1
-        editorCard.layer?.cornerRadius = 14
-        editorCard.layer?.cornerCurve = .continuous
-        editorCard.addSubview(editorStackView)
-        editorStackView.translatesAutoresizingMaskIntoConstraints = false
+        profileCard.adaptiveBorderColor = .separatorColor
+        profileCard.adaptiveBorderAlpha = 0.55
+        profileCard.layer?.borderWidth = 1
+        profileCard.layer?.cornerRadius = 12
+        profileCard.layer?.cornerCurve = .continuous
+        profileCard.addSubview(profileStackView)
+        profileStackView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            editorStackView.leadingAnchor.constraint(equalTo: editorCard.leadingAnchor, constant: 16),
-            editorStackView.trailingAnchor.constraint(equalTo: editorCard.trailingAnchor, constant: -16),
-            editorStackView.topAnchor.constraint(equalTo: editorCard.topAnchor, constant: 16),
-            editorStackView.bottomAnchor.constraint(equalTo: editorCard.bottomAnchor, constant: -16)
+            profileStackView.leadingAnchor.constraint(equalTo: profileCard.leadingAnchor, constant: 18),
+            profileStackView.trailingAnchor.constraint(equalTo: profileCard.trailingAnchor, constant: -18),
+            profileStackView.topAnchor.constraint(equalTo: profileCard.topAnchor, constant: 16),
+            profileStackView.bottomAnchor.constraint(equalTo: profileCard.bottomAnchor, constant: -16)
+        ])
+
+        let configurationTitle = NSTextField(labelWithString: tr("macTunnelTechnicalDetails"))
+        configurationTitle.font = .systemFont(ofSize: 13, weight: .medium)
+        configurationTitle.textColor = .secondaryLabelColor
+        let configurationHeaderSpacer = NSView()
+        configurationHeaderSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let configurationHeader = NSStackView(views: [configurationTitle, configurationHeaderSpacer])
+        configurationHeader.orientation = .horizontal
+        configurationHeader.alignment = .centerY
+
+        let configurationStackView = NSStackView(views: [configurationHeader, scrollView])
+        configurationStackView.orientation = .vertical
+        configurationStackView.setHuggingPriority(.defaultHigh, for: .horizontal)
+        configurationStackView.setHuggingPriority(.defaultLow, for: .vertical)
+        configurationStackView.spacing = 10
+
+        let configurationCard = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
+        configurationCard.adaptiveBorderColor = .separatorColor
+        configurationCard.adaptiveBorderAlpha = 0.55
+        configurationCard.layer?.borderWidth = 1
+        configurationCard.layer?.cornerRadius = 12
+        configurationCard.layer?.cornerCurve = .continuous
+        configurationCard.addSubview(configurationStackView)
+        configurationStackView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            configurationStackView.leadingAnchor.constraint(equalTo: configurationCard.leadingAnchor, constant: 14),
+            configurationStackView.trailingAnchor.constraint(equalTo: configurationCard.trailingAnchor, constant: -14),
+            configurationStackView.topAnchor.constraint(equalTo: configurationCard.topAnchor, constant: 12),
+            configurationStackView.bottomAnchor.constraint(equalTo: configurationCard.bottomAnchor, constant: -14),
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 250)
         ])
 
         let buttonRowStackView = NSStackView()
@@ -200,10 +289,12 @@ class TunnelEditViewController: NSViewController {
         buttonRowStackView.orientation = .horizontal
         buttonRowStackView.spacing = internalSpacing
 
-        let contentStackView = NSStackView(views: [editorCard, buttonRowStackView])
+        let contentStackView = NSStackView(views: [headerRow, profileCard, configurationCard, buttonRowStackView])
         contentStackView.orientation = .vertical
         contentStackView.setHuggingPriority(.defaultHigh, for: .horizontal)
-        contentStackView.spacing = internalSpacing
+        contentStackView.spacing = 16
+        contentStackView.setCustomSpacing(18, after: headerRow)
+        contentStackView.setCustomSpacing(14, after: profileCard)
 
         let containerView = AppearanceAwareMaterialView(
             material: .underWindowBackground,
@@ -218,12 +309,14 @@ class TunnelEditViewController: NSViewController {
             contentStackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -margin),
             contentStackView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: margin),
             contentStackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -margin),
-            editorCard.widthAnchor.constraint(equalTo: contentStackView.widthAnchor),
+            headerRow.widthAnchor.constraint(equalTo: contentStackView.widthAnchor),
+            profileCard.widthAnchor.constraint(equalTo: contentStackView.widthAnchor),
+            configurationCard.widthAnchor.constraint(equalTo: contentStackView.widthAnchor),
             buttonRowStackView.widthAnchor.constraint(equalTo: contentStackView.widthAnchor),
             containerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 180),
             containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240)
         ])
-        containerView.frame = NSRect(x: 0, y: 0, width: 600, height: 480)
+        containerView.frame = NSRect(x: 0, y: 0, width: 680, height: 590)
 
         self.view = containerView
     }
