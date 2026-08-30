@@ -3,6 +3,7 @@
 
 import UIKit
 import os.log
+import SafariServices
 
 private final class WireRouteSettingsMarkView: UIView {
     override var intrinsicContentSize: CGSize {
@@ -111,31 +112,44 @@ class SettingsTableViewController: UITableViewController {
     enum SettingsFields {
         case iosAppVersion
         case goBackendVersion
+        case appearance
+        case activityRetention
         case exportZipArchive
         case viewLog
+        case support
+        case privacy
+        case legal
 
         var localizedUIString: String {
             switch self {
             case .iosAppVersion: return tr("settingsVersionKeyWireGuardForIOS")
             case .goBackendVersion: return tr("settingsVersionKeyWireGuardGoBackend")
+            case .appearance: return tr("iosSettingsAppearance")
+            case .activityRetention: return tr("iosSettingsActivityRetention")
             case .exportZipArchive: return tr("settingsExportZipButtonTitle")
             case .viewLog: return tr("settingsViewLogButtonTitle")
+            case .support: return tr("iosSettingsSupport")
+            case .privacy: return tr("iosSettingsPrivacy")
+            case .legal: return tr("iosSettingsLegal")
             }
         }
     }
 
     let settingsFieldsBySection: [[SettingsFields]] = [
         [.iosAppVersion, .goBackendVersion],
-        [.exportZipArchive],
-        [.viewLog]
+        [.appearance, .activityRetention],
+        [.exportZipArchive, .viewLog],
+        [.support, .privacy, .legal]
     ]
 
-    let tunnelsManager: TunnelsManager?
+    private(set) var tunnelsManager: TunnelsManager?
+    private let showsDoneButton: Bool
     private let brandFooterView = WireRouteSettingsFooterView()
 
-    init(tunnelsManager: TunnelsManager?) {
+    init(tunnelsManager: TunnelsManager?, showsDoneButton: Bool = true) {
         self.tunnelsManager = tunnelsManager
-        super.init(style: .grouped)
+        self.showsDoneButton = showsDoneButton
+        super.init(style: .insetGrouped)
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -145,7 +159,11 @@ class SettingsTableViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = tr("settingsViewTitle")
-        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
+        navigationItem.largeTitleDisplayMode = .always
+        navigationController?.navigationBar.prefersLargeTitles = true
+        if showsDoneButton {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
+        }
 
         tableView.estimatedRowHeight = 44
         tableView.rowHeight = UITableView.automaticDimension
@@ -181,6 +199,11 @@ class SettingsTableViewController: UITableViewController {
         dismiss(animated: true, completion: nil)
     }
 
+    func setTunnelsManager(_ tunnelsManager: TunnelsManager) {
+        self.tunnelsManager = tunnelsManager
+        tableView.reloadData()
+    }
+
     func exportConfigurationsAsZipFile(sourceView: UIView) {
         PrivateDataConfirmation.confirmAccess(to: tr("iosExportPrivateData")) { [weak self] in
             guard let self = self else { return }
@@ -209,6 +232,39 @@ class SettingsTableViewController: UITableViewController {
         navigationController?.pushViewController(logVC, animated: true)
 
     }
+
+    private func presentProjectDocument(path: String) {
+        guard let url = URL(string: "https://github.com/metalcated/wireroute-apple/blob/master/\(path)") else { return }
+        let browser = SFSafariViewController(url: url)
+        browser.preferredControlTintColor = WireRouteAppearance.signalBlue
+        present(browser, animated: true)
+    }
+
+    private func activityRetentionTitle(_ retention: WireRouteActivityRetention) -> String {
+        switch retention {
+        case .oneDay: return tr("activityRetentionOneDay")
+        case .sevenDays: return tr("activityRetentionSevenDays")
+        case .thirtyDays: return tr("activityRetentionThirtyDays")
+        }
+    }
+
+    private func configureActivityRetentionButton(_ cell: ButtonCell) {
+        let selectedRetention = WireRouteActivityPreference.loadRetention()
+        cell.buttonText = tr(
+            format: "iosSettingsActivityRetentionValue (%@)",
+            activityRetentionTitle(selectedRetention)
+        )
+        cell.button.menu = UIMenu(children: WireRouteActivityRetention.allCases.map { retention in
+            UIAction(
+                title: activityRetentionTitle(retention),
+                state: retention == selectedRetention ? .on : .off
+            ) { [weak self] _ in
+                WireRouteActivityPreference.saveRetention(retention)
+                self?.tableView.reloadData()
+            }
+        })
+        cell.button.showsMenuAsPrimaryAction = true
+    }
 }
 
 extension SettingsTableViewController {
@@ -225,9 +281,11 @@ extension SettingsTableViewController {
         case 0:
             return tr("settingsSectionTitleAbout")
         case 1:
-            return tr("settingsSectionTitleExportConfigurations")
+            return tr("iosSettingsSectionPreferences")
         case 2:
-            return tr("settingsSectionTitleTunnelLog")
+            return tr("iosSettingsSectionData")
+        case 3:
+            return tr("iosSettingsSectionHelp")
         default:
             return nil
         }
@@ -235,7 +293,7 @@ extension SettingsTableViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let field = settingsFieldsBySection[indexPath.section][indexPath.row]
-        if field == .iosAppVersion || field == .goBackendVersion {
+        if field == .iosAppVersion || field == .goBackendVersion || field == .appearance {
             let cell: KeyValueCell = tableView.dequeueReusableCell(for: indexPath)
             cell.copyableGesture = false
             cell.key = field.localizedUIString
@@ -247,10 +305,18 @@ extension SettingsTableViewController {
                 cell.value = appVersion
             } else if field == .goBackendVersion {
                 cell.value = WIREGUARD_GO_VERSION
+            } else {
+                cell.value = tr("iosSettingsAppearanceNordicBlue")
             }
+            return cell
+        } else if field == .activityRetention {
+            let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
+            configureActivityRetentionButton(cell)
             return cell
         } else if field == .exportZipArchive {
             let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.button.menu = nil
+            cell.button.showsMenuAsPrimaryAction = false
             cell.buttonText = field.localizedUIString
             cell.onTapped = { [weak self] in
                 self?.exportConfigurationsAsZipFile(sourceView: cell.button)
@@ -258,9 +324,25 @@ extension SettingsTableViewController {
             return cell
         } else if field == .viewLog {
             let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.button.menu = nil
+            cell.button.showsMenuAsPrimaryAction = false
             cell.buttonText = field.localizedUIString
             cell.onTapped = { [weak self] in
                 self?.presentLogView()
+            }
+            return cell
+        } else if field == .support || field == .privacy || field == .legal {
+            let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.button.menu = nil
+            cell.button.showsMenuAsPrimaryAction = false
+            cell.buttonText = field.localizedUIString
+            cell.onTapped = { [weak self] in
+                switch field {
+                case .support: self?.presentProjectDocument(path: "SUPPORT.md")
+                case .privacy: self?.presentProjectDocument(path: "PRIVACY.md")
+                case .legal: self?.presentProjectDocument(path: "LEGAL.md")
+                default: break
+                }
             }
             return cell
         }

@@ -1345,12 +1345,7 @@ extension TunnelDetailTableViewController {
         }
 
         let navigationController = UINavigationController(rootViewController: dnsViewController)
-        navigationController.modalPresentationStyle = .formSheet
-        navigationController.preferredContentSize = CGSize(width: 560, height: 560)
-        if let sheet = navigationController.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-        }
+        navigationController.modalPresentationStyle = .fullScreen
         present(navigationController, animated: true)
     }
 

@@ -8,6 +8,8 @@ import UserNotifications
 class TunnelsListTableViewController: UIViewController {
 
     var tunnelsManager: TunnelsManager?
+    var onTunnelSelected: ((TunnelContainer) -> Void)?
+    var onTunnelListChanged: (() -> Void)?
 
     enum TableState: Equatable {
         case normal
@@ -204,6 +206,7 @@ class TunnelsListTableViewController: UIViewController {
         busyIndicator.stopAnimating()
         tableView.reloadData()
         updateEmptyState(animated: false)
+        onTunnelListChanged?()
     }
 
     func updateEmptyState(animated: Bool) {
@@ -367,6 +370,7 @@ class TunnelsListTableViewController: UIViewController {
         guard let splitViewController = splitViewController else { return }
         guard let navController = navigationController else { return }
 
+        onTunnelSelected?(tunnel)
         let tunnelDetailVC = TunnelDetailTableViewController(tunnelsManager: tunnelsManager,
                                                              tunnel: tunnel)
         let tunnelDetailNC = UINavigationController(rootViewController: tunnelDetailVC)
@@ -489,19 +493,23 @@ extension TunnelsListTableViewController: TunnelsManagerListDelegate {
     func tunnelAdded(at index: Int) {
         tableView.insertRows(at: [IndexPath(row: index, section: 0)], with: .automatic)
         updateEmptyState(animated: true)
+        onTunnelListChanged?()
     }
 
     func tunnelModified(at index: Int) {
         tableView.reloadRows(at: [IndexPath(row: index, section: 0)], with: .automatic)
+        onTunnelListChanged?()
     }
 
     func tunnelMoved(from oldIndex: Int, to newIndex: Int) {
         tableView.moveRow(at: IndexPath(row: oldIndex, section: 0), to: IndexPath(row: newIndex, section: 0))
+        onTunnelListChanged?()
     }
 
     func tunnelRemoved(at index: Int, tunnel: TunnelContainer) {
         tableView.deleteRows(at: [IndexPath(row: index, section: 0)], with: .automatic)
         updateEmptyState(animated: true)
+        onTunnelListChanged?()
         if detailDisplayedTunnel == tunnel, let splitViewController = splitViewController {
             if splitViewController.isCollapsed != false {
                 (splitViewController.viewControllers[0] as? UINavigationController)?.popToRootViewController(animated: false)

@@ -9,7 +9,7 @@
 
 // Tunnels list UI
 
-"tunnelsListTitle" = "WireRoute";
+"tunnelsListTitle" = "Profiles";
 "tunnelsListSettingsButtonTitle" = "Settings";
 "tunnelsListCenteredAddTunnelButtonTitle" = "Add a tunnel";
 "tunnelsListSwipeDeleteButtonTitle" = "Delete";
@@ -736,6 +736,41 @@
 "dnsPresetCustomDescription" = "Enter any compatible HTTPS resolver endpoint.";
 
 // WireRoute activity monitor
+
+"iosTabHome" = "Home";
+"iosTabProfiles" = "Profiles";
+"iosTabActivity" = "Activity";
+"iosTabSettings" = "Settings";
+"iosHomeTitle" = "WireRoute";
+"iosHomeSubtitle" = "Your private routes, clearly connected.";
+"iosHomeChooseProfile" = "Choose a profile";
+"iosHomeNoProfiles" = "No profiles yet";
+"iosHomeNoProfilesDescription" = "Add, import, or scan a WireGuard profile to get connected.";
+"iosHomeAddProfile" = "Add profile";
+"iosHomePathDevice" = "Device";
+"iosHomePathVPN" = "VPN";
+"iosHomePathEndpoint" = "Endpoint";
+"iosHomeRouting" = "Routing";
+"iosHomeSplitTunnel" = "Split tunnel";
+"iosHomeEndpoint" = "Endpoint";
+"iosHomeTransfer" = "Live transfer";
+"iosHomeNotConfigured" = "Not configured";
+"iosHomeNoLiveTransfer" = "Connect to see transfer totals";
+"iosHomeConnect" = "Connect";
+"iosHomeDisconnect" = "Disconnect";
+"iosHomeProfileDetails" = "Profile";
+"iosHomeViewActivity" = "Activity";
+"iosActivityNoProfiles" = "Add a profile to view live traffic and connection history.";
+"iosSettingsSectionPreferences" = "Preferences";
+"iosSettingsSectionData" = "Data and diagnostics";
+"iosSettingsSectionHelp" = "Help and policies";
+"iosSettingsAppearance" = "Appearance";
+"iosSettingsAppearanceNordicBlue" = "Nordic Blue";
+"iosSettingsActivityRetention" = "Activity retention";
+"iosSettingsActivityRetentionValue (%@)" = "Keep activity for %@";
+"iosSettingsSupport" = "Support";
+"iosSettingsPrivacy" = "Privacy";
+"iosSettingsLegal" = "Legal and open-source notices";
 
 "activityTitle" = "Activity";
 "activityIntro" = "See live transfer rates and recent connection history for this profile. Activity stays on this device.";
