@@ -2055,6 +2055,7 @@ private final class WireRouteActivityDashboardViewController: UIViewController {
 
     private func rebuildMonitor(for tunnel: TunnelContainer?) {
         if selectedTunnel === tunnel, monitorViewController != nil {
+            profileButton.configuration?.title = tunnel?.name
             updateProfileMenu(allTunnels())
             return
         }
@@ -2191,6 +2192,22 @@ class MainViewController: UITabBarController {
         case "profile":
             guard tunnelsManager.numberOfTunnels() > 0 else { return }
             let tunnel = tunnelsManager.tunnel(at: 0)
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                selectedIndex = WireRouteMainTab.profiles.rawValue
+                profilesViewController.loadViewIfNeeded()
+                let detailViewController = TunnelDetailTableViewController(
+                    tunnelsManager: tunnelsManager,
+                    tunnel: tunnel
+                )
+                let detailNavigationController = UINavigationController(rootViewController: detailViewController)
+                detailNavigationController.restorationIdentifier = "DetailNC"
+                profilesViewController.showDetailViewController(
+                    detailNavigationController,
+                    sender: tunnelsListVC
+                )
+                tunnelsListVC.detailDisplayedTunnel = tunnel
+                return
+            }
             selectedIndex = WireRouteMainTab.profiles.rawValue
             profilesViewController.loadViewIfNeeded()
             let detailViewController = TunnelDetailTableViewController(
@@ -2206,6 +2223,10 @@ class MainViewController: UITabBarController {
             tunnelsListVC.detailDisplayedTunnel = tunnel
         case "activity":
             selectedIndex = WireRouteMainTab.activity.rawValue
+            activityViewController.loadViewIfNeeded()
+            if tunnelsManager.numberOfTunnels() > 0 {
+                activityViewController.selectTunnel(tunnelsManager.tunnel(at: 0))
+            }
         case "settings":
             selectedIndex = WireRouteMainTab.settings.rawValue
         default:
