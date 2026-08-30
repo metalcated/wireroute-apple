@@ -346,7 +346,8 @@ private final class WireRouteAboutViewController: NSViewController {
         versionStack.alignment = .centerX
         versionStack.spacing = 5
 
-        let copyright = Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String ?? ""
+        let copyright = (Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String ?? "")
+            .replacingOccurrences(of: ". Portions", with: ".\nPortions")
         let copyrightLabel = makeLabel(
             copyright,
             font: .systemFont(ofSize: 12, weight: .regular),
