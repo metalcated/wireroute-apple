@@ -1227,6 +1227,7 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         statusLabel.text = statusText(for: tunnel.status)
         statusImageView.image = UIImage(systemName: tunnel.status == .active ? "lock.fill" : "lock.open")
         statusImageView.tintColor = statusColor(for: tunnel.status)
+        refreshEndpointMarker(for: tunnel.status)
 
         connectionButton.configuration?.title = connectionButtonTitle(for: tunnel.status)
         connectionButton.configuration?.image = UIImage(systemName: "power")
@@ -1451,12 +1452,32 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         let marker = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
             ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
         marker.annotation = annotation
-        marker.markerTintColor = WireRouteAppearance.signalBlue
-        marker.glyphTintColor = .white
-        marker.glyphImage = UIImage(systemName: "shield.fill")
+        configureEndpointMarker(marker, for: selectedTunnel?.status)
         marker.animatesWhenAdded = true
         marker.canShowCallout = true
         return marker
+    }
+
+    private func refreshEndpointMarker(for status: TunnelStatus) {
+        for annotation in mapView.annotations {
+            guard let marker = mapView.view(for: annotation) as? MKMarkerAnnotationView else { continue }
+            configureEndpointMarker(marker, for: status)
+        }
+    }
+
+    private func configureEndpointMarker(_ marker: MKMarkerAnnotationView, for status: TunnelStatus?) {
+        marker.glyphTintColor = .white
+        switch status {
+        case .some(.active):
+            marker.markerTintColor = WireRouteAppearance.liveTeal
+            marker.glyphImage = UIImage(systemName: "lock.fill")
+        case .some(.activating), .some(.deactivating), .some(.reasserting), .some(.restarting), .some(.waiting):
+            marker.markerTintColor = WireRouteAppearance.warningAmber
+            marker.glyphImage = UIImage(systemName: "arrow.triangle.2.circlepath")
+        case .some(.inactive), .none:
+            marker.markerTintColor = WireRouteAppearance.signalBlue
+            marker.glyphImage = UIImage(systemName: "shield.fill")
+        }
     }
 }
 
