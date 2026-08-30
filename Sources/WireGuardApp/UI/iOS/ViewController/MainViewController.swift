@@ -45,6 +45,23 @@ private final class WireRouteProfilesSplitViewController: UISplitViewController,
         let detailViewController = (secondaryViewController as? UINavigationController)?.viewControllers.first
         return detailViewController.map { type(of: $0) == UIViewController.self } ?? true
     }
+
+    func showProfilesRoot(animated: Bool) {
+        tunnelsListViewController.presentedViewController?.dismiss(animated: false)
+        if isCollapsed {
+            (viewControllers.first as? UINavigationController)?.popToRootViewController(animated: animated)
+        } else {
+            let emptyDetailViewController = UIViewController()
+            emptyDetailViewController.view.backgroundColor = WireRouteAppearance.background
+            let detailNavigationController = UINavigationController(rootViewController: emptyDetailViewController)
+            detailNavigationController.restorationIdentifier = "DetailNC"
+            showDetailViewController(detailNavigationController, sender: tunnelsListViewController, animated: animated)
+        }
+        if let selectedIndexPath = tunnelsListViewController.tableView.indexPathForSelectedRow {
+            tunnelsListViewController.tableView.deselectRow(at: selectedIndexPath, animated: animated)
+        }
+        tunnelsListViewController.detailDisplayedTunnel = nil
+    }
 }
 
 private final class WireRoutePathNodeView: UIView {
@@ -1923,6 +1940,7 @@ class MainViewController: UITabBarController {
         super.init(nibName: nil, bundle: nil)
 
         restorationIdentifier = "MainVC"
+        delegate = self
         configureTabs()
         configureNavigation()
     }
@@ -2032,6 +2050,13 @@ class MainViewController: UITabBarController {
 
     func allTunnelNames() -> [String]? {
         tunnelsManager?.mapTunnels { $0.name }
+    }
+}
+
+extension MainViewController: UITabBarControllerDelegate {
+    func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+        guard viewController === profilesViewController else { return }
+        profilesViewController.showProfilesRoot(animated: true)
     }
 }
 
