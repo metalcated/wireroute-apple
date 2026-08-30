@@ -1143,14 +1143,37 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         mapView.delegate = self
         mapView.overrideUserInterfaceStyle = .dark
         mapView.isRotateEnabled = false
+        mapView.isPitchEnabled = false
         mapView.showsCompass = false
         mapView.showsScale = false
         mapView.showsTraffic = false
+        mapView.showsBuildings = false
         let configuration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
         configuration.pointOfInterestFilter = .excludingAll
         configuration.showsTraffic = false
         mapView.preferredConfiguration = configuration
+        addNordicMapWash()
         showWorld(animated: false)
+    }
+
+    private func addNordicMapWash() {
+        let westCoordinates = [
+            CLLocationCoordinate2D(latitude: -85, longitude: -179.9),
+            CLLocationCoordinate2D(latitude: -85, longitude: 0),
+            CLLocationCoordinate2D(latitude: 85, longitude: 0),
+            CLLocationCoordinate2D(latitude: 85, longitude: -179.9)
+        ]
+        let eastCoordinates = [
+            CLLocationCoordinate2D(latitude: -85, longitude: 0),
+            CLLocationCoordinate2D(latitude: -85, longitude: 179.9),
+            CLLocationCoordinate2D(latitude: 85, longitude: 179.9),
+            CLLocationCoordinate2D(latitude: 85, longitude: 0)
+        ]
+        mapView.addOverlays(
+            [MKPolygon(coordinates: westCoordinates, count: westCoordinates.count),
+             MKPolygon(coordinates: eastCoordinates, count: eastCoordinates.count)],
+            level: .aboveLabels
+        )
     }
 
     private func showWorld(animated: Bool) {
@@ -1456,6 +1479,13 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         marker.animatesWhenAdded = true
         marker.canShowCallout = true
         return marker
+    }
+
+    func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
+        guard let polygon = overlay as? MKPolygon else { return MKOverlayRenderer(overlay: overlay) }
+        let renderer = MKPolygonRenderer(polygon: polygon)
+        renderer.fillColor = WireRouteAppearance.background.withAlphaComponent(0.22)
+        return renderer
     }
 
     private func refreshEndpointMarker(for status: TunnelStatus) {

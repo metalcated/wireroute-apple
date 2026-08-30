@@ -184,6 +184,7 @@ private final class WireRouteSettingsItemCell: UITableViewCell {
         contentStack.axis = .horizontal
         contentStack.alignment = .center
         contentStack.spacing = 13
+        contentStack.isUserInteractionEnabled = false
 
         actionButton.addSubview(contentStack)
         contentStack.translatesAutoresizingMaskIntoConstraints = false
