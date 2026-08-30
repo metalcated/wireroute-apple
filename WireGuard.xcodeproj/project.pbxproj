@@ -1020,6 +1020,7 @@
 				58BA78E02577FABD006FAEA0 /* Extract wireguard-go Version */,
 				6FF4AC10211EC46F002C96EB /* Sources */,
 				6FF4AC11211EC46F002C96EB /* Frameworks */,
+				C0DE20000000000000000004 /* Install MapLibre dSYM */,
 				6FF4AC12211EC46F002C96EB /* Resources */,
 				6F5D0C26218352EF000F85AD /* Embed Foundation Extensions */,
 			);
@@ -1343,6 +1344,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "export PATH=${PATH}:/usr/local/bin:/opt/homebrew/bin\nif which swiftlint >/dev/null; then\nswiftlint\nelse\necho \"note: SwiftLint not installed; skipping lint\"\nfi\n";
+		};
+		C0DE20000000000000000004 /* Install MapLibre dSYM */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/WireGuard.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+				"$(PROJECT_DIR)/Scripts/copy-maplibre-dsym.sh",
+			);
+			name = "Install MapLibre dSYM";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "exec \"$PROJECT_DIR/Scripts/copy-maplibre-dsym.sh\"\n";
+			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
 
