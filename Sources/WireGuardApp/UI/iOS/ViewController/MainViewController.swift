@@ -977,10 +977,6 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         mapLocationLabel.adjustsFontForContentSizeCategory = true
         mapLocationLabel.textColor = .white
         mapLocationLabel.numberOfLines = 2
-        mapLocationLabel.backgroundColor = WireRouteAppearance.background.withAlphaComponent(0.86)
-        mapLocationLabel.layer.cornerRadius = 14
-        mapLocationLabel.layer.cornerCurve = .continuous
-        mapLocationLabel.layer.masksToBounds = true
         mapLocationLabel.textAlignment = .center
 
         var locationConfiguration = UIButton.Configuration.tinted()
