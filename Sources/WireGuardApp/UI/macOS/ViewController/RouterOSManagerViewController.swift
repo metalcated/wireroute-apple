@@ -296,13 +296,13 @@ final class RouterOSManagerViewController: NSViewController {
         addPeerButton.target = self
         addPeerButton.action = #selector(addPeerClicked)
         addPeerButton.bezelStyle = .regularSquare
-        addPeerButton.controlSize = .large
+        addPeerButton.controlSize = .regular
         addPeerButton.isEnabled = false
         addPeerButton.setContentHuggingPriority(.required, for: .horizontal)
         importPeerButton.target = self
         importPeerButton.action = #selector(importExistingPeerClicked)
         importPeerButton.bezelStyle = .regularSquare
-        importPeerButton.controlSize = .large
+        importPeerButton.controlSize = .regular
         importPeerButton.isEnabled = false
         importPeerButton.toolTip = tr("macRouterOSImportExistingPeerHelp")
         importPeerButton.setContentHuggingPriority(.required, for: .horizontal)
@@ -433,7 +433,7 @@ final class RouterOSManagerViewController: NSViewController {
         helpLabel.font = .systemFont(ofSize: 12)
         helpLabel.textColor = .secondaryLabelColor
 
-        connectionPopUp.controlSize = .large
+        connectionPopUp.controlSize = .regular
         connectionPopUp.font = .systemFont(ofSize: 14)
         connectionPopUp.target = self
         connectionPopUp.action = #selector(connectionSelectionChanged)
@@ -441,13 +441,13 @@ final class RouterOSManagerViewController: NSViewController {
         connectButton.target = self
         connectButton.action = #selector(connectClicked)
         connectButton.bezelStyle = .regularSquare
-        connectButton.controlSize = .large
+        connectButton.controlSize = .regular
         connectButton.keyEquivalent = "\r"
 
         manageConnectionsButton.target = self
         manageConnectionsButton.action = #selector(manageConnectionsClicked)
         manageConnectionsButton.bezelStyle = .regularSquare
-        manageConnectionsButton.controlSize = .large
+        manageConnectionsButton.controlSize = .regular
 
         progressIndicator.style = .spinning
         progressIndicator.controlSize = .small
@@ -1972,12 +1972,12 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
         }
 
         configureDefaultInterfacePopUp(preferredInterface: existingConnection?.defaultInterface)
-        defaultInterfacePopUp.controlSize = .large
+        defaultInterfacePopUp.controlSize = .regular
         defaultInterfacePopUp.font = .systemFont(ofSize: 14)
         loadInterfacesButton.target = self
         loadInterfacesButton.action = #selector(loadInterfacesClicked)
         loadInterfacesButton.bezelStyle = .regularSquare
-        loadInterfacesButton.controlSize = .large
+        loadInterfacesButton.controlSize = .regular
         interfaceProgressIndicator.style = .spinning
         interfaceProgressIndicator.controlSize = .small
         interfaceProgressIndicator.isDisplayedWhenStopped = false
@@ -2530,7 +2530,7 @@ final class RouterOSSettingsViewController: NSViewController {
             appearancePopUp.addItem(withTitle: appearance.localizedTitle)
             appearancePopUp.lastItem?.representedObject = appearance.rawValue
         }
-        appearancePopUp.controlSize = .large
+        appearancePopUp.controlSize = .regular
         appearancePopUp.font = .systemFont(ofSize: 14)
 
         statusIconPopUp.removeAllItems()
@@ -2540,7 +2540,7 @@ final class RouterOSSettingsViewController: NSViewController {
             item.representedObject = style.rawValue
             item.image = StatusItemController.previewImage(for: style)
         }
-        statusIconPopUp.controlSize = .large
+        statusIconPopUp.controlSize = .regular
         statusIconPopUp.font = .systemFont(ofSize: 14)
 
         endpointField.placeholderString = tr("macRouterOSEndpointPlaceholder")

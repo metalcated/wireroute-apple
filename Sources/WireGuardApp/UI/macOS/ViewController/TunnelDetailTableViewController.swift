@@ -695,7 +695,7 @@ private final class MacDNSProtectionViewController: NSViewController, NSTextFiel
         presetPopUp.removeAllItems()
         presetPopUp.addItems(withTitles: DNSProtectionPreset.allCases.map(\.localizedTitle))
         presetPopUp.addItem(withTitle: tr("dnsPresetCustom"))
-        presetPopUp.controlSize = .large
+        presetPopUp.controlSize = .regular
         presetPopUp.font = .systemFont(ofSize: 13)
         presetPopUp.target = self
         presetPopUp.action = #selector(presetChanged)

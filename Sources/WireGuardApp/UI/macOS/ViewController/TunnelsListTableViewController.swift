@@ -247,7 +247,7 @@ private final class SidebarActionButton: NSButton {
 private final class SidebarMenuButton: WireRoutePopUpButton {
     override init(frame buttonFrame: NSRect, pullsDown flag: Bool) {
         super.init(frame: buttonFrame, pullsDown: flag)
-        controlSize = .large
+        controlSize = .regular
         font = .systemFont(ofSize: 13, weight: .medium)
         imagePosition = .imageLeading
         updateWireRouteTheme()
@@ -441,7 +441,7 @@ class TunnelsListTableViewController: NSViewController {
             scrollView.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: -10),
             buttonBar.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
             buttonBar.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
-            buttonBar.heightAnchor.constraint(equalToConstant: 38),
+            buttonBar.heightAnchor.constraint(equalToConstant: 34),
             sectionDivider.topAnchor.constraint(equalTo: buttonBar.bottomAnchor, constant: 14),
             sectionDivider.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
             sectionDivider.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),

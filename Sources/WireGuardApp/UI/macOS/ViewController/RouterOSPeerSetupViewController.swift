@@ -96,11 +96,11 @@ final class RouterOSPeerSetupViewController: NSViewController {
 
         let cancelButton = WireRouteButton(title: tr("macRouterOSCancel"), target: self, action: #selector(cancelClicked))
         cancelButton.bezelStyle = .regularSquare
-        cancelButton.controlSize = .large
+        cancelButton.controlSize = .regular
         reviewButton.target = self
         reviewButton.action = #selector(reviewClicked)
         reviewButton.bezelStyle = .regularSquare
-        reviewButton.controlSize = .large
+        reviewButton.controlSize = .regular
         reviewButton.keyEquivalent = "\r"
 
         errorLabel.textColor = .systemRed

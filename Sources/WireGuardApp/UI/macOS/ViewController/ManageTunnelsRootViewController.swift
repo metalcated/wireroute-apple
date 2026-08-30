@@ -240,6 +240,7 @@ final class WireRouteButton: NSButton, WireRouteThemeField {
 
     private func configureThemeUpdates() {
         setButtonType(.momentaryPushIn)
+        controlSize = .regular
         focusRingType = .exterior
         NotificationCenter.default.addObserver(
             self,
@@ -457,6 +458,7 @@ class WireRoutePopUpButton: NSPopUpButton, WireRouteThemeField {
     }
 
     private func configureThemeUpdates() {
+        controlSize = .regular
         focusRingType = .exterior
         NotificationCenter.default.addObserver(
             self,
