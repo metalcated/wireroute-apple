@@ -595,6 +595,7 @@
 "macButtonEdit" = "Edit";
 "macTunnelProfilesTitle" = "Profiles";
 "macTunnelProfilesSubtitle" = "Choose a profile to connect or change its routing.";
+"macSidebarManageTitle" = "Manage";
 "macButtonRouterOSPeers" = "RouterOS Peers";
 "macTunnelAddProfile" = "Add profile";
 "macTunnelMoreActions" = "More";

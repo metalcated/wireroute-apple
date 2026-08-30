@@ -5,25 +5,72 @@ import Cocoa
 import UniformTypeIdentifiers
 
 private final class ProfileTableRowView: NSTableRowView {
+    private var hoverTrackingArea: NSTrackingArea?
+    private var isPointerInside = false {
+        didSet { needsDisplay = true }
+    }
+
     override var interiorBackgroundStyle: NSView.BackgroundStyle {
         return .normal
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        super.drawBackground(in: dirtyRect)
+        guard isPointerInside, !isSelected else { return }
+
+        let hoverRect = bounds.insetBy(dx: 3, dy: 2)
+        let hoverPath = NSBezierPath(roundedRect: hoverRect, xRadius: 7, yRadius: 7)
+        let hoverColor = WireRouteTheme.isBlueNordic
+            ? WireRouteTheme.color(for: .raised).withAlphaComponent(0.72)
+            : NSColor.selectedContentBackgroundColor.withAlphaComponent(0.08)
+        hoverColor.setFill()
+        hoverPath.fill()
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
 
-        let selectionRect = bounds.insetBy(dx: 0, dy: 2)
-        let selectionPath = NSBezierPath(roundedRect: selectionRect, xRadius: 11, yRadius: 11)
+        let selectionRect = bounds.insetBy(dx: 3, dy: 2)
+        let selectionPath = NSBezierPath(roundedRect: selectionRect, xRadius: 7, yRadius: 7)
         let accentColor = WireRouteTheme.accentColor
         let fillColor = isEmphasized
-            ? accentColor.withAlphaComponent(0.18)
-            : NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.42)
+            ? accentColor.withAlphaComponent(0.16)
+            : NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.30)
         fillColor.setFill()
         selectionPath.fill()
 
-        accentColor.withAlphaComponent(isEmphasized ? 0.42 : 0.20).setStroke()
-        selectionPath.lineWidth = 1
-        selectionPath.stroke()
+        let railRect = NSRect(
+            x: selectionRect.minX,
+            y: selectionRect.midY - 11,
+            width: 3,
+            height: 22
+        )
+        let railPath = NSBezierPath(roundedRect: railRect, xRadius: 1.5, yRadius: 1.5)
+        accentColor.setFill()
+        railPath.fill()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerInside = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerInside = false
     }
 }
 
@@ -46,6 +93,7 @@ private final class SidebarActionButton: NSButton {
     private let leadingImageView = NSImageView()
     private let buttonTitleLabel = NSTextField(labelWithString: "")
     private let trailingImageView = NSImageView()
+    private let selectionRail = NSView()
     private var hoverTrackingArea: NSTrackingArea?
     private var isPointerInside = false {
         didSet {
@@ -76,9 +124,9 @@ private final class SidebarActionButton: NSButton {
         leadingImageView.imageScaling = .scaleProportionallyDown
 
         buttonTitleLabel.stringValue = title
-        buttonTitleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        buttonTitleLabel.font = .systemFont(ofSize: 12, weight: .medium)
         buttonTitleLabel.textColor = .labelColor
-        buttonTitleLabel.alignment = .center
+        buttonTitleLabel.alignment = .left
         buttonTitleLabel.lineBreakMode = .byTruncatingTail
 
         trailingImageView.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)?
@@ -93,25 +141,34 @@ private final class SidebarActionButton: NSButton {
             object: nil
         )
 
+        selectionRail.wantsLayer = true
+        selectionRail.layer?.cornerRadius = 1.5
+        selectionRail.isHidden = true
+
+        addSubview(selectionRail)
         addSubview(leadingImageView)
         addSubview(buttonTitleLabel)
         addSubview(trailingImageView)
+        selectionRail.translatesAutoresizingMaskIntoConstraints = false
         leadingImageView.translatesAutoresizingMaskIntoConstraints = false
         buttonTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         trailingImageView.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            leadingImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            selectionRail.leadingAnchor.constraint(equalTo: leadingAnchor),
+            selectionRail.centerYAnchor.constraint(equalTo: centerYAnchor),
+            selectionRail.widthAnchor.constraint(equalToConstant: 3),
+            selectionRail.heightAnchor.constraint(equalToConstant: 18),
+            leadingImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             leadingImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
             leadingImageView.widthAnchor.constraint(equalToConstant: 18),
             leadingImageView.heightAnchor.constraint(equalToConstant: 18),
-            trailingImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            trailingImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             trailingImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
             trailingImageView.widthAnchor.constraint(equalTo: leadingImageView.widthAnchor),
             trailingImageView.heightAnchor.constraint(equalTo: leadingImageView.heightAnchor),
-            buttonTitleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            buttonTitleLabel.leadingAnchor.constraint(equalTo: leadingImageView.trailingAnchor, constant: 10),
             buttonTitleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            buttonTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingImageView.trailingAnchor, constant: 10),
             buttonTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingImageView.leadingAnchor, constant: -10)
         ])
     }
@@ -126,15 +183,24 @@ private final class SidebarActionButton: NSButton {
 
     override func updateLayer() {
         super.updateLayer()
-        layer?.cornerRadius = 10
+        layer?.cornerRadius = 7
         layer?.cornerCurve = .continuous
-        let fillAlpha: CGFloat = isDestinationSelected ? 0.18 : (isPointerInside ? 0.17 : 0.10)
-        let borderAlpha: CGFloat = isDestinationSelected ? 0.48 : (isPointerInside ? 0.48 : 0.30)
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = WireRouteTheme.accentColor.withAlphaComponent(fillAlpha).cgColor
-            layer?.borderColor = WireRouteTheme.accentColor.withAlphaComponent(borderAlpha).cgColor
+            let backgroundColor: NSColor
+            if isDestinationSelected {
+                backgroundColor = WireRouteTheme.accentColor.withAlphaComponent(0.16)
+            } else if isPointerInside {
+                backgroundColor = WireRouteTheme.isBlueNordic
+                    ? WireRouteTheme.color(for: .raised).withAlphaComponent(0.72)
+                    : NSColor.selectedContentBackgroundColor.withAlphaComponent(0.08)
+            } else {
+                backgroundColor = .clear
+            }
+            layer?.backgroundColor = backgroundColor.cgColor
+            selectionRail.layer?.backgroundColor = WireRouteTheme.accentColor.cgColor
         }
-        layer?.borderWidth = 1
+        layer?.borderWidth = 0
+        selectionRail.isHidden = !isDestinationSelected
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -178,6 +244,86 @@ private final class SidebarActionButton: NSButton {
     }
 }
 
+private final class SidebarMenuButton: NSPopUpButton {
+    private var hoverTrackingArea: NSTrackingArea?
+    private var isPointerInside = false {
+        didSet { needsDisplay = true }
+    }
+
+    override init(frame buttonFrame: NSRect, pullsDown flag: Bool) {
+        super.init(frame: buttonFrame, pullsDown: flag)
+        isBordered = false
+        bezelStyle = .smallSquare
+        controlSize = .regular
+        font = .systemFont(ofSize: 12, weight: .medium)
+        imagePosition = .imageLeading
+        focusRingType = .exterior
+        wantsLayer = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool {
+        return true
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        layer?.cornerRadius = 7
+        layer?.cornerCurve = .continuous
+        layer?.borderWidth = 1
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let fillColor = WireRouteTheme.isBlueNordic
+                ? WireRouteTheme.color(for: .raised).withAlphaComponent(isPointerInside ? 0.96 : 0.78)
+                : NSColor.controlBackgroundColor.withAlphaComponent(isPointerInside ? 0.96 : 0.76)
+            layer?.backgroundColor = fillColor.cgColor
+            layer?.borderColor = WireRouteTheme.isBlueNordic
+                ? WireRouteTheme.borderColor.withAlphaComponent(isPointerInside ? 0.82 : 0.55).cgColor
+                : NSColor.separatorColor.withAlphaComponent(isPointerInside ? 0.72 : 0.42).cgColor
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerInside = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerInside = false
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    @objc private func themeDidChange() {
+        needsDisplay = true
+    }
+}
+
 @MainActor
 protocol TunnelsListTableViewControllerDelegate: AnyObject {
     func routerOSManagerSelected()
@@ -201,8 +347,8 @@ class TunnelsListTableViewController: NSViewController {
         tableView.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("TunnelsList")))
         tableView.headerView = nil
         tableView.rowSizeStyle = .custom
-        tableView.rowHeight = 58
-        tableView.intercellSpacing = NSSize(width: 0, height: 5)
+        tableView.rowHeight = 54
+        tableView.intercellSpacing = .zero
         tableView.backgroundColor = .clear
         tableView.selectionHighlightStyle = .regular
         tableView.allowsMultipleSelection = true
@@ -219,12 +365,8 @@ class TunnelsListTableViewController: NSViewController {
         menu.addItem(withTitle: tr("macMenuImportTunnels"), action: #selector(handleImportTunnelAction), keyEquivalent: "o")
         menu.autoenablesItems = false
 
-        let button = NSPopUpButton(frame: NSRect.zero, pullsDown: true)
+        let button = SidebarMenuButton(frame: NSRect.zero, pullsDown: true)
         button.menu = menu
-        button.bezelStyle = .rounded
-        button.controlSize = .large
-        button.font = .systemFont(ofSize: 12, weight: .semibold)
-        button.imagePosition = .imageLeading
         button.toolTip = tr("macTunnelAddProfile")
         (button.cell as? NSPopUpButtonCell)?.arrowPosition = .arrowAtBottom
         return button
@@ -255,12 +397,8 @@ class TunnelsListTableViewController: NSViewController {
         deleteItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: tr("macMenuDeleteSelected"))
         menu.autoenablesItems = true
 
-        let button = NSPopUpButton(frame: NSRect.zero, pullsDown: true)
+        let button = SidebarMenuButton(frame: NSRect.zero, pullsDown: true)
         button.menu = menu
-        button.bezelStyle = .rounded
-        button.controlSize = .large
-        button.font = .systemFont(ofSize: 12, weight: .semibold)
-        button.imagePosition = .imageLeading
         button.toolTip = tr("macTunnelMoreActions")
         (button.cell as? NSPopUpButtonCell)?.arrowPosition = .arrowAtBottom
         return button
@@ -305,78 +443,90 @@ class TunnelsListTableViewController: NSViewController {
         clipView.documentView = tableView
         scrollView.contentView = clipView
 
-        let profileListContainer = AppearanceAwareMaterialView(
-            material: .contentBackground,
-            blendingMode: .withinWindow,
-            nordicSurface: .inset
-        )
-        profileListContainer.adaptiveBorderColor = .separatorColor
-        profileListContainer.adaptiveBorderAlpha = 0.35
-        profileListContainer.layer?.cornerRadius = 10
-        profileListContainer.layer?.cornerCurve = .continuous
-        profileListContainer.layer?.borderWidth = 1
-        profileListContainer.addSubview(scrollView)
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: profileListContainer.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: profileListContainer.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: profileListContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: profileListContainer.bottomAnchor)
-        ])
-
         let titleLabel = NSTextField(labelWithString: tr("macTunnelProfilesTitle"))
-        titleLabel.font = .systemFont(ofSize: 19, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
         let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macTunnelProfilesSubtitle"))
-        subtitleLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        subtitleLabel.font = .systemFont(ofSize: 11, weight: .regular)
         subtitleLabel.textColor = .secondaryLabelColor
-        let sidebarHeader = NSStackView(views: [titleLabel, subtitleLabel, routerOSButton, settingsButton])
+        let sidebarHeader = NSStackView(views: [titleLabel, subtitleLabel])
         sidebarHeader.orientation = .vertical
         sidebarHeader.alignment = .leading
         sidebarHeader.spacing = 4
-        sidebarHeader.setCustomSpacing(13, after: subtitleLabel)
-        sidebarHeader.setCustomSpacing(8, after: routerOSButton)
 
         let buttonBar = NSStackView(views: [addButton, actionButton])
         buttonBar.orientation = .horizontal
         buttonBar.spacing = 8
         buttonBar.distribution = .fillEqually
 
+        let sectionDivider = NSBox()
+        sectionDivider.boxType = .separator
+
+        let manageTitleLabel = NSTextField(labelWithString: tr("macSidebarManageTitle").uppercased())
+        manageTitleLabel.font = .systemFont(ofSize: 10, weight: .semibold)
+        manageTitleLabel.textColor = .secondaryLabelColor
+        manageTitleLabel.attributedStringValue = NSAttributedString(
+            string: manageTitleLabel.stringValue,
+            attributes: [
+                .font: manageTitleLabel.font as Any,
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .kern: 0.8
+            ]
+        )
+
         let containerView = AppearanceAwareMaterialView(
             material: .sidebar,
             blendingMode: .withinWindow,
             nordicSurface: .sidebar
         )
-        containerView.adaptiveBorderColor = .separatorColor
-        containerView.adaptiveBorderAlpha = 0.45
-        containerView.layer?.cornerRadius = 16
+        containerView.adaptiveBorderAlpha = 0
+        containerView.layer?.cornerRadius = 9
         containerView.layer?.cornerCurve = .continuous
-        containerView.layer?.borderWidth = 1
+        containerView.layer?.borderWidth = 0
         containerView.addSubview(sidebarHeader)
-        containerView.addSubview(profileListContainer)
+        containerView.addSubview(scrollView)
         containerView.addSubview(buttonBar)
+        containerView.addSubview(sectionDivider)
+        containerView.addSubview(manageTitleLabel)
+        containerView.addSubview(routerOSButton)
+        containerView.addSubview(settingsButton)
         sidebarHeader.translatesAutoresizingMaskIntoConstraints = false
-        profileListContainer.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
         buttonBar.translatesAutoresizingMaskIntoConstraints = false
+        sectionDivider.translatesAutoresizingMaskIntoConstraints = false
+        manageTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        routerOSButton.translatesAutoresizingMaskIntoConstraints = false
+        settingsButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            sidebarHeader.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 16),
-            sidebarHeader.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
-            sidebarHeader.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
-            routerOSButton.widthAnchor.constraint(equalTo: sidebarHeader.widthAnchor),
-            routerOSButton.heightAnchor.constraint(equalToConstant: 36),
-            settingsButton.widthAnchor.constraint(equalTo: sidebarHeader.widthAnchor),
-            settingsButton.heightAnchor.constraint(equalToConstant: 36),
-            profileListContainer.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor, constant: 12),
-            profileListContainer.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
-            profileListContainer.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
-            profileListContainer.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: -12),
+            sidebarHeader.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 18),
+            sidebarHeader.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 14),
+            sidebarHeader.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -14),
+            scrollView.topAnchor.constraint(equalTo: sidebarHeader.bottomAnchor, constant: 12),
+            scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 7),
+            scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -7),
+            scrollView.bottomAnchor.constraint(equalTo: buttonBar.topAnchor, constant: -10),
             buttonBar.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
             buttonBar.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
-            containerView.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor, constant: 12)
+            buttonBar.heightAnchor.constraint(equalToConstant: 34),
+            sectionDivider.topAnchor.constraint(equalTo: buttonBar.bottomAnchor, constant: 14),
+            sectionDivider.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
+            sectionDivider.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
+            manageTitleLabel.topAnchor.constraint(equalTo: sectionDivider.bottomAnchor, constant: 14),
+            manageTitleLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 14),
+            manageTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: containerView.trailingAnchor, constant: -14),
+            routerOSButton.topAnchor.constraint(equalTo: manageTitleLabel.bottomAnchor, constant: 8),
+            routerOSButton.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 8),
+            routerOSButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -8),
+            routerOSButton.heightAnchor.constraint(equalToConstant: 36),
+            settingsButton.topAnchor.constraint(equalTo: routerOSButton.bottomAnchor, constant: 3),
+            settingsButton.leadingAnchor.constraint(equalTo: routerOSButton.leadingAnchor),
+            settingsButton.trailingAnchor.constraint(equalTo: routerOSButton.trailingAnchor),
+            settingsButton.heightAnchor.constraint(equalToConstant: 36),
+            containerView.bottomAnchor.constraint(equalTo: settingsButton.bottomAnchor, constant: 12)
         ])
 
         NSLayoutConstraint.activate([
-            containerView.widthAnchor.constraint(equalToConstant: 264),
+            containerView.widthAnchor.constraint(equalToConstant: 276),
             containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120)
         ])
 
