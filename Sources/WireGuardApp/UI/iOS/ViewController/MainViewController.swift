@@ -609,7 +609,7 @@ private final class WireRouteHomeViewController: UIViewController {
         heading.axis = .horizontal
         heading.alignment = .center
         heading.spacing = 8
-        valueLabel.font = WireRouteAppearance.roundedFont(size: 16, weight: .semibold, textStyle: .body)
+        valueLabel.font = WireRouteAppearance.roundedFont(size: 16, weight: .regular, textStyle: .body)
         valueLabel.adjustsFontForContentSizeCategory = true
         valueLabel.numberOfLines = 3
         valueLabel.lineBreakMode = .byTruncatingTail
