@@ -89,6 +89,7 @@
 "tunnelInterfaceStatus" = "Status";
 
 "tunnelSectionTitlePeer" = "Peer";
+"tunnelSectionTitlePeerNumber (%d)" = "Peer %d";
 
 "tunnelPeerPublicKey" = "Public key";
 "tunnelPeerPreSharedKey" = "Preshared key";

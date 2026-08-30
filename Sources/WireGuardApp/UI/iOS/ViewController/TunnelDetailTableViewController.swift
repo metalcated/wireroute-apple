@@ -832,6 +832,400 @@ private extension UIFont {
     }
 }
 
+@MainActor
+private final class ProfileStatusCardCell: UITableViewCell {
+    var tunnel: TunnelContainer? {
+        didSet {
+            statusObservationToken = nil
+            isOnDemandEnabledObservationToken = nil
+            hasOnDemandRulesObservationToken = nil
+            update(animated: false)
+
+            statusObservationToken = tunnel?.observe(\.status) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.update(animated: true)
+                }
+            }
+            isOnDemandEnabledObservationToken = tunnel?.observe(\.isActivateOnDemandEnabled) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.update(animated: true)
+                }
+            }
+            hasOnDemandRulesObservationToken = tunnel?.observe(\.hasOnDemandRules) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.update(animated: true)
+                }
+            }
+        }
+    }
+
+    var onPowerTapped: ((Bool) -> Void)?
+
+    private let routeGlyphView = WireRouteGlyphView()
+    private let statusLabel: UILabel = {
+        let label = UILabel()
+        label.font = WireRouteAppearance.roundedFont(size: 22, weight: .semibold, textStyle: .title2)
+        label.adjustsFontForContentSizeCategory = true
+        label.numberOfLines = 2
+        return label
+    }()
+    private let routeModeLabel: UILabel = {
+        let label = UILabel()
+        label.font = UIFont.preferredFont(forTextStyle: .caption1)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        return label
+    }()
+    private let routeModeImageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.tintColor = WireRouteAppearance.signalBlue
+        imageView.contentMode = .scaleAspectFit
+        return imageView
+    }()
+    private let routeModeContainer: UIView = {
+        let view = UIView()
+        view.backgroundColor = WireRouteAppearance.inset
+        view.layer.cornerRadius = 11
+        view.layer.cornerCurve = .continuous
+        view.layer.borderWidth = 1
+        view.layer.borderColor = WireRouteAppearance.border.withAlphaComponent(0.55).cgColor
+        return view
+    }()
+    private let powerButton: UIButton = {
+        let button = UIButton(type: .system)
+        let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 25, weight: .medium)
+        button.setImage(UIImage(systemName: "power", withConfiguration: symbolConfiguration), for: .normal)
+        button.backgroundColor = WireRouteAppearance.card
+        button.tintColor = .secondaryLabel
+        button.layer.cornerRadius = 30
+        button.layer.cornerCurve = .continuous
+        button.layer.borderWidth = 1
+        button.layer.borderColor = WireRouteAppearance.border.cgColor
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.26
+        button.layer.shadowRadius = 9
+        button.layer.shadowOffset = CGSize(width: 0, height: 6)
+        button.accessibilityTraits = .button
+        return button
+    }()
+
+    private var isPowerOn = false
+    private var statusObservationToken: NSKeyValueObservation?
+    private var isOnDemandEnabledObservationToken: NSKeyValueObservation?
+    private var hasOnDemandRulesObservationToken: NSKeyValueObservation?
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+        selectionStyle = .none
+        backgroundColor = WireRouteAppearance.raised
+        contentView.backgroundColor = WireRouteAppearance.raised
+
+        let routeModeStack = UIStackView(arrangedSubviews: [routeModeImageView, routeModeLabel])
+        routeModeStack.axis = .horizontal
+        routeModeStack.alignment = .center
+        routeModeStack.spacing = 5
+        routeModeContainer.addSubview(routeModeStack)
+        routeModeStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let textStack = UIStackView(arrangedSubviews: [statusLabel, routeModeContainer])
+        textStack.axis = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 10
+
+        let contentStack = UIStackView(arrangedSubviews: [routeGlyphView, textStack, UIView(), powerButton])
+        contentStack.axis = .horizontal
+        contentStack.alignment = .center
+        contentStack.spacing = 14
+        contentView.addSubview(contentStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            contentStack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor, constant: 4),
+            contentStack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor, constant: -4),
+            contentStack.topAnchor.constraint(equalTo: contentView.layoutMarginsGuide.topAnchor, constant: 12),
+            contentStack.bottomAnchor.constraint(equalTo: contentView.layoutMarginsGuide.bottomAnchor, constant: -12),
+            routeGlyphView.widthAnchor.constraint(equalToConstant: 62),
+            routeGlyphView.heightAnchor.constraint(equalTo: routeGlyphView.widthAnchor),
+            powerButton.widthAnchor.constraint(equalToConstant: 60),
+            powerButton.heightAnchor.constraint(equalTo: powerButton.widthAnchor),
+            routeModeStack.leadingAnchor.constraint(equalTo: routeModeContainer.leadingAnchor, constant: 9),
+            routeModeStack.trailingAnchor.constraint(equalTo: routeModeContainer.trailingAnchor, constant: -9),
+            routeModeStack.topAnchor.constraint(equalTo: routeModeContainer.topAnchor, constant: 5),
+            routeModeStack.bottomAnchor.constraint(equalTo: routeModeContainer.bottomAnchor, constant: -5),
+            routeModeImageView.widthAnchor.constraint(equalToConstant: 12),
+            routeModeImageView.heightAnchor.constraint(equalToConstant: 12)
+        ])
+
+        powerButton.addTarget(self, action: #selector(powerTapped), for: .touchUpInside)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        tunnel = nil
+        onPowerTapped = nil
+    }
+
+    @objc private func powerTapped() {
+        onPowerTapped?(!isPowerOn)
+    }
+
+    private func update(animated: Bool) {
+        guard let tunnel else {
+            statusLabel.text = nil
+            routeModeLabel.text = nil
+            routeModeImageView.image = nil
+            powerButton.isEnabled = false
+            return
+        }
+
+        let status = tunnel.status
+        let isOnDemandEngaged = tunnel.isActivateOnDemandEnabled
+        let statusText: String
+        switch status {
+        case .inactive:
+            statusText = tunnel.hasOnDemandRules && !isOnDemandEngaged
+                ? tr("tunnelStatusOnDemandDisabled")
+                : tr("tunnelStatusInactive")
+        case .activating:
+            statusText = tr("tunnelStatusActivating")
+        case .active:
+            statusText = tr("tunnelStatusActive")
+        case .deactivating:
+            statusText = tr("tunnelStatusDeactivating")
+        case .reasserting:
+            statusText = tr("tunnelStatusReasserting")
+        case .restarting:
+            statusText = tr("tunnelStatusRestarting")
+        case .waiting:
+            statusText = tr("tunnelStatusWaiting")
+        }
+
+        let displayStatus = tunnel.hasOnDemandRules && isOnDemandEngaged
+            ? statusText + tr("tunnelStatusAddendumOnDemand")
+            : statusText
+        let stateColor: UIColor
+        switch status {
+        case .active:
+            stateColor = WireRouteAppearance.liveTeal
+        case .activating, .deactivating, .reasserting, .restarting, .waiting:
+            stateColor = WireRouteAppearance.warningAmber
+        case .inactive:
+            stateColor = isOnDemandEngaged ? WireRouteAppearance.warningAmber : .secondaryLabel
+        }
+
+        statusLabel.text = displayStatus
+        statusLabel.textColor = stateColor
+        let isFullTunnel = tunnel.routingMode == .full
+        routeModeLabel.text = isFullTunnel ? tr("iosProfilesRoutingFull") : tr("iosProfilesRoutingSplit")
+        routeModeImageView.image = UIImage(systemName: isFullTunnel ? "globe" : "arrow.triangle.branch")
+        routeGlyphView.update(status: status, routingMode: tunnel.routingMode, animated: animated)
+
+        isPowerOn = ((status != .deactivating && status != .inactive) || isOnDemandEngaged)
+        let powerTint = isOnDemandEngaged && !(status == .activating || status == .active)
+            ? WireRouteAppearance.warningAmber
+            : WireRouteAppearance.liveTeal
+        let canToggle = tunnel.hasOnDemandRules || status == .inactive || status == .active
+        powerButton.isEnabled = canToggle
+        if isPowerOn {
+            powerButton.accessibilityTraits.insert(.selected)
+        } else {
+            powerButton.accessibilityTraits.remove(.selected)
+        }
+        powerButton.accessibilityLabel = tunnel.hasOnDemandRules
+            ? tr(
+                format: isOnDemandEngaged
+                    ? "tunnelPowerButtonDisableOnDemand (%@)"
+                    : "tunnelPowerButtonEnableOnDemand (%@)",
+                tunnel.name
+            )
+            : tr(
+                format: isPowerOn
+                    ? "tunnelPowerButtonDisconnect (%@)"
+                    : "tunnelPowerButtonConnect (%@)",
+                tunnel.name
+            )
+        powerButton.accessibilityValue = displayStatus
+
+        let changes = {
+            self.powerButton.tintColor = self.isPowerOn ? powerTint : .secondaryLabel
+            self.powerButton.backgroundColor = self.isPowerOn
+                ? powerTint.withAlphaComponent(0.17)
+                : WireRouteAppearance.card
+            self.powerButton.layer.borderColor = self.isPowerOn
+                ? powerTint.withAlphaComponent(0.62).cgColor
+                : WireRouteAppearance.border.cgColor
+        }
+        if animated && !UIAccessibility.isReduceMotionEnabled {
+            UIView.transition(
+                with: powerButton,
+                duration: 0.2,
+                options: [.transitionCrossDissolve, .allowUserInteraction],
+                animations: changes
+            )
+        } else {
+            changes()
+        }
+    }
+}
+
+private final class ProfileActionCardCell: UITableViewCell {
+    private let iconContainer = UIView()
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let detailLabel = UILabel()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+        backgroundColor = WireRouteAppearance.card
+        accessoryType = .disclosureIndicator
+        tintColor = WireRouteAppearance.signalBlue
+        let selectedView = UIView()
+        selectedView.backgroundColor = WireRouteAppearance.raised
+        selectedBackgroundView = selectedView
+
+        iconContainer.backgroundColor = WireRouteAppearance.signalBlue.withAlphaComponent(0.14)
+        iconContainer.layer.cornerRadius = 13
+        iconContainer.layer.cornerCurve = .continuous
+        iconView.tintColor = WireRouteAppearance.signalBlue
+        iconView.contentMode = .scaleAspectFit
+
+        titleLabel.font = WireRouteAppearance.roundedFont(size: 17, weight: .medium, textStyle: .headline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        detailLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        detailLabel.adjustsFontForContentSizeCategory = true
+        detailLabel.textColor = .secondaryLabel
+        detailLabel.numberOfLines = 0
+
+        iconContainer.addSubview(iconView)
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, detailLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 4
+        let contentStack = UIStackView(arrangedSubviews: [iconContainer, textStack])
+        contentStack.axis = .horizontal
+        contentStack.alignment = .center
+        contentStack.spacing = 14
+        contentView.addSubview(contentStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            contentStack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+            contentStack.topAnchor.constraint(equalTo: contentView.layoutMarginsGuide.topAnchor, constant: 8),
+            contentStack.bottomAnchor.constraint(equalTo: contentView.layoutMarginsGuide.bottomAnchor, constant: -8),
+            iconContainer.widthAnchor.constraint(equalToConstant: 46),
+            iconContainer.heightAnchor.constraint(equalTo: iconContainer.widthAnchor),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 22),
+            iconView.heightAnchor.constraint(equalToConstant: 22)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(title: String, detail: String, symbolName: String) {
+        titleLabel.text = title
+        detailLabel.text = detail
+        iconView.image = UIImage(systemName: symbolName)
+        accessibilityLabel = title
+        accessibilityValue = detail
+    }
+}
+
+@MainActor
+private final class ProfileRoutingCardCell: UITableViewCell {
+    var onModeChanged: ((TunnelRouteMode) -> Void)?
+
+    private let iconContainer = UIView()
+    private let iconView = UIImageView(image: UIImage(systemName: "arrow.triangle.branch"))
+    private let titleLabel = UILabel()
+    private let descriptionLabel = UILabel()
+    private let modeControl = UISegmentedControl(items: [
+        tr("iosProfilesRoutingSplit"),
+        tr("iosProfilesRoutingFull")
+    ])
+
+    var isControlEnabled: Bool {
+        get { modeControl.isEnabled }
+        set { modeControl.isEnabled = newValue }
+    }
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+
+        selectionStyle = .none
+        backgroundColor = WireRouteAppearance.card
+        iconContainer.backgroundColor = WireRouteAppearance.signalBlue.withAlphaComponent(0.14)
+        iconContainer.layer.cornerRadius = 13
+        iconContainer.layer.cornerCurve = .continuous
+        iconView.tintColor = WireRouteAppearance.signalBlue
+        iconView.contentMode = .scaleAspectFit
+
+        titleLabel.text = tr("tunnelSectionTitleRouting")
+        titleLabel.font = WireRouteAppearance.roundedFont(size: 17, weight: .medium, textStyle: .headline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        descriptionLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        descriptionLabel.adjustsFontForContentSizeCategory = true
+        descriptionLabel.textColor = .secondaryLabel
+        descriptionLabel.numberOfLines = 0
+
+        modeControl.selectedSegmentTintColor = WireRouteAppearance.signalBlue
+        modeControl.setTitleTextAttributes([.foregroundColor: UIColor.label], for: .normal)
+        modeControl.setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
+        modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
+
+        iconContainer.addSubview(iconView)
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        let headingStack = UIStackView(arrangedSubviews: [iconContainer, titleLabel, UIView()])
+        headingStack.axis = .horizontal
+        headingStack.alignment = .center
+        headingStack.spacing = 14
+        let contentStack = UIStackView(arrangedSubviews: [headingStack, descriptionLabel, modeControl])
+        contentStack.axis = .vertical
+        contentStack.spacing = 12
+        contentView.addSubview(contentStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            contentStack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+            contentStack.topAnchor.constraint(equalTo: contentView.layoutMarginsGuide.topAnchor, constant: 8),
+            contentStack.bottomAnchor.constraint(equalTo: contentView.layoutMarginsGuide.bottomAnchor, constant: -8),
+            iconContainer.widthAnchor.constraint(equalToConstant: 46),
+            iconContainer.heightAnchor.constraint(equalTo: iconContainer.widthAnchor),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 22),
+            iconView.heightAnchor.constraint(equalToConstant: 22),
+            modeControl.heightAnchor.constraint(greaterThanOrEqualToConstant: 36)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(mode: TunnelRouteMode) {
+        modeControl.selectedSegmentIndex = mode == .full ? 1 : 0
+        descriptionLabel.text = mode == .full
+            ? tr("tunnelRoutingFullDescription")
+            : tr("tunnelRoutingSplitDescription")
+    }
+
+    @objc private func modeChanged() {
+        onModeChanged?(modeControl.selectedSegmentIndex == 1 ? .full : .split)
+    }
+}
+
 class TunnelDetailTableViewController: UITableViewController {
 
     private enum Section {
@@ -878,7 +1272,7 @@ class TunnelDetailTableViewController: UITableViewController {
         self.tunnel = tunnel
         tunnelViewModel = TunnelViewModel(tunnelConfiguration: tunnel.tunnelConfiguration)
         onDemandViewModel = ActivateOnDemandViewModel(tunnel: tunnel)
-        super.init(style: .grouped)
+        super.init(style: .insetGrouped)
         loadSections()
         loadVisibleFields()
         statusObservationToken = tunnel.observe(\.status) { [weak self] _, _ in
@@ -910,13 +1304,22 @@ class TunnelDetailTableViewController: UITableViewController {
         super.viewDidLoad()
         title = tunnelViewModel.interfaceData[.name]
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .edit, target: self, action: #selector(editTapped))
+        navigationItem.largeTitleDisplayMode = .never
 
-        tableView.estimatedRowHeight = 44
+        tableView.backgroundColor = WireRouteAppearance.background
+        tableView.separatorColor = WireRouteAppearance.border.withAlphaComponent(0.52)
+        tableView.separatorInset = UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20)
+        tableView.estimatedRowHeight = 64
         tableView.rowHeight = UITableView.automaticDimension
+        tableView.sectionHeaderTopPadding = 18
+        tableView.contentInset.bottom = 24
         tableView.register(SwitchCell.self)
         tableView.register(KeyValueCell.self)
         tableView.register(ButtonCell.self)
         tableView.register(ChevronCell.self)
+        tableView.register(ProfileStatusCardCell.self)
+        tableView.register(ProfileActionCardCell.self)
+        tableView.register(ProfileRoutingCardCell.self)
 
         restorationIdentifier = "TunnelDetailVC:\(tunnel.name)"
     }
@@ -1141,18 +1544,12 @@ extension TunnelDetailTableViewController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch sections[section] {
-        case .status:
-            return tr("tunnelSectionTitleStatus")
-        case .activity:
-            return tr("activityTitle")
-        case .routing:
-            return tr("tunnelSectionTitleRouting")
-        case .dnsProtection:
-            return tr("dnsProtectionTitle")
+        case .status, .activity, .routing, .dnsProtection:
+            return nil
         case .interface:
             return tr("tunnelSectionTitleInterface")
-        case .peer:
-            return tr("tunnelSectionTitlePeer")
+        case .peer(let index, _):
+            return tr(format: "tunnelSectionTitlePeerNumber (%d)", index + 1)
         case .onDemand:
             return tr("tunnelSectionTitleOnDemand")
         case .delete:
@@ -1165,9 +1562,12 @@ extension TunnelDetailTableViewController {
         case .status:
             return statusCell(for: tableView, at: indexPath)
         case .activity:
-            let cell: ChevronCell = tableView.dequeueReusableCell(for: indexPath)
-            cell.message = tr("activityOpenMonitor")
-            cell.detailMessage = tr("activityOpenMonitorDescription")
+            let cell: ProfileActionCardCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.configure(
+                title: tr("activityTitle"),
+                detail: tr("activityOpenMonitorDescription"),
+                symbolName: "chart.xyaxis.line"
+            )
             return cell
         case .routing:
             return routingCell(for: tableView, at: indexPath)
@@ -1187,9 +1587,7 @@ extension TunnelDetailTableViewController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch sections[section] {
         case .routing:
-            return tunnel.routingMode == .full
-                ? tr("tunnelRoutingFullDescription")
-                : tr("tunnelRoutingSplitDescription")
+            return nil
         case .dnsProtection:
             return tunnel.dnsProtectionPolicy.localizedDescription
         default:
@@ -1198,78 +1596,9 @@ extension TunnelDetailTableViewController {
     }
 
     private func statusCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
-        let cell: SwitchCell = tableView.dequeueReusableCell(for: indexPath)
-
-        let update: @MainActor @Sendable (SwitchCell?, TunnelContainer) -> Void = { cell, tunnel in
-            guard let cell = cell else { return }
-
-            let status = tunnel.status
-            let isOnDemandEngaged = tunnel.isActivateOnDemandEnabled
-
-            let isSwitchOn = (status == .activating || status == .active || isOnDemandEngaged)
-            cell.switchView.setOn(isSwitchOn, animated: true)
-
-            if isOnDemandEngaged && !(status == .activating || status == .active) {
-                cell.switchView.onTintColor = UIColor.systemYellow
-            } else {
-                cell.switchView.onTintColor = UIColor.systemGreen
-            }
-
-            var text: String
-            switch status {
-            case .inactive:
-                text = tr("tunnelStatusInactive")
-            case .activating:
-                text = tr("tunnelStatusActivating")
-            case .active:
-                text = tr("tunnelStatusActive")
-            case .deactivating:
-                text = tr("tunnelStatusDeactivating")
-            case .reasserting:
-                text = tr("tunnelStatusReasserting")
-            case .restarting:
-                text = tr("tunnelStatusRestarting")
-            case .waiting:
-                text = tr("tunnelStatusWaiting")
-            }
-
-            if tunnel.hasOnDemandRules {
-                text += isOnDemandEngaged ? tr("tunnelStatusAddendumOnDemand") : ""
-                cell.switchView.isUserInteractionEnabled = true
-                cell.isEnabled = true
-            } else {
-                cell.switchView.isUserInteractionEnabled = (status == .inactive || status == .active)
-                cell.isEnabled = (status == .inactive || status == .active)
-            }
-
-            if tunnel.hasOnDemandRules && !isOnDemandEngaged && status == .inactive {
-                text = tr("tunnelStatusOnDemandDisabled")
-            }
-
-            cell.textLabel?.text = text
-        }
-
-        update(cell, tunnel)
-        cell.statusObservationToken = tunnel.observe(\.status) { [weak self, weak cell] _, _ in
-            Task { @MainActor in
-                guard let self else { return }
-                update(cell, self.tunnel)
-            }
-        }
-        cell.isOnDemandEnabledObservationToken = tunnel.observe(\.isActivateOnDemandEnabled) { [weak self, weak cell] _, _ in
-            Task { @MainActor in
-                guard let self else { return }
-                update(cell, self.tunnel)
-            }
-        }
-        cell.hasOnDemandRulesObservationToken = tunnel.observe(\.hasOnDemandRules) { [weak self, weak cell] _, _ in
-            Task { @MainActor in
-                guard let self else { return }
-                update(cell, self.tunnel)
-            }
-        }
-
-        cell.onSwitchToggled = { [weak self] isOn in
+        let cell: ProfileStatusCardCell = tableView.dequeueReusableCell(for: indexPath)
+        cell.tunnel = tunnel
+        cell.onPowerTapped = { [weak self] isOn in
             guard let self = self else { return }
 
             if self.tunnel.hasOnDemandRules {
@@ -1290,20 +1619,18 @@ extension TunnelDetailTableViewController {
     }
 
     private func routingCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
-        let cell: SwitchCell = tableView.dequeueReusableCell(for: indexPath)
-        cell.message = tr("tunnelRoutingFullTunnel")
-        cell.isOn = tunnel.routingMode == .full
-        cell.onSwitchToggled = { [weak self, weak cell] isFullTunnel in
+        let cell: ProfileRoutingCardCell = tableView.dequeueReusableCell(for: indexPath)
+        cell.configure(mode: tunnel.routingMode)
+        cell.onModeChanged = { [weak self, weak cell] requestedMode in
             guard let self, let cell else { return }
-            cell.isEnabled = false
-            let requestedMode: TunnelRouteMode = isFullTunnel ? .full : .split
+            cell.isControlEnabled = false
             self.tunnelsManager.setRoutingMode(requestedMode, on: self.tunnel) { error in
-                cell.isEnabled = true
+                cell.isControlEnabled = true
                 guard let error else {
                     self.refreshAfterRoutingChange()
                     return
                 }
-                cell.isOn = self.tunnel.routingMode == .full
+                cell.configure(mode: self.tunnel.routingMode)
                 if let routingError = error as? TunnelRoutingError,
                    case .missingSplitRoutes = routingError {
                     self.presentSplitRouteEntry()
@@ -1316,9 +1643,12 @@ extension TunnelDetailTableViewController {
     }
 
     private func dnsProtectionCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
-        let cell: ChevronCell = tableView.dequeueReusableCell(for: indexPath)
-        cell.message = tr("dnsProtectionTitle")
-        cell.detailMessage = tunnel.dnsProtectionPolicy.localizedTitle
+        let cell: ProfileActionCardCell = tableView.dequeueReusableCell(for: indexPath)
+        cell.configure(
+            title: tr("dnsProtectionTitle"),
+            detail: tunnel.dnsProtectionPolicy.localizedTitle,
+            symbolName: "lock.shield"
+        )
         return cell
     }
 
@@ -1384,6 +1714,7 @@ extension TunnelDetailTableViewController {
         let visibleInterfaceFields = TunnelDetailTableViewController.interfaceFields.enumerated().filter { interfaceFieldIsVisible[$0.offset] }.map { $0.element }
         let field = visibleInterfaceFields[indexPath.row]
         let cell: KeyValueCell = tableView.dequeueReusableCell(for: indexPath)
+        configureConfigurationCell(cell, usesMonospacedValue: true)
         cell.key = field.localizedUIString
         cell.value = tunnelViewModel.interfaceData[field]
         return cell
@@ -1393,6 +1724,7 @@ extension TunnelDetailTableViewController {
         let visiblePeerFields = TunnelDetailTableViewController.peerFields.enumerated().filter { peerFieldIsVisible[peerIndex][$0.offset] }.map { $0.element }
         let field = visiblePeerFields[indexPath.row]
         let cell: KeyValueCell = tableView.dequeueReusableCell(for: indexPath)
+        configureConfigurationCell(cell, usesMonospacedValue: true)
         cell.key = field.localizedUIString
         if field == .persistentKeepAlive {
             cell.value = tr(format: "tunnelPeerPersistentKeepaliveValue (%@)", peerData[field])
@@ -1408,6 +1740,7 @@ extension TunnelDetailTableViewController {
         let field = TunnelDetailTableViewController.onDemandFields[indexPath.row]
         if field == .onDemand {
             let cell: KeyValueCell = tableView.dequeueReusableCell(for: indexPath)
+            configureConfigurationCell(cell, usesMonospacedValue: false)
             cell.key = field.localizedUIString
             cell.value = onDemandViewModel.localizedInterfaceDescription
             cell.copyableGesture = false
@@ -1416,12 +1749,14 @@ extension TunnelDetailTableViewController {
             assert(field == .ssid)
             if onDemandViewModel.ssidOption == .anySSID {
                 let cell: KeyValueCell = tableView.dequeueReusableCell(for: indexPath)
+                configureConfigurationCell(cell, usesMonospacedValue: false)
                 cell.key = field.localizedUIString
                 cell.value = onDemandViewModel.ssidOption.localizedUIString
                 cell.copyableGesture = false
                 return cell
             } else {
                 let cell: ChevronCell = tableView.dequeueReusableCell(for: indexPath)
+                configureChevronCell(cell)
                 cell.message = field.localizedUIString
                 cell.detailMessage = onDemandViewModel.localizedSSIDDescription
                 return cell
@@ -1431,7 +1766,14 @@ extension TunnelDetailTableViewController {
 
     private func deleteConfigurationCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
         let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
-        cell.buttonText = tr("deleteTunnelButtonTitle")
+        cell.backgroundColor = WireRouteAppearance.card
+        var buttonConfiguration = UIButton.Configuration.gray()
+        buttonConfiguration.title = tr("deleteTunnelButtonTitle")
+        buttonConfiguration.baseForegroundColor = .systemRed
+        buttonConfiguration.baseBackgroundColor = UIColor.systemRed.withAlphaComponent(0.12)
+        buttonConfiguration.cornerStyle = .medium
+        buttonConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 24, bottom: 11, trailing: 24)
+        cell.button.configuration = buttonConfiguration
         cell.hasDestructiveAction = true
         cell.onTapped = { [weak self] in
             guard let self = self else { return }
@@ -1450,9 +1792,40 @@ extension TunnelDetailTableViewController {
         return cell
     }
 
+    private func configureConfigurationCell(_ cell: KeyValueCell, usesMonospacedValue: Bool) {
+        cell.backgroundColor = WireRouteAppearance.card
+        cell.tintColor = WireRouteAppearance.signalBlue
+        cell.keyLabel.font = WireRouteAppearance.roundedFont(size: 15, weight: .medium, textStyle: .body)
+        cell.valueTextField.font = usesMonospacedValue
+            ? UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+            : UIFont.preferredFont(forTextStyle: .body)
+        cell.valueTextField.adjustsFontForContentSizeCategory = true
+        cell.valueTextField.textColor = .secondaryLabel
+    }
+
+    private func configureChevronCell(_ cell: ChevronCell) {
+        cell.backgroundColor = WireRouteAppearance.card
+        cell.tintColor = WireRouteAppearance.signalBlue
+        cell.textLabel?.font = WireRouteAppearance.roundedFont(size: 16, weight: .medium, textStyle: .body)
+        cell.detailTextLabel?.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        cell.detailTextLabel?.textColor = .secondaryLabel
+    }
+
 }
 
 extension TunnelDetailTableViewController {
+    override func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
+        guard let header = view as? UITableViewHeaderFooterView else { return }
+        header.textLabel?.font = WireRouteAppearance.roundedFont(size: 14, weight: .medium, textStyle: .subheadline)
+        header.textLabel?.textColor = .secondaryLabel
+    }
+
+    override func tableView(_ tableView: UITableView, willDisplayFooterView view: UIView, forSection section: Int) {
+        guard let footer = view as? UITableViewHeaderFooterView else { return }
+        footer.textLabel?.font = UIFont.preferredFont(forTextStyle: .footnote)
+        footer.textLabel?.textColor = .secondaryLabel
+    }
+
     override func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
         if case .dnsProtection = sections[indexPath.section] {
             return indexPath
