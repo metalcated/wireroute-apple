@@ -2555,6 +2555,23 @@ final class RouterOSSettingsViewController: NSViewController {
     }
 
     private func loadStoredDefaults() {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            if let item = appearancePopUp.itemArray.first(where: {
+                $0.representedObject as? String == WireRouteAppearance.blueNordic.rawValue
+            }) {
+                appearancePopUp.select(item)
+            }
+            if let styleIndex = StatusItemIconStyle.allCases.firstIndex(of: .adaptive) {
+                statusIconPopUp.selectItem(at: styleIndex)
+            }
+            endpointField.stringValue = "vpn.example.com"
+            dnsField.stringValue = "1.1.1.1, 9.9.9.9"
+            routesField.stringValue = "10.0.0.0/8, 192.168.0.0/16"
+            keepaliveField.integerValue = 25
+            return
+        }
+#endif
         let appearance = WireRouteAppearancePreference.load()
         if let item = appearancePopUp.itemArray.first(where: {
             $0.representedObject as? String == appearance.rawValue
@@ -2805,6 +2822,23 @@ final class RouterOSSettingsViewController: NSViewController {
 
     private func loadConnections(selecting connectionID: UUID? = nil) {
         let preferredID = connectionID ?? selectedStoredConnection?.id
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            connections = [RouterOSStoredConnection(
+                id: UUID(uuidString: "D0C0A100-0000-4000-8000-000000000001")!,
+                name: "Office Router",
+                url: "https://router.example",
+                username: "reviewer",
+                password: "",
+                defaultInterface: "wg-remote"
+            )]
+            connectionsTableView.reloadData()
+            connectionsTableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            connectionsEmptyLabel.isHidden = true
+            updateConnectionButtons()
+            return
+        }
+#endif
         do {
             connections = try RouterOSCredentialStore.loadAll().sorted {
                 $0.name.localizedStandardCompare($1.name) == .orderedAscending

@@ -29,12 +29,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         Logger.configureGlobal(tagged: "APP", withFilePath: FileManager.logFileURL?.path)
-        registerLoginItem(shouldLaunchAtLogin: true)
+#if DEBUG
+        let isAppStoreScreenshotMode = ProcessInfo.processInfo.arguments.contains("--app-store-screenshots")
+#else
+        let isAppStoreScreenshotMode = false
+#endif
+        if !isAppStoreScreenshotMode {
+            registerLoginItem(shouldLaunchAtLogin: true)
+        }
 
         var isLaunchedAtLogin = false
         if let appleEvent = NSAppleEventManager.shared().currentAppleEvent {
             isLaunchedAtLogin = LaunchedAtLoginDetector.isLaunchedAtLogin(openAppleEvent: appleEvent)
         }
+#if DEBUG
+        if isAppStoreScreenshotMode {
+            isLaunchedAtLogin = false
+        }
+#endif
 
         NSApp.mainMenu = MainMenu(application: NSApp, applicationDelegate: NSApp.delegate)
         setDockIconAndMainMenuVisibility(isVisible: !isLaunchedAtLogin)
@@ -61,11 +73,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.statusItemController = statusItemController
 
                 if !isLaunchedAtLogin {
+#if DEBUG
+                    self.showManageTunnelsWindow { [weak self] window in
+                        self?.configureAppStoreScreenshotIfNeeded(window: window, tunnelsManager: tunnelsManager)
+                    }
+#else
                     self.showManageTunnelsWindow(completion: nil)
+#endif
                 }
             }
         }
     }
+
+#if DEBUG
+    private func configureAppStoreScreenshotIfNeeded(
+        window: NSWindow?,
+        tunnelsManager: TunnelsManager
+    ) {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--app-store-screenshots"), let window else { return }
+
+        window.setFrame(NSRect(x: 0, y: 0, width: 1440, height: 900), display: true)
+        window.center()
+
+        let route = arguments
+            .first(where: { $0.hasPrefix("--app-store-screen=") })?
+            .replacingOccurrences(of: "--app-store-screen=", with: "")
+
+        switch route {
+        case "routeros":
+            manageTunnelsRootVC?.selectRouterOSManager()
+        case "settings":
+            manageTunnelsRootVC?.selectSettings()
+        case "activity":
+            guard tunnelsManager.numberOfTunnels() > 0 else { return }
+            let tunnel = tunnelsManager.tunnel(at: 0)
+            manageTunnelsRootVC?.selectTunnel(tunnel)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                guard let detailViewController = self?.manageTunnelsRootVC?.tunnelDetailVC else { return }
+                detailViewController.presentAsSheet(ActivityMonitorViewController(tunnel: tunnel))
+            }
+        default:
+            guard tunnelsManager.numberOfTunnels() > 0 else { return }
+            manageTunnelsRootVC?.selectTunnel(tunnelsManager.tunnel(at: 0))
+        }
+    }
+#endif
 
     @objc func confirmAndQuit() {
         let alert = NSAlert()

@@ -80,10 +80,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 extension AppDelegate {
     func application(_ application: UIApplication, shouldSaveApplicationState coder: NSCoder) -> Bool {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            return false
+        }
+#endif
         return true
     }
 
     func application(_ application: UIApplication, shouldRestoreApplicationState coder: NSCoder) -> Bool {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            return false
+        }
+#endif
         return !self.isLaunchedForSpecificAction
     }
 

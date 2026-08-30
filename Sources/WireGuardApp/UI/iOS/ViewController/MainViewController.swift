@@ -2169,7 +2169,50 @@ class MainViewController: UITabBarController {
         tunnelsManager.activationDelegate = self
         onTunnelsManagerReady?(tunnelsManager)
         onTunnelsManagerReady = nil
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.applyAppStoreScreenshotRouteIfNeeded(tunnelsManager)
+            }
+        }
+#endif
     }
+
+#if DEBUG
+    private func applyAppStoreScreenshotRouteIfNeeded(_ tunnelsManager: TunnelsManager) {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--app-store-screenshots"),
+              let routeArgument = arguments.first(where: { $0.hasPrefix("--app-store-screen=") }) else { return }
+
+        switch routeArgument.replacingOccurrences(of: "--app-store-screen=", with: "") {
+        case "profiles":
+            selectedIndex = WireRouteMainTab.profiles.rawValue
+            profilesViewController.showProfilesRoot(animated: false)
+        case "profile":
+            guard tunnelsManager.numberOfTunnels() > 0 else { return }
+            let tunnel = tunnelsManager.tunnel(at: 0)
+            selectedIndex = WireRouteMainTab.profiles.rawValue
+            profilesViewController.loadViewIfNeeded()
+            let detailViewController = TunnelDetailTableViewController(
+                tunnelsManager: tunnelsManager,
+                tunnel: tunnel
+            )
+            if let navigationController = profilesViewController.viewControllers.first as? UINavigationController {
+                navigationController.setViewControllers(
+                    [tunnelsListVC, detailViewController],
+                    animated: false
+                )
+            }
+            tunnelsListVC.detailDisplayedTunnel = tunnel
+        case "activity":
+            selectedIndex = WireRouteMainTab.activity.rawValue
+        case "settings":
+            selectedIndex = WireRouteMainTab.settings.rawValue
+        default:
+            selectedIndex = WireRouteMainTab.home.rawValue
+        }
+    }
+#endif
 
     private func configureTabs() {
         let homeNavigationController = UINavigationController(rootViewController: homeViewController)
