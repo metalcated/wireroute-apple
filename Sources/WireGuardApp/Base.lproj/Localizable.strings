@@ -18,6 +18,10 @@
 "tunnelsListDeleteButtonTitle" = "Delete";
 "tunnelsListSelectedTitle (%d)" = "%d selected";
 "tunnelListCaptionOnDemand" = "On-Demand";
+"iosProfilesSubtitle" = "Connect a profile, review its routing, or open it to manage the full configuration.";
+"iosProfilesSectionTitle" = "My profiles";
+"iosProfilesRoutingSplit" = "Split tunnel";
+"iosProfilesRoutingFull" = "Full tunnel";
 
 // Tunnels list menu
 
