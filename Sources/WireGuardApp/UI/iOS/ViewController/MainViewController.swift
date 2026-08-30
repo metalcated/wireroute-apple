@@ -1408,25 +1408,27 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         mapView.showsCompass = false
         mapView.showsScale = false
         mapView.showsTraffic = false
-        let configuration = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .default)
-        configuration.pointOfInterestFilter = .includingAll
-        configuration.showsTraffic = false
-        mapView.preferredConfiguration = configuration
-        mapView.showsBuildings = true
         applyMapPresentation(.plain)
         showWorld(animated: false)
     }
 
     private func applyMapPresentation(_ presentation: WireRouteMapPresentation) {
         mapPresentation = presentation
+        plainMapView.isHidden = true
+        mapView.isHidden = false
+        let configuration: MKStandardMapConfiguration
         switch presentation {
         case .plain:
-            plainMapView.isHidden = false
-            mapView.isHidden = true
+            configuration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .default)
+            configuration.pointOfInterestFilter = .includingAll
+            mapView.showsBuildings = false
         case .detailed:
-            plainMapView.isHidden = true
-            mapView.isHidden = false
+            configuration = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .default)
+            configuration.pointOfInterestFilter = .includingAll
+            mapView.showsBuildings = true
         }
+        configuration.showsTraffic = false
+        mapView.preferredConfiguration = configuration
         updateMapStyleButton()
     }
 
