@@ -146,6 +146,96 @@ private final class WireRoutePathView: UIView {
     }
 }
 
+private final class WireRouteDepthCardView: UIView {
+    enum Elevation {
+        case standard
+        case hero
+
+        var shadowOpacity: Float {
+            switch self {
+            case .standard: return 0.34
+            case .hero: return 0.46
+            }
+        }
+
+        var shadowRadius: CGFloat {
+            switch self {
+            case .standard: return 14
+            case .hero: return 22
+            }
+        }
+
+        var shadowOffset: CGSize {
+            switch self {
+            case .standard: return CGSize(width: 0, height: 8)
+            case .hero: return CGSize(width: 0, height: 14)
+            }
+        }
+    }
+
+    private let surfaceLayer = CAGradientLayer()
+    private let lightLayer = CAGradientLayer()
+    private let rimLayer = CAShapeLayer()
+    private let elevation: Elevation
+
+    init(elevation: Elevation) {
+        self.elevation = elevation
+        super.init(frame: .zero)
+
+        backgroundColor = .clear
+        layer.masksToBounds = false
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = elevation.shadowOpacity
+        layer.shadowRadius = elevation.shadowRadius
+        layer.shadowOffset = elevation.shadowOffset
+
+        surfaceLayer.colors = [
+            WireRouteAppearance.raised.cgColor,
+            WireRouteAppearance.card.cgColor,
+            WireRouteAppearance.inset.cgColor
+        ]
+        surfaceLayer.locations = [0, 0.56, 1]
+        surfaceLayer.startPoint = CGPoint(x: 0.05, y: 0)
+        surfaceLayer.endPoint = CGPoint(x: 0.95, y: 1)
+        surfaceLayer.cornerRadius = 20
+        surfaceLayer.cornerCurve = .continuous
+
+        lightLayer.colors = [
+            UIColor.white.withAlphaComponent(elevation == .hero ? 0.16 : 0.11).cgColor,
+            UIColor.white.withAlphaComponent(0.025).cgColor,
+            UIColor.clear.cgColor
+        ]
+        lightLayer.locations = [0, 0.32, 0.72]
+        lightLayer.startPoint = CGPoint(x: 0, y: 0)
+        lightLayer.endPoint = CGPoint(x: 0.78, y: 0.86)
+        lightLayer.cornerRadius = 20
+        lightLayer.cornerCurve = .continuous
+
+        rimLayer.fillColor = UIColor.clear.cgColor
+        rimLayer.strokeColor = UIColor.white.withAlphaComponent(0.12).cgColor
+        rimLayer.lineWidth = 1
+
+        layer.insertSublayer(surfaceLayer, at: 0)
+        layer.insertSublayer(lightLayer, above: surfaceLayer)
+        layer.insertSublayer(rimLayer, above: lightLayer)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        surfaceLayer.frame = bounds
+        lightLayer.frame = bounds
+        rimLayer.frame = bounds
+        let rimRect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        rimLayer.path = UIBezierPath(roundedRect: rimRect, cornerRadius: 19.5).cgPath
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: 20).cgPath
+    }
+}
+
 @MainActor
 private final class WireRouteHomeViewController: UIViewController {
     var onShowProfiles: (() -> Void)?
@@ -223,7 +313,7 @@ private final class WireRouteHomeViewController: UIViewController {
         let connectionContent = UIStackView(arrangedSubviews: [connectionHeader, routePathView, connectionButton])
         connectionContent.axis = .vertical
         connectionContent.spacing = 22
-        let connectionCard = makeCard(containing: connectionContent, inset: 20)
+        let connectionCard = makeCard(containing: connectionContent, inset: 20, elevation: .hero)
 
         let routingCard = makeSummaryCard(
             title: tr("iosHomeRouting"),
@@ -490,6 +580,10 @@ private final class WireRouteHomeViewController: UIViewController {
         configuration.cornerStyle = .large
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 13, leading: 10, bottom: 13, trailing: 10)
         button.configuration = configuration
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.24
+        button.layer.shadowRadius = 8
+        button.layer.shadowOffset = CGSize(width: 0, height: 5)
     }
 
     private func makeSummaryCard(title: String, symbolName: String, valueLabel: UILabel) -> UIView {
@@ -510,7 +604,7 @@ private final class WireRouteHomeViewController: UIViewController {
         let content = UIStackView(arrangedSubviews: [heading, valueLabel])
         content.axis = .vertical
         content.spacing = 12
-        return makeCard(containing: content, inset: 16)
+        return makeCard(containing: content, inset: 16, elevation: .standard)
     }
 
     private func makeDetailCard(title: String, symbolName: String, valueLabel: UILabel) -> UIView {
@@ -532,16 +626,15 @@ private final class WireRouteHomeViewController: UIViewController {
         row.axis = .horizontal
         row.alignment = .center
         row.spacing = 14
-        return makeCard(containing: row, inset: 16)
+        return makeCard(containing: row, inset: 16, elevation: .standard)
     }
 
-    private func makeCard(containing content: UIView, inset: CGFloat) -> UIView {
-        let card = UIView()
-        card.backgroundColor = WireRouteAppearance.card
-        card.layer.cornerRadius = 20
-        card.layer.cornerCurve = .continuous
-        card.layer.borderWidth = 1
-        card.layer.borderColor = WireRouteAppearance.border.withAlphaComponent(0.65).cgColor
+    private func makeCard(
+        containing content: UIView,
+        inset: CGFloat,
+        elevation: WireRouteDepthCardView.Elevation
+    ) -> UIView {
+        let card = WireRouteDepthCardView(elevation: elevation)
         card.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
