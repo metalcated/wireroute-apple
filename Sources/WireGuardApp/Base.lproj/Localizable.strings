@@ -758,6 +758,10 @@
 "iosHomeNoLiveTransfer" = "Connect to see transfer totals";
 "iosHomeConnect" = "Connect";
 "iosHomeDisconnect" = "Disconnect";
+"tunnelPowerButtonConnect (%@)" = "Connect %@";
+"tunnelPowerButtonDisconnect (%@)" = "Disconnect %@";
+"tunnelPowerButtonEnableOnDemand (%@)" = "Enable On-Demand for %@";
+"tunnelPowerButtonDisableOnDemand (%@)" = "Disable On-Demand for %@";
 "iosHomeProfileDetails" = "Profile";
 "iosHomeViewActivity" = "Activity";
 "iosActivityNoProfiles" = "Add a profile to view live traffic and connection history.";

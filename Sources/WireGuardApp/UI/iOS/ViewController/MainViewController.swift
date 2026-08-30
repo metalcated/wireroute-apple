@@ -939,12 +939,12 @@ class MainViewController: UITabBarController {
         homeNavigationController.tabBarItem = UITabBarItem(
             title: tr("iosTabHome"),
             image: UIImage(systemName: "house"),
-            selectedImage: UIImage(systemName: "house.fill")
+            selectedImage: UIImage(systemName: "house")
         )
         profilesViewController.tabBarItem = UITabBarItem(
             title: tr("iosTabProfiles"),
             image: UIImage(systemName: "rectangle.stack"),
-            selectedImage: UIImage(systemName: "rectangle.stack.fill")
+            selectedImage: UIImage(systemName: "rectangle.stack")
         )
         activityNavigationController.tabBarItem = UITabBarItem(
             title: tr("iosTabActivity"),
@@ -954,7 +954,7 @@ class MainViewController: UITabBarController {
         settingsNavigationController.tabBarItem = UITabBarItem(
             title: tr("iosTabSettings"),
             image: UIImage(systemName: "gearshape"),
-            selectedImage: UIImage(systemName: "gearshape.fill")
+            selectedImage: UIImage(systemName: "gearshape")
         )
         viewControllers = [
             homeNavigationController,

@@ -131,7 +131,7 @@ class TunnelListCell: UITableViewCell {
             }
         }
     }
-    var onSwitchToggled: ((Bool) -> Void)?
+    var onStatusButtonTapped: ((Bool) -> Void)?
 
     let nameLabel: UILabel = {
         let nameLabel = UILabel()
@@ -160,7 +160,25 @@ class TunnelListCell: UITableViewCell {
         return busyIndicator
     }()
 
-    let statusSwitch = UISwitch()
+    let statusButton: UIButton = {
+        let button = UIButton(type: .system)
+        let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+        button.setImage(UIImage(systemName: "power", withConfiguration: symbolConfiguration), for: .normal)
+        button.tintColor = .secondaryLabel
+        button.backgroundColor = WireRouteAppearance.raised
+        button.layer.cornerRadius = 24
+        button.layer.cornerCurve = .continuous
+        button.layer.borderWidth = 1
+        button.layer.borderColor = WireRouteAppearance.border.cgColor
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.24
+        button.layer.shadowRadius = 8
+        button.layer.shadowOffset = CGSize(width: 0, height: 5)
+        button.accessibilityTraits = .button
+        return button
+    }()
+
+    private var isStatusButtonOn = false
 
     private var nameObservationToken: NSKeyValueObservation?
     private var statusObservationToken: NSKeyValueObservation?
@@ -177,14 +195,14 @@ class TunnelListCell: UITableViewCell {
         selectedBackgroundView.backgroundColor = WireRouteAppearance.signalBlue.withAlphaComponent(0.1)
         self.selectedBackgroundView = selectedBackgroundView
 
-        for subview in [routeGlyphView, statusSwitch, busyIndicator, statusLabel, nameLabel] {
+        for subview in [routeGlyphView, statusButton, busyIndicator, statusLabel, nameLabel] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(subview)
         }
 
         nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        statusSwitch.setContentCompressionResistancePriority(.required, for: .horizontal)
+        statusButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         NSLayoutConstraint.activate([
             routeGlyphView.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
@@ -192,12 +210,14 @@ class TunnelListCell: UITableViewCell {
             routeGlyphView.widthAnchor.constraint(equalToConstant: 44),
             routeGlyphView.heightAnchor.constraint(equalTo: routeGlyphView.widthAnchor),
 
-            statusSwitch.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            statusSwitch.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+            statusButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            statusButton.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+            statusButton.widthAnchor.constraint(equalToConstant: 48),
+            statusButton.heightAnchor.constraint(equalTo: statusButton.widthAnchor),
 
             nameLabel.topAnchor.constraint(equalTo: contentView.layoutMarginsGuide.topAnchor, constant: 6),
             nameLabel.leadingAnchor.constraint(equalTo: routeGlyphView.trailingAnchor, constant: 12),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: statusSwitch.leadingAnchor, constant: -12),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: statusButton.leadingAnchor, constant: -12),
 
             statusLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 3),
             statusLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
@@ -205,10 +225,10 @@ class TunnelListCell: UITableViewCell {
             statusLabel.bottomAnchor.constraint(equalTo: contentView.layoutMarginsGuide.bottomAnchor, constant: -6),
 
             busyIndicator.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            busyIndicator.trailingAnchor.constraint(equalTo: statusSwitch.leadingAnchor, constant: -8)
+            busyIndicator.trailingAnchor.constraint(equalTo: statusButton.leadingAnchor, constant: -8)
         ])
 
-        statusSwitch.addTarget(self, action: #selector(switchToggled), for: .valueChanged)
+        statusButton.addTarget(self, action: #selector(statusButtonTapped), for: .touchUpInside)
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -222,11 +242,11 @@ class TunnelListCell: UITableViewCell {
 
     override func setEditing(_ editing: Bool, animated: Bool) {
         super.setEditing(editing, animated: animated)
-        statusSwitch.isEnabled = !editing
+        updateStatusButtonAvailability()
     }
 
-    @objc private func switchToggled() {
-        onSwitchToggled?(statusSwitch.isOn)
+    @objc private func statusButtonTapped() {
+        onStatusButtonTapped?(!isStatusButtonOn)
     }
 
     private func update(from tunnel: TunnelContainer?, animated: Bool) {
@@ -237,14 +257,11 @@ class TunnelListCell: UITableViewCell {
         let status = tunnel.status
         let isOnDemandEngaged = tunnel.isActivateOnDemandEnabled
 
-        let shouldSwitchBeOn = ((status != .deactivating && status != .inactive) || isOnDemandEngaged)
-        statusSwitch.setOn(shouldSwitchBeOn, animated: animated)
-
-        if isOnDemandEngaged && !(status == .activating || status == .active) {
-            statusSwitch.onTintColor = WireRouteAppearance.warningAmber
-        } else {
-            statusSwitch.onTintColor = WireRouteAppearance.liveTeal
-        }
+        let shouldButtonBeOn = ((status != .deactivating && status != .inactive) || isOnDemandEngaged)
+        let statusTint = isOnDemandEngaged && !(status == .activating || status == .active)
+            ? WireRouteAppearance.warningAmber
+            : WireRouteAppearance.liveTeal
+        updateStatusButton(isOn: shouldButtonBeOn, tintColor: statusTint, animated: animated)
 
         var statusText: String
         switch status {
@@ -271,29 +288,78 @@ class TunnelListCell: UITableViewCell {
         }
         statusLabel.text = statusText
         routeGlyphView.update(status: status, routingMode: tunnel.routingMode, animated: animated)
-
-        statusSwitch.isUserInteractionEnabled = (status == .inactive || status == .active)
+        statusButton.accessibilityLabel = tunnel.hasOnDemandRules
+            ? tr(
+                format: isOnDemandEngaged
+                    ? "tunnelPowerButtonDisableOnDemand (%@)"
+                    : "tunnelPowerButtonEnableOnDemand (%@)",
+                tunnel.name
+            )
+            : tr(
+                format: shouldButtonBeOn
+                    ? "tunnelPowerButtonDisconnect (%@)"
+                    : "tunnelPowerButtonConnect (%@)",
+                tunnel.name
+            )
+        statusButton.accessibilityValue = statusText
 
         if tunnel.hasOnDemandRules {
             busyIndicator.stopAnimating()
-            statusSwitch.isUserInteractionEnabled = true
         } else {
             if status == .inactive || status == .active {
                 busyIndicator.stopAnimating()
             } else {
                 busyIndicator.startAnimating()
             }
-            statusSwitch.isUserInteractionEnabled = (status == .inactive || status == .active)
         }
-
+        updateStatusButtonAvailability()
     }
 
     private func reset(animated: Bool) {
-        statusSwitch.thumbTintColor = nil
-        statusSwitch.setOn(false, animated: animated)
-        statusSwitch.isUserInteractionEnabled = false
+        updateStatusButton(isOn: false, tintColor: WireRouteAppearance.liveTeal, animated: animated)
+        statusButton.isEnabled = false
+        statusButton.accessibilityLabel = nil
+        statusButton.accessibilityValue = nil
         busyIndicator.stopAnimating()
         statusLabel.text = nil
         routeGlyphView.update(status: .inactive, routingMode: .split, animated: animated)
+    }
+
+    private func updateStatusButtonAvailability() {
+        guard let tunnel else {
+            statusButton.isEnabled = false
+            return
+        }
+        let canToggle = tunnel.hasOnDemandRules || tunnel.status == .inactive || tunnel.status == .active
+        statusButton.isEnabled = canToggle && !isEditing
+    }
+
+    private func updateStatusButton(isOn: Bool, tintColor: UIColor, animated: Bool) {
+        isStatusButtonOn = isOn
+        if isOn {
+            statusButton.accessibilityTraits.insert(.selected)
+        } else {
+            statusButton.accessibilityTraits.remove(.selected)
+        }
+
+        let changes = {
+            self.statusButton.tintColor = isOn ? tintColor : UIColor.secondaryLabel
+            self.statusButton.backgroundColor = isOn
+                ? tintColor.withAlphaComponent(0.17)
+                : WireRouteAppearance.raised
+            self.statusButton.layer.borderColor = isOn
+                ? tintColor.withAlphaComponent(0.62).cgColor
+                : WireRouteAppearance.border.cgColor
+        }
+        if animated && !UIAccessibility.isReduceMotionEnabled {
+            UIView.transition(
+                with: statusButton,
+                duration: 0.2,
+                options: [.transitionCrossDissolve, .allowUserInteraction],
+                animations: changes
+            )
+        } else {
+            changes()
+        }
     }
 }

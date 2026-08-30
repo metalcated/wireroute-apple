@@ -420,7 +420,7 @@ extension TunnelsListTableViewController: UITableViewDataSource {
         if let tunnelsManager = tunnelsManager {
             let tunnel = tunnelsManager.tunnel(at: indexPath.row)
             cell.tunnel = tunnel
-            cell.onSwitchToggled = { [weak self] isOn in
+            cell.onStatusButtonTapped = { [weak self] isOn in
                 guard let self = self, let tunnelsManager = self.tunnelsManager else { return }
                 if tunnel.hasOnDemandRules {
                     tunnelsManager.setOnDemandEnabled(isOn, on: tunnel) { error in
