@@ -126,5 +126,11 @@
 	</array>
 	<key>com.wireguard.ios.app_group_id</key>
 	<string>group.$(APP_ID_IOS)</string>
+	<key>WireRouteMapTileJSONURL</key>
+	<string>https://tiles.openfreemap.org/planet</string>
+	<key>WireRouteMapSpriteURL</key>
+	<string>https://tiles.openfreemap.org/sprites/ofm_f384/ofm</string>
+	<key>WireRouteMapGlyphsURL</key>
+	<string>https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf</string>
 </dict>
 </plist>

@@ -18,7 +18,7 @@ WireRoute is independently maintained. It is not an official WireGuard applicati
 
 MikroTik and RouterOS names and marks belong to their respective owners and are used only to describe compatibility with user-operated RouterOS systems.
 
-The optional iOS endpoint-location preview uses the [IPWHOIS.IO](https://ipwhois.io/) IP geolocation API after an explicit in-app confirmation and displays its result with Apple MapKit. These services are independently operated and subject to their own terms and privacy policies. WireRoute labels the result as approximate and does not represent it as a physical address.
+The iOS map uses the open-source MapLibre Native renderer. Its default Nordic layer is served by OpenFreeMap and contains OpenMapTiles and OpenStreetMap data; the required attribution remains available in the map. The alternate Detailed layer uses Apple MapKit. The optional endpoint-location preview uses the [IPWHOIS.IO](https://ipwhois.io/) IP geolocation API after an explicit in-app confirmation. These independently operated services are subject to their own terms, licenses, and privacy policies. WireRoute labels location results as approximate and does not represent them as a physical address.
 
 ## No Hosted Service
 

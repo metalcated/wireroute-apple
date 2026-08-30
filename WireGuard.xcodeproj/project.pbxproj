@@ -234,6 +234,7 @@
 		C0DE00000000000000000023 /* TunnelRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000003 /* TunnelRoutingPolicy.swift */; };
 		C0DE00000000000000000024 /* RoutingPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000004 /* RoutingPlan.swift */; };
 		C0DE00000000000000000025 /* TunnelRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000005 /* TunnelRouting.swift */; };
+		C0DE20000000000000000001 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE20000000000000000003 /* MapLibre */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -517,6 +518,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0DE20000000000000000001 /* MapLibre in Frameworks */,
 				6B653B86220DE2960050E69C /* NetworkExtension.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1028,6 +1030,7 @@
 			);
 			name = WireGuardiOS;
 			packageProductDependencies = (
+				C0DE20000000000000000003 /* MapLibre */,
 			);
 			productName = WireRoute;
 			productReference = 6FF4AC14211EC46F002C96EB /* WireRoute.app */;
@@ -1128,6 +1131,7 @@
 			);
 			mainGroup = 6FF4AC0B211EC46F002C96EB;
 			packageReferences = (
+				C0DE20000000000000000002 /* XCRemoteSwiftPackageReference "maplibre-gl-native-distribution" */,
 			);
 			productRefGroup = 6FF4AC15211EC46F002C96EB /* Products */;
 			projectDirPath = "";
@@ -2124,6 +2128,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C0DE20000000000000000002 /* XCRemoteSwiftPackageReference "maplibre-gl-native-distribution" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/maplibre/maplibre-gl-native-distribution";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.28.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C0DE20000000000000000003 /* MapLibre */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0DE20000000000000000002 /* XCRemoteSwiftPackageReference "maplibre-gl-native-distribution" */;
+			productName = MapLibre;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6FF4AC0C211EC46F002C96EB /* Project object */;
 }

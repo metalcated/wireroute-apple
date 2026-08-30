@@ -3,6 +3,7 @@
 
 import UIKit
 import MapKit
+import MapLibre
 import Network
 
 private enum WireRouteMainTab: Int {
@@ -1115,6 +1116,186 @@ private final class WireRoutePlainMapView: UIView, UIScrollViewDelegate {
     }
 }
 
+private enum WireRouteNordicMapStyle {
+    private static let defaultTileJSONURL = "https://tiles.openfreemap.org/planet"
+    private static let defaultSpriteURL = "https://tiles.openfreemap.org/sprites/ofm_f384/ofm"
+    private static let defaultGlyphsURL = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf"
+
+    static func bundledStyleURL() -> URL? {
+        guard let styleAsset = NSDataAsset(name: "WireRouteNordicMap"),
+              var style = String(data: styleAsset.data, encoding: .utf8) else {
+            return nil
+        }
+
+        style = style
+            .replacingOccurrences(of: "__WIREROUTE_TILEJSON_URL__", with: configuredURL(
+                key: "WireRouteMapTileJSONURL",
+                fallback: defaultTileJSONURL
+            ))
+            .replacingOccurrences(of: "__WIREROUTE_SPRITE_URL__", with: configuredURL(
+                key: "WireRouteMapSpriteURL",
+                fallback: defaultSpriteURL
+            ))
+            .replacingOccurrences(of: "__WIREROUTE_GLYPHS_URL__", with: configuredURL(
+                key: "WireRouteMapGlyphsURL",
+                fallback: defaultGlyphsURL
+            ))
+
+        let styleURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WireRouteNordicMap-v1.json")
+        do {
+            try Data(style.utf8).write(to: styleURL, options: .atomic)
+            return styleURL
+        } catch {
+            return nil
+        }
+    }
+
+    private static func configuredURL(key: String, fallback: String) -> String {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+              !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return fallback
+        }
+        return value
+    }
+}
+
+@MainActor
+private final class WireRouteNordicMapView: UIView, @preconcurrency MLNMapViewDelegate {
+    private let mapView: MLNMapView
+    private var endpointAnnotation: MLNPointAnnotation?
+    private var markerStatus: TunnelStatus?
+
+    override init(frame: CGRect) {
+        let fallbackStyleURL = URL(string: "https://tiles.openfreemap.org/styles/liberty")
+        mapView = MLNMapView(
+            frame: .zero,
+            styleURL: WireRouteNordicMapStyle.bundledStyleURL() ?? fallbackStyleURL
+        )
+        super.init(frame: frame)
+
+        backgroundColor = UIColor(red: 11 / 255, green: 23 / 255, blue: 39 / 255, alpha: 1)
+        mapView.delegate = self
+        mapView.backgroundColor = backgroundColor
+        mapView.minimumZoomLevel = 0
+        mapView.maximumZoomLevel = 20
+        mapView.isPitchEnabled = false
+        mapView.isRotateEnabled = false
+        mapView.showsUserLocation = false
+        mapView.accessibilityLabel = tr("iosHomeMapStylePlain")
+        addSubview(mapView)
+        mapView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            mapView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            mapView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            mapView.topAnchor.constraint(equalTo: topAnchor),
+            mapView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func showWorld(animated: Bool) {
+        mapView.setCenter(
+            CLLocationCoordinate2D(latitude: 18, longitude: 0),
+            zoomLevel: 0.35,
+            animated: animated
+        )
+    }
+
+    func clearEndpoint() {
+        guard let endpointAnnotation else { return }
+        mapView.removeAnnotation(endpointAnnotation)
+        self.endpointAnnotation = nil
+    }
+
+    func showEndpoint(at coordinate: CLLocationCoordinate2D, animated: Bool) {
+        if let endpointAnnotation {
+            mapView.removeAnnotation(endpointAnnotation)
+        }
+        let annotation = MLNPointAnnotation()
+        annotation.coordinate = coordinate
+        annotation.title = tr("iosHomeLocationApproximate")
+        endpointAnnotation = annotation
+        mapView.addAnnotation(annotation)
+        mapView.setCenter(coordinate, zoomLevel: 5.6, animated: animated)
+    }
+
+    func updateMarker(for status: TunnelStatus?) {
+        markerStatus = status
+        guard let endpointAnnotation else { return }
+        mapView.removeAnnotation(endpointAnnotation)
+        mapView.addAnnotation(endpointAnnotation)
+    }
+
+    func setRegion(_ region: MKCoordinateRegion, animated: Bool) {
+        let longitudeDelta = max(region.span.longitudeDelta, 0.000_001)
+        let zoomLevel = min(max(log2(360 / longitudeDelta), 0), 20)
+        mapView.setCenter(region.center, zoomLevel: zoomLevel, animated: animated)
+    }
+
+    func currentRegion() -> MKCoordinateRegion {
+        let longitudeDelta = 360 / pow(2, mapView.zoomLevel)
+        let aspectRatio = max(bounds.width / max(bounds.height, 1), 1)
+        return MKCoordinateRegion(
+            center: mapView.centerCoordinate,
+            span: MKCoordinateSpan(
+                latitudeDelta: min(longitudeDelta / aspectRatio, 180),
+                longitudeDelta: min(longitudeDelta, 360)
+            )
+        )
+    }
+
+    func mapView(_ mapView: MLNMapView, imageFor annotation: MLNAnnotation) -> MLNAnnotationImage? {
+        guard annotation === endpointAnnotation else { return nil }
+        let identifier = markerIdentifier
+        if let reusableImage = mapView.dequeueReusableAnnotationImage(withIdentifier: identifier) {
+            return reusableImage
+        }
+        return MLNAnnotationImage(image: markerImage, reuseIdentifier: identifier)
+    }
+
+    private var markerIdentifier: String {
+        switch markerStatus {
+        case .some(.active): return "WireRouteEndpoint-active"
+        case .some(.activating), .some(.deactivating), .some(.reasserting), .some(.restarting), .some(.waiting):
+            return "WireRouteEndpoint-transitioning"
+        case .some(.inactive), .none: return "WireRouteEndpoint-inactive"
+        }
+    }
+
+    private var markerImage: UIImage {
+        let color: UIColor
+        let symbolName: String
+        switch markerStatus {
+        case .some(.active):
+            color = WireRouteAppearance.liveTeal
+            symbolName = "lock.fill"
+        case .some(.activating), .some(.deactivating), .some(.reasserting), .some(.restarting), .some(.waiting):
+            color = WireRouteAppearance.warningAmber
+            symbolName = "arrow.triangle.2.circlepath"
+        case .some(.inactive), .none:
+            color = WireRouteAppearance.signalBlue
+            symbolName = "shield.fill"
+        }
+
+        return UIGraphicsImageRenderer(size: CGSize(width: 42, height: 42)).image { _ in
+            let circle = UIBezierPath(ovalIn: CGRect(x: 1.5, y: 1.5, width: 39, height: 39))
+            color.setFill()
+            circle.fill()
+            UIColor.white.withAlphaComponent(0.96).setStroke()
+            circle.lineWidth = 3
+            circle.stroke()
+            let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+            let symbol = UIImage(systemName: symbolName, withConfiguration: symbolConfiguration)?
+                .withTintColor(.white, renderingMode: .alwaysOriginal)
+            symbol?.draw(in: CGRect(x: 12.5, y: 12.5, width: 17, height: 17))
+        }
+    }
+}
+
 private enum WireRouteMapPresentation: Equatable {
     case plain
     case detailed
@@ -1145,7 +1326,7 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
     private var approvedLocationLookup = false
     private var mapPresentation = WireRouteMapPresentation.plain
 
-    private let plainMapView = WireRoutePlainMapView()
+    private let plainMapView = WireRouteNordicMapView()
     private let mapView = MKMapView()
     private let mapLocationLabel = UILabel()
     private let locationButton = UIButton(type: .system)
@@ -1413,20 +1594,19 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
     }
 
     private func applyMapPresentation(_ presentation: WireRouteMapPresentation) {
-        mapPresentation = presentation
-        plainMapView.isHidden = true
-        mapView.isHidden = false
-        let configuration: MKStandardMapConfiguration
-        switch presentation {
-        case .plain:
-            configuration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .default)
-            configuration.pointOfInterestFilter = .includingAll
-            mapView.showsBuildings = false
-        case .detailed:
-            configuration = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .default)
-            configuration.pointOfInterestFilter = .includingAll
-            mapView.showsBuildings = true
+        if presentation != mapPresentation {
+            if presentation == .plain {
+                plainMapView.setRegion(mapView.region, animated: false)
+            } else {
+                mapView.setRegion(plainMapView.currentRegion(), animated: false)
+            }
         }
+        mapPresentation = presentation
+        plainMapView.isHidden = presentation != .plain
+        mapView.isHidden = presentation != .detailed
+        let configuration = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .default)
+        configuration.pointOfInterestFilter = .includingAll
+        mapView.showsBuildings = true
         configuration.showsTraffic = false
         mapView.preferredConfiguration = configuration
         updateMapStyleButton()
