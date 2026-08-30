@@ -893,6 +893,18 @@ private final class WireRouteEndpointAnnotation: NSObject, MKAnnotation {
     }
 }
 
+private enum WireRouteMapPresentation: Equatable {
+    case plain
+    case detailed
+
+    var localizedTitle: String {
+        switch self {
+        case .plain: return tr("iosHomeMapStylePlain")
+        case .detailed: return tr("iosHomeMapStyleDetailed")
+        }
+    }
+}
+
 @MainActor
 private final class WireRouteHomeViewController: UIViewController, MKMapViewDelegate {
     var onShowProfiles: (() -> Void)?
@@ -908,10 +920,12 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
     private var locatedEndpointKey: String?
     private var locationLookupTask: Task<Void, Never>?
     private var approvedLocationLookup = false
+    private var mapPresentation = WireRouteMapPresentation.plain
 
     private let mapView = MKMapView()
     private let mapLocationLabel = UILabel()
     private let locationButton = UIButton(type: .system)
+    private let mapStyleButton = UIButton(type: .system)
     private let profileButton = UIButton(type: .system)
     private let profileDetailsButton = UIButton(type: .system)
     private let statusImageView = UIImageView()
@@ -991,10 +1005,22 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         locationButton.configuration = locationConfiguration
         locationButton.addTarget(self, action: #selector(locationButtonTapped), for: .touchUpInside)
 
+        var mapStyleConfiguration = UIButton.Configuration.filled()
+        mapStyleConfiguration.image = UIImage(systemName: "square.3.layers.3d")
+        mapStyleConfiguration.baseForegroundColor = .white
+        mapStyleConfiguration.baseBackgroundColor = WireRouteAppearance.raised.withAlphaComponent(0.92)
+        mapStyleConfiguration.cornerStyle = .capsule
+        mapStyleConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
+        mapStyleButton.configuration = mapStyleConfiguration
+        mapStyleButton.addTarget(self, action: #selector(mapStyleButtonTapped), for: .touchUpInside)
+        updateMapStyleButton()
+
         mapContainer.addSubview(mapLocationLabel)
         mapContainer.addSubview(locationButton)
+        mapContainer.addSubview(mapStyleButton)
         mapLocationLabel.translatesAutoresizingMaskIntoConstraints = false
         locationButton.translatesAutoresizingMaskIntoConstraints = false
+        mapStyleButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             mapView.leadingAnchor.constraint(equalTo: mapContainer.leadingAnchor),
             mapView.trailingAnchor.constraint(equalTo: mapContainer.trailingAnchor),
@@ -1008,7 +1034,11 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
             mapLocationLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 190),
             mapLocationLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 38),
             locationButton.centerXAnchor.constraint(equalTo: mapContainer.centerXAnchor),
-            locationButton.bottomAnchor.constraint(equalTo: mapContainer.bottomAnchor, constant: -16)
+            locationButton.bottomAnchor.constraint(equalTo: mapContainer.bottomAnchor, constant: -16),
+            mapStyleButton.trailingAnchor.constraint(equalTo: mapContainer.trailingAnchor, constant: -14),
+            mapStyleButton.topAnchor.constraint(equalTo: mapContainer.topAnchor, constant: 14),
+            mapStyleButton.widthAnchor.constraint(equalToConstant: 44),
+            mapStyleButton.heightAnchor.constraint(equalToConstant: 44)
         ])
 
         var profileConfiguration = UIButton.Configuration.plain()
@@ -1148,33 +1178,36 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         mapView.showsCompass = false
         mapView.showsScale = false
         mapView.showsTraffic = false
-        mapView.showsBuildings = false
-        let configuration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
-        configuration.pointOfInterestFilter = .excludingAll
-        configuration.showsTraffic = false
-        mapView.preferredConfiguration = configuration
-        addPlainMapWash()
+        applyMapPresentation(.plain)
         showWorld(animated: false)
     }
 
-    private func addPlainMapWash() {
-        let westCoordinates = [
-            CLLocationCoordinate2D(latitude: -85, longitude: -179.9),
-            CLLocationCoordinate2D(latitude: -85, longitude: 0),
-            CLLocationCoordinate2D(latitude: 85, longitude: 0),
-            CLLocationCoordinate2D(latitude: 85, longitude: -179.9)
-        ]
-        let eastCoordinates = [
-            CLLocationCoordinate2D(latitude: -85, longitude: 0),
-            CLLocationCoordinate2D(latitude: -85, longitude: 179.9),
-            CLLocationCoordinate2D(latitude: 85, longitude: 179.9),
-            CLLocationCoordinate2D(latitude: 85, longitude: 0)
-        ]
-        mapView.addOverlays(
-            [MKPolygon(coordinates: westCoordinates, count: westCoordinates.count),
-             MKPolygon(coordinates: eastCoordinates, count: eastCoordinates.count)],
-            level: .aboveLabels
-        )
+    private func applyMapPresentation(_ presentation: WireRouteMapPresentation) {
+        mapPresentation = presentation
+        let configuration: MKStandardMapConfiguration
+        switch presentation {
+        case .plain:
+            configuration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .default)
+            configuration.pointOfInterestFilter = .excludingAll
+            mapView.showsBuildings = false
+        case .detailed:
+            configuration = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .default)
+            configuration.pointOfInterestFilter = .includingAll
+            mapView.showsBuildings = true
+        }
+        configuration.showsTraffic = false
+        mapView.preferredConfiguration = configuration
+        updateMapStyleButton()
+    }
+
+    private func updateMapStyleButton() {
+        let nextPresentation: WireRouteMapPresentation = mapPresentation == .plain ? .detailed : .plain
+        mapStyleButton.configuration?.baseBackgroundColor = mapPresentation == .plain
+            ? WireRouteAppearance.raised.withAlphaComponent(0.92)
+            : WireRouteAppearance.signalBlue.withAlphaComponent(0.92)
+        mapStyleButton.accessibilityLabel = tr("iosHomeMapStyle")
+        mapStyleButton.accessibilityValue = mapPresentation.localizedTitle
+        mapStyleButton.accessibilityHint = String(format: tr("iosHomeMapStyleSwitchTo (%@)"), nextPresentation.localizedTitle)
     }
 
     private func showWorld(animated: Bool) {
@@ -1442,6 +1475,10 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         present(alert, animated: true)
     }
 
+    @objc private func mapStyleButtonTapped() {
+        applyMapPresentation(mapPresentation == .plain ? .detailed : .plain)
+    }
+
     @objc private func connectionButtonTapped() {
         guard let tunnelsManager, let tunnel = selectedTunnel else { return }
         switch tunnel.status {
@@ -1480,13 +1517,6 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         marker.animatesWhenAdded = true
         marker.canShowCallout = true
         return marker
-    }
-
-    func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
-        guard let polygon = overlay as? MKPolygon else { return MKOverlayRenderer(overlay: overlay) }
-        let renderer = MKPolygonRenderer(polygon: polygon)
-        renderer.fillColor = WireRouteAppearance.inset.withAlphaComponent(0.64)
-        return renderer
     }
 
     private func refreshEndpointMarker(for status: TunnelStatus) {
