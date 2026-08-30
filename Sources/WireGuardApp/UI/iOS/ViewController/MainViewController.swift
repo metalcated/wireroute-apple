@@ -893,6 +893,211 @@ private final class WireRouteEndpointAnnotation: NSObject, MKAnnotation {
     }
 }
 
+@MainActor
+private final class WireRoutePlainMapView: UIView, UIScrollViewDelegate {
+    private static let mapAspectRatio = CGFloat(2048.0 / 1152.0)
+    private static let horizontalPadding = CGFloat(38.0 / 2048.0)
+    private static let verticalPadding = CGFloat(38.0 / 1152.0)
+    private static let robinsonX: [Double] = [
+        1.0000, 0.9986, 0.9954, 0.9900, 0.9822, 0.9730, 0.9600, 0.9427, 0.9216,
+        0.8962, 0.8679, 0.8350, 0.7986, 0.7597, 0.7186, 0.6732, 0.6213, 0.5722, 0.5322
+    ]
+    private static let robinsonY: [Double] = [
+        0.0000, 0.0620, 0.1240, 0.1860, 0.2480, 0.3100, 0.3720, 0.4340, 0.4958,
+        0.5571, 0.6176, 0.6769, 0.7346, 0.7903, 0.8435, 0.8936, 0.9394, 0.9761, 1.0000
+    ]
+
+    private let scrollView = UIScrollView()
+    private let canvasView = UIView()
+    private let mapImageView = UIImageView(image: UIImage(named: "WireRoutePlainMap"))
+    private let markerView = UIView()
+    private let markerImageView = UIImageView()
+    private var endpointCoordinate: CLLocationCoordinate2D?
+    private var lastLayoutSize = CGSize.zero
+    private var shouldShowWorld = true
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        backgroundColor = UIColor(red: 17 / 255, green: 27 / 255, blue: 42 / 255, alpha: 1)
+        clipsToBounds = true
+
+        scrollView.delegate = self
+        scrollView.backgroundColor = backgroundColor
+        scrollView.minimumZoomScale = 1
+        scrollView.maximumZoomScale = 6
+        scrollView.bouncesZoom = true
+        scrollView.decelerationRate = .fast
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.accessibilityLabel = tr("iosHomeMapStylePlain")
+
+        mapImageView.contentMode = .scaleToFill
+        mapImageView.isAccessibilityElement = false
+
+        markerView.bounds = CGRect(x: 0, y: 0, width: 42, height: 42)
+        markerView.backgroundColor = WireRouteAppearance.signalBlue
+        markerView.layer.cornerRadius = 21
+        markerView.layer.cornerCurve = .continuous
+        markerView.layer.borderWidth = 3
+        markerView.layer.borderColor = UIColor.white.withAlphaComponent(0.96).cgColor
+        markerView.isHidden = true
+
+        markerImageView.image = UIImage(systemName: "shield.fill")
+        markerImageView.contentMode = .scaleAspectFit
+        markerImageView.tintColor = .white
+
+        addSubview(scrollView)
+        scrollView.addSubview(canvasView)
+        canvasView.addSubview(mapImageView)
+        canvasView.addSubview(markerView)
+        markerView.addSubview(markerImageView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        scrollView.frame = bounds
+        guard bounds.width > 0, bounds.height > 0, bounds.size != lastLayoutSize else {
+            updateMarkerScale()
+            return
+        }
+
+        lastLayoutSize = bounds.size
+        let canvasSize = CGSize(width: bounds.width, height: bounds.width / Self.mapAspectRatio)
+        scrollView.setZoomScale(1, animated: false)
+        canvasView.frame = CGRect(origin: .zero, size: canvasSize)
+        mapImageView.frame = canvasView.bounds
+        scrollView.contentSize = canvasSize
+        updateContentInset()
+        updateMarkerPosition()
+
+        if shouldShowWorld {
+            centerWorld(animated: false)
+        } else if let endpointCoordinate {
+            focus(on: endpointCoordinate, animated: false)
+        }
+    }
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        canvasView
+    }
+
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        updateContentInset()
+        updateMarkerScale()
+    }
+
+    func showWorld(animated: Bool) {
+        shouldShowWorld = true
+        layoutIfNeeded()
+        centerWorld(animated: animated)
+    }
+
+    func clearEndpoint() {
+        endpointCoordinate = nil
+        markerView.isHidden = true
+    }
+
+    func showEndpoint(at coordinate: CLLocationCoordinate2D, animated: Bool) {
+        endpointCoordinate = coordinate
+        markerView.isHidden = false
+        shouldShowWorld = false
+        layoutIfNeeded()
+        updateMarkerPosition()
+        focus(on: coordinate, animated: animated)
+    }
+
+    func updateMarker(for status: TunnelStatus?) {
+        let color: UIColor
+        let symbolName: String
+        switch status {
+        case .some(.active):
+            color = WireRouteAppearance.liveTeal
+            symbolName = "lock.fill"
+        case .some(.activating), .some(.deactivating), .some(.reasserting), .some(.restarting), .some(.waiting):
+            color = WireRouteAppearance.warningAmber
+            symbolName = "arrow.triangle.2.circlepath"
+        case .some(.inactive), .none:
+            color = WireRouteAppearance.signalBlue
+            symbolName = "shield.fill"
+        }
+        markerView.backgroundColor = color
+        markerImageView.image = UIImage(systemName: symbolName)
+    }
+
+    private func centerWorld(animated: Bool) {
+        scrollView.setZoomScale(1, animated: animated)
+        updateContentInset()
+        let offset = CGPoint(x: -scrollView.contentInset.left, y: -scrollView.contentInset.top)
+        scrollView.setContentOffset(offset, animated: animated)
+    }
+
+    private func focus(on coordinate: CLLocationCoordinate2D, animated: Bool) {
+        guard canvasView.bounds.width > 0, canvasView.bounds.height > 0 else { return }
+        let point = projectedPoint(for: coordinate)
+        let zoomScale = CGFloat(4.6)
+        let visibleSize = CGSize(
+            width: scrollView.bounds.width / zoomScale,
+            height: scrollView.bounds.height / zoomScale
+        )
+        let focusRect = CGRect(
+            x: point.x - visibleSize.width / 2,
+            y: point.y - visibleSize.height / 2,
+            width: visibleSize.width,
+            height: visibleSize.height
+        )
+        scrollView.zoom(to: focusRect, animated: animated)
+    }
+
+    private func updateContentInset() {
+        let horizontalInset = max((scrollView.bounds.width - canvasView.frame.width) / 2, 0)
+        let verticalInset = max((scrollView.bounds.height - canvasView.frame.height) / 2, 0)
+        scrollView.contentInset = UIEdgeInsets(
+            top: verticalInset,
+            left: horizontalInset,
+            bottom: verticalInset,
+            right: horizontalInset
+        )
+    }
+
+    private func updateMarkerPosition() {
+        guard let endpointCoordinate else { return }
+        markerView.center = projectedPoint(for: endpointCoordinate)
+        markerImageView.frame = markerView.bounds.insetBy(dx: 11, dy: 11)
+        updateMarkerScale()
+    }
+
+    private func updateMarkerScale() {
+        let zoomScale = max(scrollView.zoomScale, 1)
+        markerView.transform = CGAffineTransform(scaleX: 1 / zoomScale, y: 1 / zoomScale)
+    }
+
+    private func projectedPoint(for coordinate: CLLocationCoordinate2D) -> CGPoint {
+        let latitude = min(90, max(-90, coordinate.latitude))
+        let longitude = min(180, max(-180, coordinate.longitude))
+        let absoluteLatitude = abs(latitude)
+        let interval = min(17, Int(absoluteLatitude / 5))
+        let fraction = (absoluteLatitude - Double(interval * 5)) / 5
+        let xCoefficient = Self.robinsonX[interval]
+            + (Self.robinsonX[interval + 1] - Self.robinsonX[interval]) * fraction
+        let yCoefficient = Self.robinsonY[interval]
+            + (Self.robinsonY[interval + 1] - Self.robinsonY[interval]) * fraction
+        let latitudeSign = latitude == 0 ? 0 : (latitude > 0 ? 1.0 : -1.0)
+        let projectedX = 0.5 + longitude * xCoefficient / 360
+        let projectedY = 0.5 - latitudeSign * yCoefficient / 2
+        let normalizedX = Self.horizontalPadding + CGFloat(projectedX) * (1 - Self.horizontalPadding * 2)
+        let normalizedY = Self.verticalPadding + CGFloat(projectedY) * (1 - Self.verticalPadding * 2)
+        return CGPoint(
+            x: normalizedX * canvasView.bounds.width,
+            y: normalizedY * canvasView.bounds.height
+        )
+    }
+}
+
 private enum WireRouteMapPresentation: Equatable {
     case plain
     case detailed
@@ -918,10 +1123,12 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
     private var currentEndpoint: Endpoint?
     private var currentEndpointKey: String?
     private var locatedEndpointKey: String?
+    private var locatedCoordinate: CLLocationCoordinate2D?
     private var locationLookupTask: Task<Void, Never>?
     private var approvedLocationLookup = false
     private var mapPresentation = WireRouteMapPresentation.plain
 
+    private let plainMapView = WireRoutePlainMapView()
     private let mapView = MKMapView()
     private let mapLocationLabel = UILabel()
     private let locationButton = UIButton(type: .system)
@@ -984,7 +1191,9 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         mapContainer.layer.masksToBounds = true
         mapContainer.layer.borderWidth = 1
         mapContainer.layer.borderColor = WireRouteAppearance.border.withAlphaComponent(0.65).cgColor
+        mapContainer.addSubview(plainMapView)
         mapContainer.addSubview(mapView)
+        plainMapView.translatesAutoresizingMaskIntoConstraints = false
         mapView.translatesAutoresizingMaskIntoConstraints = false
 
         mapLocationLabel.text = tr("iosHomeMapWaiting")
@@ -1022,6 +1231,10 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         locationButton.translatesAutoresizingMaskIntoConstraints = false
         mapStyleButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
+            plainMapView.leadingAnchor.constraint(equalTo: mapContainer.leadingAnchor),
+            plainMapView.trailingAnchor.constraint(equalTo: mapContainer.trailingAnchor),
+            plainMapView.topAnchor.constraint(equalTo: mapContainer.topAnchor),
+            plainMapView.bottomAnchor.constraint(equalTo: mapContainer.bottomAnchor),
             mapView.leadingAnchor.constraint(equalTo: mapContainer.leadingAnchor),
             mapView.trailingAnchor.constraint(equalTo: mapContainer.trailingAnchor),
             mapView.topAnchor.constraint(equalTo: mapContainer.topAnchor),
@@ -1178,25 +1391,25 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         mapView.showsCompass = false
         mapView.showsScale = false
         mapView.showsTraffic = false
+        let configuration = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .default)
+        configuration.pointOfInterestFilter = .includingAll
+        configuration.showsTraffic = false
+        mapView.preferredConfiguration = configuration
+        mapView.showsBuildings = true
         applyMapPresentation(.plain)
         showWorld(animated: false)
     }
 
     private func applyMapPresentation(_ presentation: WireRouteMapPresentation) {
         mapPresentation = presentation
-        let configuration: MKStandardMapConfiguration
         switch presentation {
         case .plain:
-            configuration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .default)
-            configuration.pointOfInterestFilter = .excludingAll
-            mapView.showsBuildings = false
+            plainMapView.isHidden = false
+            mapView.isHidden = true
         case .detailed:
-            configuration = MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .default)
-            configuration.pointOfInterestFilter = .includingAll
-            mapView.showsBuildings = true
+            plainMapView.isHidden = true
+            mapView.isHidden = false
         }
-        configuration.showsTraffic = false
-        mapView.preferredConfiguration = configuration
         updateMapStyleButton()
     }
 
@@ -1211,6 +1424,7 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
     }
 
     private func showWorld(animated: Bool) {
+        plainMapView.showWorld(animated: animated)
         let region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 18, longitude: 0),
             span: MKCoordinateSpan(latitudeDelta: 125, longitudeDelta: 330)
@@ -1284,6 +1498,7 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         statusLabel.text = statusText(for: tunnel.status)
         statusImageView.image = UIImage(systemName: tunnel.status == .active ? "lock.fill" : "lock.open")
         statusImageView.tintColor = statusColor(for: tunnel.status)
+        plainMapView.updateMarker(for: tunnel.status)
         refreshEndpointMarker(for: tunnel.status)
 
         connectionButton.configuration?.title = connectionButtonTitle(for: tunnel.status)
@@ -1325,6 +1540,8 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         locationLookupTask?.cancel()
         locationLookupTask = nil
         locatedEndpointKey = nil
+        locatedCoordinate = nil
+        plainMapView.clearEndpoint()
         mapView.removeAnnotations(mapView.annotations)
         mapLocationLabel.text = currentEndpoint == nil ? tr("iosHomeMapWaiting") : tr("iosHomeMapReady")
         locationButton.configuration?.title = tr("iosHomeLocateEndpoint")
@@ -1335,8 +1552,9 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
 
     private func beginLocationLookup() {
         guard let endpoint = currentEndpoint, let endpointKey = currentEndpointKey else { return }
-        if locatedEndpointKey == endpointKey, let annotation = mapView.annotations.first {
-            mapView.setRegion(region(around: annotation.coordinate), animated: true)
+        if locatedEndpointKey == endpointKey, let locatedCoordinate {
+            plainMapView.showEndpoint(at: locatedCoordinate, animated: true)
+            mapView.setRegion(region(around: locatedCoordinate), animated: true)
             return
         }
 
@@ -1367,7 +1585,10 @@ private final class WireRouteHomeViewController: UIViewController, MKMapViewDele
         mapView.removeAnnotations(mapView.annotations)
         mapView.addAnnotation(annotation)
         mapView.setRegion(region(around: location.coordinate), animated: true)
+        plainMapView.updateMarker(for: selectedTunnel?.status)
+        plainMapView.showEndpoint(at: location.coordinate, animated: true)
         locatedEndpointKey = endpointKey
+        locatedCoordinate = location.coordinate
         let displayName = location.displayName.isEmpty ? tr("iosHomeEndpoint") : location.displayName
         mapLocationLabel.text = "\(displayName)\n\(tr("iosHomeLocationApproximate"))"
         locationButton.configuration?.title = tr("iosHomeRecenterEndpoint")
