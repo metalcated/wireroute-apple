@@ -13,6 +13,18 @@ private enum WireRouteMainTab: Int {
     case settings
 }
 
+private enum WireRouteVPNPrivacyDisclosure {
+    private static let acknowledgementKey = "WireRoute.iOS.VPNPrivacyDisclosureAcknowledged.v1"
+
+    static var isAcknowledged: Bool {
+        UserDefaults.standard.bool(forKey: acknowledgementKey)
+    }
+
+    static func acknowledge() {
+        UserDefaults.standard.set(true, forKey: acknowledgementKey)
+    }
+}
+
 private final class WireRouteProfilesSplitViewController: UISplitViewController, UISplitViewControllerDelegate {
     let tunnelsListViewController: TunnelsListTableViewController
 
@@ -2112,6 +2124,7 @@ class MainViewController: UITabBarController {
     private let activityViewController = WireRouteActivityDashboardViewController()
     private let settingsViewController = SettingsTableViewController(tunnelsManager: nil, showsDoneButton: false)
     private let profilesViewController: WireRouteProfilesSplitViewController
+    private var hasPresentedVPNPrivacyDisclosure = false
 
     init(tunnelsManager: TunnelsManager? = nil) {
         initialTunnelsManager = tunnelsManager
@@ -2159,6 +2172,33 @@ class MainViewController: UITabBarController {
                 self.installTunnelsManager(tunnelsManager)
             }
         }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        presentVPNPrivacyDisclosureIfNeeded()
+    }
+
+    private func presentVPNPrivacyDisclosureIfNeeded() {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            return
+        }
+#endif
+        guard !hasPresentedVPNPrivacyDisclosure,
+              !WireRouteVPNPrivacyDisclosure.isAcknowledged,
+              presentedViewController == nil else { return }
+
+        hasPresentedVPNPrivacyDisclosure = true
+        let alert = UIAlertController(
+            title: tr("iosVPNPrivacyDisclosureTitle"),
+            message: tr("iosVPNPrivacyDisclosureMessage"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: tr("iosVPNPrivacyDisclosureContinue"), style: .default) { _ in
+            WireRouteVPNPrivacyDisclosure.acknowledge()
+        })
+        present(alert, animated: true)
     }
 
     private func installTunnelsManager(_ tunnelsManager: TunnelsManager) {

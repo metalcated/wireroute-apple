@@ -8,6 +8,8 @@ This policy describes the data practices of the WireRoute applications for iOS a
 
 WireRoute does not require an account and does not operate a developer-controlled VPN, analytics, advertising, telemetry, or crash-reporting service. The project does not collect or sell personal data, track users, or use third-party advertising or analytics SDKs. The iOS map and optional, user-initiated endpoint-location feature make the limited external requests described below.
 
+WireRoute does not collect, sell, use for secondary purposes, or disclose VPN-derived user data to any third party for any purpose.
+
 Under Apple's App Store privacy definition, data processed only on the device is not collected. The WireRoute project does not receive data from the app for storage or later access. The default iOS map provider receives ordinary requests needed to render the viewed map area. If you explicitly choose to locate a public VPN endpoint, the lookup provider receives the network request needed to return that approximate location. Apple's map service receives rendering requests only while you select the Detailed map layer.
 
 ## Data Stored on Your Device

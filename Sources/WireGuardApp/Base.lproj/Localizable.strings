@@ -768,7 +768,7 @@
 "iosHomeMapReady" = "World view · endpoint not located";
 "iosHomeLocateEndpoint" = "Locate endpoint";
 "iosHomeLocationConsentTitle" = "Show approximate endpoint location?";
-"iosHomeLocationConsentMessage" = "WireRoute will send the selected profile's public endpoint IP address to ipwho.is for an approximate city, state or region, and country. The result is kept only for this app session. Apple MapKit provides the map.";
+"iosHomeLocationConsentMessage" = "WireRoute will send the selected profile's public endpoint IP address to ipwho.is for an approximate city, state or region, and country. The result is kept only for this app session. The default map uses OpenFreeMap; the Detailed layer uses Apple MapKit.";
 "iosHomeLocationNotNow" = "Not now";
 "iosHomeLocationContinue" = "Continue";
 "iosHomeLocationLoading" = "Finding the approximate endpoint location…";
@@ -811,6 +811,12 @@
 "iosSettingsLegalDescription" = "Licenses, notices, and project terms.";
 "iosSettingsRouterOSSetup" = "RouterOS setup";
 "iosSettingsRouterOSSetupDescription" = "Configure secure RouterOS access and peer management.";
+
+// VPN privacy disclosure
+
+"iosVPNPrivacyDisclosureTitle" = "VPN Privacy";
+"iosVPNPrivacyDisclosureMessage" = "WireRoute does not collect, inspect, sell, or share VPN traffic or browsing activity. Profiles, activity history, and diagnostic logs remain on this device unless you explicitly export them. When connected, encrypted traffic goes directly to the WireGuard endpoint and DNS service configured in the selected profile.";
+"iosVPNPrivacyDisclosureContinue" = "Continue";
 
 "activityTitle" = "Activity";
 "activityIntro" = "See live transfer rates and recent connection history for this profile. Activity stays on this device.";
