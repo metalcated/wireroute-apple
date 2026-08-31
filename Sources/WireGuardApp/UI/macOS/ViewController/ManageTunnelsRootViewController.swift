@@ -773,6 +773,7 @@ class ManageTunnelsRootViewController: NSViewController {
     var tunnelDetailVC: TunnelDetailTableViewController?
     var routerOSManagerVC: RouterOSManagerViewController?
     var settingsVC: RouterOSSettingsViewController?
+    private var lastSelectedTunnel: TunnelContainer?
     let tunnelDetailContainerView = NSView()
     var tunnelDetailContentVC: NSViewController?
 
@@ -883,6 +884,12 @@ extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegat
 
     func settingsSelected() {
         let settingsVC = self.settingsVC ?? RouterOSSettingsViewController()
+        settingsVC.onDemandProfileName = { [weak self] in
+            self?.relevantTunnelForOnDemand()?.name
+        }
+        settingsVC.onConfigureOnDemand = { [weak self] in
+            self?.configureOnDemandForRelevantTunnel()
+        }
         self.settingsVC = settingsVC
         setTunnelDetailContentVC(settingsVC)
         tunnelDetailVC = nil
@@ -892,6 +899,7 @@ extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegat
         assert(!tunnelIndices.isEmpty)
         if tunnelIndices.count == 1 {
             let tunnel = tunnelsManager.tunnel(at: tunnelIndices.first!)
+            lastSelectedTunnel = tunnel
             if tunnel.isTunnelAvailableToUser {
                 let tunnelDetailVC = TunnelDetailTableViewController(tunnelsManager: tunnelsManager, tunnel: tunnel)
                 setTunnelDetailContentVC(tunnelDetailVC)
@@ -913,6 +921,31 @@ extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegat
             setTunnelDetailContentVC(multiSelectionVC)
             self.tunnelDetailVC = nil
         }
+    }
+
+    private func relevantTunnelForOnDemand() -> TunnelContainer? {
+        if let lastSelectedTunnel,
+           tunnelsManager.index(of: lastSelectedTunnel) != nil,
+           lastSelectedTunnel.isTunnelAvailableToUser {
+            return lastSelectedTunnel
+        }
+        if let activeTunnel = tunnelsManager.tunnelInOperation(), activeTunnel.isTunnelAvailableToUser {
+            return activeTunnel
+        }
+        for index in 0 ..< tunnelsManager.numberOfTunnels() {
+            let tunnel = tunnelsManager.tunnel(at: index)
+            if tunnel.isTunnelAvailableToUser {
+                return tunnel
+            }
+        }
+        return nil
+    }
+
+    private func configureOnDemandForRelevantTunnel() {
+        guard let tunnel = relevantTunnelForOnDemand() else { return }
+        let tunnelEditVC = TunnelEditViewController(tunnelsManager: tunnelsManager, tunnel: tunnel)
+        tunnelEditVC.delegate = tunnelsListVC
+        presentAsSheet(tunnelEditVC)
     }
 
     func tunnelsListEmpty() {

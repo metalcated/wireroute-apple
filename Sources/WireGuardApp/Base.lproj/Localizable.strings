@@ -523,6 +523,14 @@
 "macSettingsThemeHelp" = "Blue Nordic is the default dark navy interface. System follows macOS.";
 "macSettingsMenuBarIconLabel" = "Menu bar icon";
 "macSettingsMenuBarTitle" = "Menu Bar";
+"macSettingsPersistentVPNTitle" = "Persistent VPN service";
+"macSettingsPersistentVPNServiceLabel" = "Install persistent VPN service";
+"macSettingsPersistentVPNStatus" = "Not required";
+"macSettingsPersistentVPNExplanation" = "Not required on macOS. WireRoute uses Apple’s Network Extension to maintain active tunnels. Automatic reconnection is available through each profile’s On-Demand settings; no separate background service needs to be installed.";
+"macSettingsConfigureOnDemand" = "Configure On-Demand…";
+"macSettingsConfigureOnDemandHelp" = "Open the selected profile’s settings to configure automatic reconnection.";
+"macSettingsConfigureOnDemandProfile (%@)" = "Configure On-Demand for %@";
+"macSettingsConfigureOnDemandUnavailable" = "Create or select a profile before configuring On-Demand.";
 "macSettingsSave" = "Save Changes";
 "macSettingsSaved" = "Settings saved.";
 "macStatusIconLabel" = "Icon";

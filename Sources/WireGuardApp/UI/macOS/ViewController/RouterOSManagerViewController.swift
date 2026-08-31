@@ -2399,6 +2399,11 @@ private final class RouterOSConnectionEditorViewController: NSViewController {
 final class RouterOSSettingsViewController: NSViewController {
     private let appearancePopUp = WireRoutePopUpButton()
     private let statusIconPopUp = WireRoutePopUpButton()
+    private let configureOnDemandButton = WireRouteButton(
+        title: tr("macSettingsConfigureOnDemand"),
+        target: nil,
+        action: nil
+    )
     private let connectionsTableView = NSTableView()
     private let connectionsEmptyLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionsEmpty"))
     private let addConnectionButton = WireRouteButton(title: tr("macRouterOSAddConnection"), target: nil, action: nil)
@@ -2410,12 +2415,15 @@ final class RouterOSSettingsViewController: NSViewController {
     private let keepaliveField = WireRouteTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private var connections = [RouterOSStoredConnection]()
+    var onConfigureOnDemand: (() -> Void)?
+    var onDemandProfileName: (() -> String?)?
 
     override func viewWillAppear() {
         super.viewWillAppear()
         errorLabel.isHidden = true
         loadStoredDefaults()
         loadConnections()
+        updateOnDemandButton()
     }
 
     override func loadView() {
@@ -2433,9 +2441,11 @@ final class RouterOSSettingsViewController: NSViewController {
 
         configureFields()
         let appearanceForm = makeAppearanceForm()
+        let persistentVPNForm = makePersistentVPNForm()
         let connectionsForm = makeConnectionsForm()
         let peerDefaultsForm = makePeerDefaultsForm()
         let appearanceTitle = sectionTitle(tr("macSettingsAppearanceTitle"))
+        let persistentVPNTitle = sectionTitle(tr("macSettingsPersistentVPNTitle"))
         let connectionsTitle = sectionTitle(tr("macRouterOSConnectionsTitle"))
         let peerDefaultsTitle = sectionTitle(tr("macRouterOSSettingsTitle"))
 
@@ -2469,6 +2479,8 @@ final class RouterOSSettingsViewController: NSViewController {
             subtitleLabel,
             appearanceTitle,
             appearanceForm,
+            persistentVPNTitle,
+            persistentVPNForm,
             connectionsTitle,
             connectionsForm,
             peerDefaultsTitle,
@@ -2483,6 +2495,8 @@ final class RouterOSSettingsViewController: NSViewController {
         stack.setCustomSpacing(20, after: subtitleLabel)
         stack.setCustomSpacing(6, after: appearanceTitle)
         stack.setCustomSpacing(18, after: appearanceForm)
+        stack.setCustomSpacing(6, after: persistentVPNTitle)
+        stack.setCustomSpacing(18, after: persistentVPNForm)
         stack.setCustomSpacing(6, after: connectionsTitle)
         stack.setCustomSpacing(18, after: connectionsForm)
         stack.setCustomSpacing(6, after: peerDefaultsTitle)
@@ -2515,6 +2529,7 @@ final class RouterOSSettingsViewController: NSViewController {
             documentView.bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: 22),
             subtitleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             appearanceForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            persistentVPNForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             connectionsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             peerDefaultsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             errorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
@@ -2632,6 +2647,90 @@ final class RouterOSSettingsViewController: NSViewController {
             iconHelpLabel.widthAnchor.constraint(equalTo: iconStack.widthAnchor)
         ])
         return card
+    }
+
+    private func makePersistentVPNForm() -> NSView {
+        let card = makeCard()
+
+        let serviceLabel = NSTextField(labelWithString: tr("macSettingsPersistentVPNServiceLabel"))
+        serviceLabel.font = .systemFont(ofSize: 13, weight: .medium)
+
+        let explanationLabel = NSTextField(
+            wrappingLabelWithString: tr("macSettingsPersistentVPNExplanation")
+        )
+        explanationLabel.font = .systemFont(ofSize: 11)
+        explanationLabel.textColor = .secondaryLabelColor
+        explanationLabel.maximumNumberOfLines = 0
+
+        let informationStack = NSStackView(views: [serviceLabel, explanationLabel])
+        informationStack.orientation = .vertical
+        informationStack.alignment = .leading
+        informationStack.spacing = 5
+        informationStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let serviceSwitch = NSSwitch()
+        serviceSwitch.state = .off
+        serviceSwitch.isEnabled = false
+        serviceSwitch.toolTip = tr("macSettingsPersistentVPNExplanation")
+        serviceSwitch.setAccessibilityLabel(tr("macSettingsPersistentVPNServiceLabel"))
+        serviceSwitch.setAccessibilityHelp(tr("macSettingsPersistentVPNExplanation"))
+
+        let stateLabel = NSTextField(labelWithString: tr("macSettingsPersistentVPNStatus"))
+        stateLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        stateLabel.textColor = .tertiaryLabelColor
+        let stateStack = NSStackView(views: [serviceSwitch, stateLabel])
+        stateStack.orientation = .horizontal
+        stateStack.alignment = .centerY
+        stateStack.spacing = 8
+
+        configureOnDemandButton.target = self
+        configureOnDemandButton.action = #selector(configureOnDemandClicked)
+        configureOnDemandButton.bezelStyle = .regularSquare
+        configureOnDemandButton.setAccessibilityHelp(tr("macSettingsConfigureOnDemandHelp"))
+
+        let actionStack = NSStackView(views: [stateStack, configureOnDemandButton])
+        actionStack.orientation = .vertical
+        actionStack.alignment = .leading
+        actionStack.spacing = 10
+        actionStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [informationStack, spacer, actionStack])
+        row.orientation = .horizontal
+        row.alignment = .top
+        row.spacing = 18
+
+        card.addSubview(row)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            informationStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 250),
+            explanationLabel.widthAnchor.constraint(equalTo: informationStack.widthAnchor),
+            configureOnDemandButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 172)
+        ])
+        updateOnDemandButton()
+        return card
+    }
+
+    private func updateOnDemandButton() {
+        let profileName = onDemandProfileName?()
+        configureOnDemandButton.isEnabled = onConfigureOnDemand != nil && profileName != nil
+        if let profileName {
+            configureOnDemandButton.toolTip = tr(
+                format: "macSettingsConfigureOnDemandProfile (%@)",
+                profileName
+            )
+        } else {
+            configureOnDemandButton.toolTip = tr("macSettingsConfigureOnDemandUnavailable")
+        }
+    }
+
+    @objc private func configureOnDemandClicked() {
+        onConfigureOnDemand?()
     }
 
     private func makeConnectionsForm() -> NSView {
