@@ -34,6 +34,8 @@ jobs:
       ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
       ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
       ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+      MACOS_APPLE_DEVELOPMENT_P12_BASE64: ${{ secrets.MACOS_APPLE_DEVELOPMENT_P12_BASE64 }}
+      MACOS_APPLE_DEVELOPMENT_P12_PASSWORD: ${{ secrets.MACOS_APPLE_DEVELOPMENT_P12_PASSWORD }}
       MACOS_DEVELOPER_ID_P12_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
       MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
       GH_TOKEN: ${{ github.token }}
@@ -70,6 +72,8 @@ jobs:
             ASC_API_KEY_ID \
             ASC_API_ISSUER_ID \
             ASC_API_KEY_P8_BASE64 \
+            MACOS_APPLE_DEVELOPMENT_P12_BASE64 \
+            MACOS_APPLE_DEVELOPMENT_P12_PASSWORD \
             MACOS_DEVELOPER_ID_P12_BASE64 \
             MACOS_DEVELOPER_ID_P12_PASSWORD
           do
@@ -100,21 +104,34 @@ jobs:
         run: |
           set -euo pipefail
 
-          certificate_path="${RUNNER_TEMP}/developer-id-application.p12"
+          development_certificate_path="${RUNNER_TEMP}/apple-development.p12"
+          distribution_certificate_path="${RUNNER_TEMP}/developer-id-application.p12"
           keychain_path="${RUNNER_TEMP}/wireroute-signing.keychain-db"
           keychain_password="$(openssl rand -hex 32)"
           api_key_directory="${RUNNER_TEMP}/private_keys"
           api_key_path="${api_key_directory}/AuthKey_${ASC_API_KEY_ID}.p8"
 
-          printf '%s' "${MACOS_DEVELOPER_ID_P12_BASE64}" | base64 -D -o "${certificate_path}"
+          printf '%s' "${MACOS_APPLE_DEVELOPMENT_P12_BASE64}" | \
+            base64 -D -o "${development_certificate_path}"
+          printf '%s' "${MACOS_DEVELOPER_ID_P12_BASE64}" | \
+            base64 -D -o "${distribution_certificate_path}"
           mkdir -p "${api_key_directory}"
           printf '%s' "${ASC_API_KEY_P8_BASE64}" | base64 -D -o "${api_key_path}"
-          chmod 600 "${certificate_path}" "${api_key_path}"
+          chmod 600 \
+            "${development_certificate_path}" \
+            "${distribution_certificate_path}" \
+            "${api_key_path}"
 
           security create-keychain -p "${keychain_password}" "${keychain_path}"
           security set-keychain-settings -lut 21600 "${keychain_path}"
           security unlock-keychain -p "${keychain_password}" "${keychain_path}"
-          security import "${certificate_path}" \
+          security import "${development_certificate_path}" \
+            -P "${MACOS_APPLE_DEVELOPMENT_P12_PASSWORD}" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "${keychain_path}"
+          security import "${distribution_certificate_path}" \
             -P "${MACOS_DEVELOPER_ID_P12_PASSWORD}" \
             -A \
             -t cert \
@@ -127,7 +144,13 @@ jobs:
             "${keychain_path}"
           security list-keychains -d user -s "${keychain_path}"
 
-          signing_identity_hash="$(security find-identity -v -p codesigning "${keychain_path}" | awk '/Developer ID Application/ { print $2; exit }')"
+          identities="$(security find-identity -v -p codesigning "${keychain_path}")"
+          if ! grep -q 'Apple Development' <<< "${identities}"; then
+            echo "The imported development archive does not contain a usable Apple Development identity."
+            exit 1
+          fi
+
+          signing_identity_hash="$(awk '/Developer ID Application/ { print $2; exit }' <<< "${identities}")"
           if [[ -z "${signing_identity_hash}" ]]; then
             echo "The imported archive does not contain a usable Developer ID Application identity."
             exit 1
