@@ -35,6 +35,10 @@ extension FileManager {
         return sharedFolderURL?.appendingPathComponent("last-error.txt")
     }
 
+    static var activityDatabaseURL: URL? {
+        return sharedFolderURL?.appendingPathComponent("activity.sqlite3")
+    }
+
     static var loginHelperTimestampURL: URL? {
         return sharedFolderURL?.appendingPathComponent("login-helper-timestamp.bin")
     }

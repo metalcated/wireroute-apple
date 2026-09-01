@@ -5,9 +5,63 @@ import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
 
+private final class WireRouteProfilesHeaderView: UIView {
+    private let subtitleLabel: UILabel = {
+        let label = UILabel()
+        label.text = tr("iosProfilesSubtitle")
+        label.font = UIFont.preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 0
+        return label
+    }()
+
+    private let sectionTitleLabel: UILabel = {
+        let label = UILabel()
+        label.text = tr("iosProfilesSectionTitle")
+        label.font = WireRouteAppearance.roundedFont(size: 20, weight: .semibold, textStyle: .title3)
+        label.adjustsFontForContentSizeCategory = true
+        return label
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        let routeMark = UIImageView(image: UIImage(systemName: "point.3.connected.trianglepath.dotted"))
+        routeMark.tintColor = WireRouteAppearance.signalBlue
+        routeMark.contentMode = .scaleAspectFit
+
+        let sectionRow = UIStackView(arrangedSubviews: [sectionTitleLabel, UIView(), routeMark])
+        sectionRow.axis = .horizontal
+        sectionRow.alignment = .center
+        sectionRow.spacing = 12
+
+        let stack = UIStackView(arrangedSubviews: [subtitleLabel, sectionRow])
+        stack.axis = .vertical
+        stack.spacing = 24
+        addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            routeMark.widthAnchor.constraint(equalToConstant: 24),
+            routeMark.heightAnchor.constraint(equalToConstant: 24)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 class TunnelsListTableViewController: UIViewController {
 
     var tunnelsManager: TunnelsManager?
+    var onTunnelSelected: ((TunnelContainer) -> Void)?
+    var onTunnelListChanged: (() -> Void)?
 
     enum TableState: Equatable {
         case normal
@@ -16,15 +70,19 @@ class TunnelsListTableViewController: UIViewController {
     }
 
     let tableView: UITableView = {
-        let tableView = UITableView(frame: CGRect.zero, style: .insetGrouped)
+        let tableView = UITableView(frame: CGRect.zero, style: .plain)
         tableView.backgroundColor = WireRouteAppearance.background
-        tableView.estimatedRowHeight = 76
+        tableView.estimatedRowHeight = 132
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.separatorInset = UIEdgeInsets(top: 0, left: 72, bottom: 0, right: 16)
+        tableView.separatorStyle = .none
+        tableView.contentInset = UIEdgeInsets(top: 2, left: 0, bottom: 20, right: 0)
+        tableView.verticalScrollIndicatorInsets = UIEdgeInsets(top: 2, left: 0, bottom: 20, right: 0)
         tableView.cellLayoutMarginsFollowReadableWidth = true
         tableView.register(TunnelListCell.self)
         return tableView
     }()
+
+    private let profilesHeaderView = WireRouteProfilesHeaderView()
 
     let centeredAddButton: BorderedTextButton = {
         let button = BorderedTextButton()
@@ -46,7 +104,7 @@ class TunnelsListTableViewController: UIViewController {
 
     let emptyStateTitleLabel: UILabel = {
         let label = UILabel()
-        label.text = tr("tunnelsListTitle")
+        label.text = tr("iosHomeNoProfiles")
         label.font = WireRouteAppearance.roundedFont(size: 28, weight: .bold, textStyle: .title1)
         label.adjustsFontForContentSizeCategory = true
         label.textAlignment = .center
@@ -55,7 +113,7 @@ class TunnelsListTableViewController: UIViewController {
 
     let emptyStateMessageLabel: UILabel = {
         let label = UILabel()
-        label.text = tr("addTunnelMenuHeader")
+        label.text = tr("iosHomeNoProfilesDescription")
         label.font = UIFont.preferredFont(forTextStyle: .body)
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .secondaryLabel
@@ -85,6 +143,8 @@ class TunnelsListTableViewController: UIViewController {
 
         tableView.dataSource = self
         tableView.delegate = self
+        profilesHeaderView.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 112)
+        tableView.tableHeaderView = profilesHeaderView
 
         view.addSubview(tableView)
         tableView.translatesAutoresizingMaskIntoConstraints = false
@@ -102,14 +162,29 @@ class TunnelsListTableViewController: UIViewController {
             busyIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
 
+        centeredAddButton.title = tr("iosHomeAddProfile")
+
         let emptyStateStack = UIStackView(arrangedSubviews: [emptyStateGlyph, emptyStateTitleLabel, emptyStateMessageLabel, centeredAddButton])
         emptyStateStack.axis = .vertical
         emptyStateStack.alignment = .center
         emptyStateStack.spacing = 12
         emptyStateStack.setCustomSpacing(20, after: emptyStateMessageLabel)
 
-        emptyStateView.addSubview(emptyStateStack)
+        let emptyStateCard = UIView()
+        emptyStateCard.backgroundColor = WireRouteAppearance.card
+        emptyStateCard.layer.cornerRadius = 24
+        emptyStateCard.layer.cornerCurve = .continuous
+        emptyStateCard.layer.borderWidth = 1
+        emptyStateCard.layer.borderColor = WireRouteAppearance.border.withAlphaComponent(0.72).cgColor
+        emptyStateCard.layer.shadowColor = UIColor.black.cgColor
+        emptyStateCard.layer.shadowOpacity = 0.34
+        emptyStateCard.layer.shadowRadius = 18
+        emptyStateCard.layer.shadowOffset = CGSize(width: 0, height: 11)
+
+        emptyStateCard.addSubview(emptyStateStack)
         emptyStateStack.translatesAutoresizingMaskIntoConstraints = false
+        emptyStateView.addSubview(emptyStateCard)
+        emptyStateCard.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyStateView)
         emptyStateView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -118,10 +193,14 @@ class TunnelsListTableViewController: UIViewController {
             emptyStateView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             emptyStateView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
 
-            emptyStateStack.leadingAnchor.constraint(greaterThanOrEqualTo: emptyStateView.leadingAnchor, constant: 32),
-            emptyStateStack.trailingAnchor.constraint(lessThanOrEqualTo: emptyStateView.trailingAnchor, constant: -32),
-            emptyStateStack.centerXAnchor.constraint(equalTo: emptyStateView.centerXAnchor),
-            emptyStateStack.centerYAnchor.constraint(equalTo: emptyStateView.centerYAnchor, constant: -24),
+            emptyStateCard.leadingAnchor.constraint(equalTo: emptyStateView.leadingAnchor, constant: 20),
+            emptyStateCard.trailingAnchor.constraint(equalTo: emptyStateView.trailingAnchor, constant: -20),
+            emptyStateCard.centerYAnchor.constraint(equalTo: emptyStateView.centerYAnchor, constant: -34),
+
+            emptyStateStack.leadingAnchor.constraint(equalTo: emptyStateCard.leadingAnchor, constant: 28),
+            emptyStateStack.trailingAnchor.constraint(equalTo: emptyStateCard.trailingAnchor, constant: -28),
+            emptyStateStack.topAnchor.constraint(equalTo: emptyStateCard.topAnchor, constant: 30),
+            emptyStateStack.bottomAnchor.constraint(equalTo: emptyStateCard.bottomAnchor, constant: -30),
 
             emptyStateGlyph.widthAnchor.constraint(equalToConstant: 72),
             emptyStateGlyph.heightAnchor.constraint(equalTo: emptyStateGlyph.widthAnchor),
@@ -136,6 +215,27 @@ class TunnelsListTableViewController: UIViewController {
         if tunnelsManager == nil {
             busyIndicator.startAnimating()
         }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateProfilesHeaderSize()
+    }
+
+    private func updateProfilesHeaderSize() {
+        let targetWidth = tableView.bounds.width
+        guard targetWidth > 0 else { return }
+
+        profilesHeaderView.frame.size.width = targetWidth
+        let targetSize = profilesHeaderView.systemLayoutSizeFitting(
+            CGSize(width: targetWidth, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+        guard abs(profilesHeaderView.frame.height - targetSize.height) > 0.5 else { return }
+
+        profilesHeaderView.frame.size.height = targetSize.height
+        tableView.tableHeaderView = profilesHeaderView
     }
 
     override func viewDidLoad() {
@@ -168,9 +268,7 @@ class TunnelsListTableViewController: UIViewController {
         switch tableState {
         case .normal:
             navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addButtonTapped(sender:)))
-            let settingsButton = UIBarButtonItem(image: UIImage(systemName: "gearshape"), style: .plain, target: self, action: #selector(settingsButtonTapped(sender:)))
-            settingsButton.accessibilityLabel = tr("tunnelsListSettingsButtonTitle")
-            navigationItem.leftBarButtonItem = settingsButton
+            navigationItem.leftBarButtonItem = nil
         case .rowSwiped:
             navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(doneButtonTapped))
             navigationItem.leftBarButtonItem = UIBarButtonItem(title: tr("tunnelsListSelectButtonTitle"), style: .plain, target: self, action: #selector(selectButtonTapped))
@@ -204,6 +302,7 @@ class TunnelsListTableViewController: UIViewController {
         busyIndicator.stopAnimating()
         tableView.reloadData()
         updateEmptyState(animated: false)
+        onTunnelListChanged?()
     }
 
     func updateEmptyState(animated: Bool) {
@@ -367,6 +466,7 @@ class TunnelsListTableViewController: UIViewController {
         guard let splitViewController = splitViewController else { return }
         guard let navController = navigationController else { return }
 
+        onTunnelSelected?(tunnel)
         let tunnelDetailVC = TunnelDetailTableViewController(tunnelsManager: tunnelsManager,
                                                              tunnel: tunnel)
         let tunnelDetailNC = UINavigationController(rootViewController: tunnelDetailVC)
@@ -416,7 +516,7 @@ extension TunnelsListTableViewController: UITableViewDataSource {
         if let tunnelsManager = tunnelsManager {
             let tunnel = tunnelsManager.tunnel(at: indexPath.row)
             cell.tunnel = tunnel
-            cell.onSwitchToggled = { [weak self] isOn in
+            cell.onStatusButtonTapped = { [weak self] isOn in
                 guard let self = self, let tunnelsManager = self.tunnelsManager else { return }
                 if tunnel.hasOnDemandRules {
                     tunnelsManager.setOnDemandEnabled(isOn, on: tunnel) { error in
@@ -489,25 +589,29 @@ extension TunnelsListTableViewController: TunnelsManagerListDelegate {
     func tunnelAdded(at index: Int) {
         tableView.insertRows(at: [IndexPath(row: index, section: 0)], with: .automatic)
         updateEmptyState(animated: true)
+        onTunnelListChanged?()
     }
 
     func tunnelModified(at index: Int) {
         tableView.reloadRows(at: [IndexPath(row: index, section: 0)], with: .automatic)
+        onTunnelListChanged?()
     }
 
     func tunnelMoved(from oldIndex: Int, to newIndex: Int) {
         tableView.moveRow(at: IndexPath(row: oldIndex, section: 0), to: IndexPath(row: newIndex, section: 0))
+        onTunnelListChanged?()
     }
 
     func tunnelRemoved(at index: Int, tunnel: TunnelContainer) {
         tableView.deleteRows(at: [IndexPath(row: index, section: 0)], with: .automatic)
         updateEmptyState(animated: true)
+        onTunnelListChanged?()
         if detailDisplayedTunnel == tunnel, let splitViewController = splitViewController {
             if splitViewController.isCollapsed != false {
                 (splitViewController.viewControllers[0] as? UINavigationController)?.popToRootViewController(animated: false)
             } else {
                 let detailVC = UIViewController()
-                detailVC.view.backgroundColor = .systemBackground
+                detailVC.view.backgroundColor = WireRouteAppearance.background
                 let detailNC = UINavigationController(rootViewController: detailVC)
                 splitViewController.showDetailViewController(detailNC, sender: self)
             }

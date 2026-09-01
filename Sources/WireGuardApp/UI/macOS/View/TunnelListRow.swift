@@ -73,10 +73,9 @@ class TunnelListRow: NSView {
         label.drawsBackground = false
         label.alignment = .center
         label.font = .systemFont(ofSize: 10, weight: .semibold)
-        label.textColor = .systemBlue
+        label.textColor = WireRouteTheme.accentColor
         label.wantsLayer = true
-        label.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
-        label.layer?.cornerRadius = 6
+        label.layer?.cornerRadius = 5
         label.layer?.cornerCurve = .continuous
         return label
     }()
@@ -89,6 +88,13 @@ class TunnelListRow: NSView {
 
     init() {
         super.init(frame: CGRect.zero)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
 
         let textStack = NSStackView(views: [nameLabel, detailLabel])
         textStack.orientation = .vertical
@@ -106,22 +112,31 @@ class TunnelListRow: NSView {
         detailLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         routingModeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         NSLayoutConstraint.activate([
-            statusImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            statusImageView.widthAnchor.constraint(equalToConstant: 14),
+            statusImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            statusImageView.widthAnchor.constraint(equalToConstant: 12),
             statusImageView.heightAnchor.constraint(equalTo: statusImageView.widthAnchor),
             statusImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            textStack.leadingAnchor.constraint(equalTo: statusImageView.trailingAnchor, constant: 10),
-            textStack.trailingAnchor.constraint(lessThanOrEqualTo: routingModeLabel.leadingAnchor, constant: -12),
+            textStack.leadingAnchor.constraint(equalTo: statusImageView.trailingAnchor, constant: 9),
+            textStack.trailingAnchor.constraint(lessThanOrEqualTo: routingModeLabel.leadingAnchor, constant: -10),
             textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            routingModeLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            routingModeLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             routingModeLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            routingModeLabel.widthAnchor.constraint(equalToConstant: 50),
-            routingModeLabel.heightAnchor.constraint(equalToConstant: 24),
+            routingModeLabel.widthAnchor.constraint(equalToConstant: 48),
+            routingModeLabel.heightAnchor.constraint(equalToConstant: 22),
         ])
     }
 
     required init?(coder decoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateRoutingModeAppearance()
+    }
+
+    @objc private func themeDidChange() {
+        updateRoutingModeAppearance()
     }
 
     static func image(for tunnel: TunnelContainer?) -> NSImage? {
@@ -154,6 +169,14 @@ class TunnelListRow: NSView {
             ? tr("macTunnelRoutingFull")
             : tr("macTunnelRoutingSplit")
         statusImageView.image = Self.image(for: tunnel)
+        updateRoutingModeAppearance()
+    }
+
+    private func updateRoutingModeAppearance() {
+        routingModeLabel.textColor = WireRouteTheme.accentColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            routingModeLabel.layer?.backgroundColor = WireRouteTheme.accentColor.withAlphaComponent(0.10).cgColor
+        }
     }
 
     private static func statusText(for tunnel: TunnelContainer) -> String {

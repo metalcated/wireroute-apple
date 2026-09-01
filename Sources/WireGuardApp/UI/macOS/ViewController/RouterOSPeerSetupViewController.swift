@@ -28,27 +28,29 @@ final class RouterOSPeerSetupViewController: NSViewController {
     private let existingTunnelNames: Set<String>
     private let publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?
     private let peerDefaults: RouterOSPeerDefaults
+    private let preferredInterfaceName: String?
     private let clientPrivateKey: String
     private let clientPublicKey: String
 
-    private let interfacePopup = NSPopUpButton()
-    private let nameField = NSTextField()
-    private let clientAddressField = NSTextField()
+    private let interfacePopup = WireRoutePopUpButton()
+    private let nameField = WireRouteTextField()
+    private let clientAddressField = WireRouteTextField()
     private let clientAddressHelpLabel = NSTextField(wrappingLabelWithString: "")
-    private let endpointField = NSTextField()
-    private let endpointPortField = NSTextField()
+    private let endpointField = WireRouteTextField()
+    private let endpointPortField = WireRouteTextField()
     private let endpointHelpLabel = NSTextField(wrappingLabelWithString: "")
-    private let dnsField = NSTextField()
-    private let routeModeControl = NSSegmentedControl(
+    private let dnsField = WireRouteTextField()
+    private let routeModeControl = WireRouteSegmentedControl(
         labels: [tr("macRouterOSRouteModeSplit"), tr("macRouterOSRouteModeFull")],
         trackingMode: .selectOne,
         target: nil,
         action: nil
     )
     private let routesTextView = NSTextView()
-    private let keepaliveField = NSTextField()
+    private let routeGuidanceView = NSView()
+    private let keepaliveField = WireRouteTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
-    private let reviewButton = NSButton(title: tr("macRouterOSReviewPeer"), target: nil, action: nil)
+    private let reviewButton = WireRouteButton(title: tr("macRouterOSReviewPeer"), target: nil, action: nil)
     private var lastSuggestedClientAddress: String?
 
     init(
@@ -56,18 +58,20 @@ final class RouterOSPeerSetupViewController: NSViewController {
         existingPeers: [RouterOSWireGuardPeer],
         existingTunnelNames: Set<String>,
         publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?,
-        peerDefaults: RouterOSPeerDefaults
+        peerDefaults: RouterOSPeerDefaults,
+        preferredInterfaceName: String?
     ) {
         self.interfaces = interfaces
         self.existingPeers = existingPeers
         self.existingTunnelNames = existingTunnelNames
         self.publicEndpointSuggestion = publicEndpointSuggestion
         self.peerDefaults = peerDefaults
+        self.preferredInterfaceName = preferredInterfaceName
         let privateKey = PrivateKey()
         clientPrivateKey = privateKey.base64Key
         clientPublicKey = privateKey.publicKey.base64Key
         super.init(nibName: nil, bundle: nil)
-        preferredContentSize = NSSize(width: 700, height: 710)
+        preferredContentSize = NSSize(width: 700, height: 790)
     }
 
     required init?(coder: NSCoder) {
@@ -75,9 +79,11 @@ final class RouterOSPeerSetupViewController: NSViewController {
     }
 
     override func loadView() {
-        let view = NSView()
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let view = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
 
         let titleLabel = NSTextField(labelWithString: tr("macRouterOSSetupTitle"))
         titleLabel.font = .systemFont(ofSize: 25, weight: .bold)
@@ -88,13 +94,13 @@ final class RouterOSPeerSetupViewController: NSViewController {
         configureFields()
         let form = makeForm()
 
-        let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: self, action: #selector(cancelClicked))
-        cancelButton.bezelStyle = .rounded
-        cancelButton.controlSize = .large
+        let cancelButton = WireRouteButton(title: tr("macRouterOSCancel"), target: self, action: #selector(cancelClicked))
+        cancelButton.bezelStyle = .regularSquare
+        cancelButton.controlSize = .regular
         reviewButton.target = self
         reviewButton.action = #selector(reviewClicked)
-        reviewButton.bezelStyle = .rounded
-        reviewButton.controlSize = .large
+        reviewButton.bezelStyle = .regularSquare
+        reviewButton.controlSize = .regular
         reviewButton.keyEquivalent = "\r"
 
         errorLabel.textColor = .systemRed
@@ -135,7 +141,10 @@ final class RouterOSPeerSetupViewController: NSViewController {
         for interface in interfaces {
             interfacePopup.addItem(withTitle: interface.name)
         }
-        if let preferredIndex = interfaces.firstIndex(where: { $0.isRunning && !$0.isDisabled }) {
+        if let preferredInterfaceName,
+           let preferredIndex = interfaces.firstIndex(where: { $0.name == preferredInterfaceName }) {
+            interfacePopup.selectItem(at: preferredIndex)
+        } else if let preferredIndex = interfaces.firstIndex(where: { $0.isRunning && !$0.isDisabled }) {
             interfacePopup.selectItem(at: preferredIndex)
         }
         interfacePopup.target = self
@@ -186,12 +195,11 @@ final class RouterOSPeerSetupViewController: NSViewController {
     }
 
     private func makeForm() -> NSView {
-        let card = NSView()
-        card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        let card = AppearanceAwareMaterialView(material: .contentBackground, blendingMode: .withinWindow)
+        card.adaptiveBorderColor = .separatorColor
+        card.adaptiveBorderAlpha = 0.65
         card.layer?.cornerRadius = 14
         card.layer?.cornerCurve = .continuous
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
         card.layer?.borderWidth = 1
 
         let endpointRow = NSStackView(views: [endpointField, endpointPortField])
@@ -213,17 +221,19 @@ final class RouterOSPeerSetupViewController: NSViewController {
         clientAddressField.widthAnchor.constraint(equalTo: clientAddressStack.widthAnchor).isActive = true
         clientAddressHelpLabel.widthAnchor.constraint(equalTo: clientAddressStack.widthAnchor).isActive = true
 
-        let routesScrollView = NSScrollView()
-        routesScrollView.borderType = .bezelBorder
+        let routesScrollView = WireRouteTextEditorScrollView()
         routesScrollView.hasVerticalScroller = true
         routesScrollView.documentView = routesTextView
+        routesScrollView.updateWireRouteTheme()
         routesScrollView.heightAnchor.constraint(equalToConstant: 76).isActive = true
 
-        let routeStack = NSStackView(views: [routeModeControl, routesScrollView])
+        configureRouteGuidanceView()
+        let routeStack = NSStackView(views: [routeModeControl, routesScrollView, routeGuidanceView])
         routeStack.orientation = .vertical
         routeStack.alignment = .leading
         routeStack.spacing = 8
         routesScrollView.widthAnchor.constraint(equalTo: routeStack.widthAnchor).isActive = true
+        routeGuidanceView.widthAnchor.constraint(equalTo: routeStack.widthAnchor).isActive = true
 
         let keepaliveRow = NSStackView(views: [keepaliveField, NSTextField(labelWithString: tr("macRouterOSSeconds"))])
         keepaliveRow.orientation = .horizontal
@@ -256,6 +266,59 @@ final class RouterOSPeerSetupViewController: NSViewController {
             nameField.widthAnchor.constraint(greaterThanOrEqualToConstant: 390)
         ])
         return card
+    }
+
+    private func configureRouteGuidanceView() {
+        guard routeGuidanceView.subviews.isEmpty else { return }
+        routeGuidanceView.wantsLayer = true
+        routeGuidanceView.layer?.backgroundColor = WireRouteTheme.accentColor.withAlphaComponent(0.08).cgColor
+        routeGuidanceView.layer?.borderColor = WireRouteTheme.accentColor.withAlphaComponent(0.32).cgColor
+        routeGuidanceView.layer?.borderWidth = 1
+        routeGuidanceView.layer?.cornerRadius = 10
+        routeGuidanceView.layer?.cornerCurve = .continuous
+
+        let iconView = NSImageView()
+        iconView.image = NSImage(
+            systemSymbolName: "questionmark.circle.fill",
+            accessibilityDescription: tr("splitRouteEntryGuidanceTitle")
+        )
+        iconView.contentTintColor = WireRouteTheme.accentColor
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.setContentHuggingPriority(.required, for: .horizontal)
+
+        let titleLabel = NSTextField(labelWithString: tr("splitRouteEntryGuidanceTitle"))
+        titleLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        let messageLabel = NSTextField(
+            wrappingLabelWithString: tr("splitRouteEntryGuidanceMessage")
+        )
+        messageLabel.font = .systemFont(ofSize: 10.5)
+        messageLabel.textColor = .secondaryLabelColor
+        let exampleLabel = NSTextField(
+            wrappingLabelWithString: tr("splitRouteEntryGuidanceExample")
+        )
+        exampleLabel.font = .monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        exampleLabel.textColor = .secondaryLabelColor
+
+        let textStack = NSStackView(views: [titleLabel, messageLabel, exampleLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 3
+        let contentStack = NSStackView(views: [iconView, textStack])
+        contentStack.orientation = .horizontal
+        contentStack.alignment = .top
+        contentStack.spacing = 9
+        routeGuidanceView.addSubview(contentStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            contentStack.leadingAnchor.constraint(equalTo: routeGuidanceView.leadingAnchor, constant: 11),
+            contentStack.trailingAnchor.constraint(equalTo: routeGuidanceView.trailingAnchor, constant: -11),
+            contentStack.topAnchor.constraint(equalTo: routeGuidanceView.topAnchor, constant: 9),
+            contentStack.bottomAnchor.constraint(equalTo: routeGuidanceView.bottomAnchor, constant: -9),
+            iconView.widthAnchor.constraint(equalToConstant: 17),
+            iconView.heightAnchor.constraint(equalToConstant: 17),
+            messageLabel.widthAnchor.constraint(equalTo: textStack.widthAnchor),
+            exampleLabel.widthAnchor.constraint(equalTo: textStack.widthAnchor)
+        ])
     }
 
     private func label(_ value: String) -> NSTextField {
@@ -325,6 +388,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         let isSplit = routeModeControl.selectedSegment == 0
         routesTextView.isEditable = isSplit
         routesTextView.textColor = isSplit ? .labelColor : .tertiaryLabelColor
+        routeGuidanceView.isHidden = !isSplit
         if !isSplit {
             routesTextView.string = tr("macRouterOSFullRouteAutomatic")
         } else if routesTextView.string == tr("macRouterOSFullRouteAutomatic") {
@@ -365,7 +429,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         let peerCreation = try RouterOSPeerCreation(
             interfaceName: interface.name,
             name: nameField.stringValue,
-            comment: tr("macRouterOSManagedPeerComment"),
+            comment: RouterOSPeerCreation.wireRouteManagedComment,
             publicKey: clientPublicKey,
             clientAddress: clientAddress,
             persistentKeepalive: persistentKeepalive,

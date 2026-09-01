@@ -393,6 +393,7 @@ class TunnelsManager {
     ) {
         let tunnelProviderManager = tunnel.tunnelProvider
         let protocolConfiguration = tunnelProviderManager.protocolConfiguration as? NETunnelProviderProtocol
+        let activityProfileIdentifier = tunnel.activityProfileIdentifier
         #if os(macOS)
         let shouldDestroyConfigurationReference = tunnel.isTunnelAvailableToUser
         #elseif os(iOS)
@@ -410,6 +411,13 @@ class TunnelsManager {
             }
             if shouldDestroyConfigurationReference {
                 protocolConfiguration?.destroyConfigurationReference()
+            }
+            do {
+                try WireRouteActivityStore().clearAllHistory(
+                    profileIdentifier: activityProfileIdentifier
+                )
+            } catch {
+                wg_log(.error, message: "Remove: Clearing activity history failed: \(error.localizedDescription)")
             }
             if let self, let index = self.tunnels.firstIndex(of: tunnel) {
                 self.tunnels.remove(at: index)
@@ -547,6 +555,30 @@ class TunnelsManager {
                 return
             }
             completionHandler(nil)
+        }
+    }
+
+    func setDNSProtectionPolicy(
+        _ policy: DNSProtectionPolicy,
+        on tunnel: TunnelContainer,
+        completionHandler: @escaping @MainActor @Sendable (WireGuardAppError?) -> Void
+    ) {
+        guard let tunnelProtocol = tunnel.tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol else {
+            completionHandler(TunnelDNSProtectionError.invalidStoredConfiguration)
+            return
+        }
+
+        let previousProviderConfiguration = tunnelProtocol.providerConfiguration
+        tunnelProtocol.setWireRouteDNSProtectionPolicy(policy)
+
+        Task { @MainActor in
+            do {
+                try await tunnel.tunnelProvider.saveToPreferences()
+                completionHandler(nil)
+            } catch {
+                tunnelProtocol.providerConfiguration = previousProviderConfiguration
+                completionHandler(TunnelsManagerError.systemErrorOnModifyTunnel(systemError: error))
+            }
         }
     }
 
@@ -775,6 +807,40 @@ class TunnelContainer: NSObject {
         }
         let storedMode = (tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol)?.wireRouteRoutingMode
         return TunnelRoutingController.detectedMode(configuration: configuration, storedMode: storedMode)
+    }
+
+    var dnsProtectionPolicy: DNSProtectionPolicy {
+        guard let tunnelProtocol = tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol else {
+            return .profile
+        }
+        return (try? tunnelProtocol.wireRouteDNSProtectionPolicy()) ?? .profile
+    }
+
+    var profileDNSRouteSummary: ProfileDNSRouteSummary {
+        guard let configuration = tunnelConfiguration else {
+            return ProfileDNSRouteSummary(
+                dnsServers: [],
+                searchDomains: [],
+                allowedRoutes: [],
+                isConfigurationAvailable: false
+            )
+        }
+        let routedAddressRanges = configuration.interface.addresses
+            + configuration.peers.flatMap(\.allowedIPs)
+        let allowedRoutes = routedAddressRanges
+            .compactMap { try? RoutePrefix($0.stringRepresentation) }
+        return ProfileDNSRouteSummary(
+            dnsServers: configuration.interface.dns.map(\.stringRepresentation),
+            searchDomains: configuration.interface.dnsSearch,
+            allowedRoutes: allowedRoutes
+        )
+    }
+
+    var activityProfileIdentifier: UUID {
+        guard let tunnelProtocol = tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol else {
+            return WireRouteProfileIdentifier.derived(from: name)
+        }
+        return tunnelProtocol.wireRouteActivityProfileIdentifier
     }
 
     var onDemandOption: ActivateOnDemandOption {

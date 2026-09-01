@@ -5,10 +5,10 @@ import Cocoa
 
 class ButtonRow: NSView {
     let button: NSButton = {
-        let button = NSButton()
+        let button = WireRouteButton()
         button.title = ""
         button.setButtonType(.momentaryPushIn)
-        button.bezelStyle = .rounded
+        button.bezelStyle = .regularSquare
         return button
     }()
 

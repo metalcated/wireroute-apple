@@ -21,10 +21,10 @@ class UnusableTunnelDetailViewController: NSViewController {
     }()
 
     let button: NSButton = {
-        let button = NSButton()
+        let button = WireRouteButton()
         button.title = tr("macUnusableTunnelButtonTitleDeleteTunnel")
         button.setButtonType(.momentaryPushIn)
-        button.bezelStyle = .rounded
+        button.bezelStyle = .regularSquare
         return button
     }()
 

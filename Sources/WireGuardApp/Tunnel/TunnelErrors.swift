@@ -64,11 +64,81 @@ enum TunnelsManagerActivationError: WireGuardAppError {
     }
 }
 
+enum TunnelDNSProtectionError: WireGuardAppError, Sendable {
+    case invalidStoredConfiguration
+
+    var alertText: AlertText {
+        return (tr("dnsProtectionInvalidTitle"), tr("dnsProtectionInvalidStoredMessage"))
+    }
+}
+
+extension DNSProtectionPolicy {
+    var localizedTitle: String {
+        switch mode {
+        case .profile:
+            return tr("dnsProtectionProfileDNS")
+        case .encryptedHTTPS:
+            return tr("dnsProtectionEncryptedDNS")
+        }
+    }
+
+    var localizedDescription: String {
+        switch mode {
+        case .profile:
+            return tr("dnsProtectionProfileDescription")
+        case .encryptedHTTPS:
+            return tr("dnsProtectionEncryptedDescription")
+        }
+    }
+}
+
+extension DNSProtectionPreset {
+    var localizedTitle: String {
+        switch self {
+        case .cloudflare:
+            return tr("dnsPresetCloudflare")
+        case .cloudflareSecurity:
+            return tr("dnsPresetCloudflareSecurity")
+        case .cloudflareFamily:
+            return tr("dnsPresetCloudflareFamily")
+        case .adGuard:
+            return tr("dnsPresetAdGuard")
+        case .adGuardFamily:
+            return tr("dnsPresetAdGuardFamily")
+        case .quad9:
+            return tr("dnsPresetQuad9")
+        case .google:
+            return tr("dnsPresetGoogle")
+        }
+    }
+
+    var localizedDescription: String {
+        switch self {
+        case .cloudflare:
+            return tr("dnsPresetCloudflareDescription")
+        case .cloudflareSecurity:
+            return tr("dnsPresetCloudflareSecurityDescription")
+        case .cloudflareFamily:
+            return tr("dnsPresetCloudflareFamilyDescription")
+        case .adGuard:
+            return tr("dnsPresetAdGuardDescription")
+        case .adGuardFamily:
+            return tr("dnsPresetAdGuardFamilyDescription")
+        case .quad9:
+            return tr("dnsPresetQuad9Description")
+        case .google:
+            return tr("dnsPresetGoogleDescription")
+        }
+    }
+}
+
 extension PacketTunnelProviderError: WireGuardAppError {
     var alertText: AlertText {
         switch self {
         case .savedProtocolConfigurationIsInvalid:
             return (tr("alertTunnelActivationFailureTitle"), tr("alertTunnelActivationSavedConfigFailureMessage"))
+        case .invalidDNSProtectionConfiguration:
+            return (tr("dnsProtectionInvalidTitle"), tr("dnsProtectionInvalidStoredMessage"))
         case .dnsResolutionFailure:
             return (tr("alertTunnelDNSFailureTitle"), tr("alertTunnelDNSFailureMessage"))
         case .couldNotStartBackend:

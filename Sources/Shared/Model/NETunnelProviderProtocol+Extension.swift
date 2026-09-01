@@ -8,6 +8,16 @@ private enum WireRouteProviderMetadataKey {
     static let routingMode = "WireRouteRoutingMode"
     static let splitAllowedIPs = "WireRouteSplitAllowedIPs"
     static let blockedAddressFamilies = "WireRouteBlockedAddressFamilies"
+    static let dnsProtection = "WireRouteDNSProtection"
+    static let activityProfileIdentifier = "WireRouteActivityProfileIdentifier"
+    static let activityProfileName = "WireRouteActivityProfileName"
+}
+
+private enum WireRouteDNSProtectionMetadataKey {
+    static let version = "version"
+    static let mode = "mode"
+    static let serverURL = "serverURL"
+    static let bootstrapServers = "bootstrapServers"
 }
 
 private enum WireRouteProviderRoutingMode: String {
@@ -17,6 +27,7 @@ private enum WireRouteProviderRoutingMode: String {
 
 enum PacketTunnelProviderError: String, Error {
     case savedProtocolConfigurationIsInvalid
+    case invalidDNSProtectionConfiguration
     case dnsResolutionFailure
     case couldNotStartBackend
     case couldNotDetermineFileDescriptor
@@ -45,6 +56,11 @@ extension NETunnelProviderProtocol {
         #endif
 
         synchronizeWireRouteRoutingMetadata(with: tunnelConfiguration)
+        synchronizeWireRouteActivityMetadata(
+            name: name,
+            tunnelConfiguration: tunnelConfiguration,
+            previouslyFrom: old
+        )
 
         let endpoints = tunnelConfiguration.peers.compactMap { $0.endpoint }
         if endpoints.count == 1 {
@@ -95,6 +111,86 @@ extension NETunnelProviderProtocol {
             families.insert(.ipv6)
         }
         return families
+    }
+
+    func wireRouteDNSProtectionPolicy() throws -> DNSProtectionPolicy {
+        guard let metadata = providerConfiguration?[WireRouteProviderMetadataKey.dnsProtection] else {
+            return .profile
+        }
+        guard let metadata = metadata as? [String: Any],
+              let version = metadata[WireRouteDNSProtectionMetadataKey.version] as? Int,
+              version == 1,
+              let modeString = metadata[WireRouteDNSProtectionMetadataKey.mode] as? String,
+              let mode = DNSProtectionMode(rawValue: modeString) else {
+            throw DNSProtectionPolicyError.invalidStoredPolicy
+        }
+
+        switch mode {
+        case .profile:
+            return .profile
+        case .encryptedHTTPS:
+            guard let serverURL = metadata[WireRouteDNSProtectionMetadataKey.serverURL] as? String else {
+                throw DNSProtectionPolicyError.invalidStoredPolicy
+            }
+            let bootstrapServers = metadata[WireRouteDNSProtectionMetadataKey.bootstrapServers] as? [String] ?? []
+            return try DNSProtectionPolicy.encryptedHTTPS(
+                serverURLString: serverURL,
+                bootstrapServerStrings: bootstrapServers
+            )
+        }
+    }
+
+    func setWireRouteDNSProtectionPolicy(_ policy: DNSProtectionPolicy) {
+        var metadata = providerConfiguration ?? [:]
+        switch policy.mode {
+        case .profile:
+            metadata.removeValue(forKey: WireRouteProviderMetadataKey.dnsProtection)
+        case .encryptedHTTPS:
+            guard let serverURL = policy.serverURL else { return }
+            metadata[WireRouteProviderMetadataKey.dnsProtection] = [
+                WireRouteDNSProtectionMetadataKey.version: 1,
+                WireRouteDNSProtectionMetadataKey.mode: policy.mode.rawValue,
+                WireRouteDNSProtectionMetadataKey.serverURL: serverURL.absoluteString,
+                WireRouteDNSProtectionMetadataKey.bootstrapServers: policy.bootstrapServers
+            ]
+        }
+        providerConfiguration = metadata
+    }
+
+    var wireRouteActivityProfileIdentifier: UUID {
+        if let rawIdentifier = providerConfiguration?[WireRouteProviderMetadataKey.activityProfileIdentifier]
+            as? String,
+           let identifier = UUID(uuidString: rawIdentifier) {
+            return identifier
+        }
+        let stableValue = asTunnelConfiguration()?.interface.privateKey.publicKey.base64Key
+            ?? serverAddress
+            ?? "WireRoute"
+        return WireRouteProfileIdentifier.derived(from: stableValue)
+    }
+
+    var wireRouteActivityProfileName: String {
+        providerConfiguration?[WireRouteProviderMetadataKey.activityProfileName] as? String
+            ?? "WireRoute"
+    }
+
+    private func synchronizeWireRouteActivityMetadata(
+        name: String,
+        tunnelConfiguration: TunnelConfiguration,
+        previouslyFrom old: NEVPNProtocol?
+    ) {
+        var metadata = providerConfiguration ?? [:]
+        if metadata[WireRouteProviderMetadataKey.activityProfileIdentifier] == nil {
+            let oldStableValue = (old as? NETunnelProviderProtocol)?
+                .asTunnelConfiguration()?
+                .interface.privateKey.publicKey.base64Key
+            let stableValue = oldStableValue ?? tunnelConfiguration.interface.privateKey.publicKey.base64Key
+            metadata[WireRouteProviderMetadataKey.activityProfileIdentifier] = WireRouteProfileIdentifier
+                .derived(from: stableValue)
+                .uuidString
+        }
+        metadata[WireRouteProviderMetadataKey.activityProfileName] = name
+        providerConfiguration = metadata
     }
 
     func wireRouteEffectiveBlockedAddressFamilies(

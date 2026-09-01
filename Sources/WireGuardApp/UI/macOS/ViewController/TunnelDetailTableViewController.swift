@@ -24,39 +24,93 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         label.isHidden = true
         return label
     }()
-    private let cancelButton = NSButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
-    private let saveButton = NSButton(title: tr("macEditSave"), target: nil, action: nil)
+    private let cancelButton = WireRouteButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
+    private let saveButton = WireRouteButton(title: tr("macEditSave"), target: nil, action: nil)
 
     override func loadView() {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let container = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
 
         let titleLabel = NSTextField(labelWithString: tr("splitRouteEntryTitle"))
         titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
         let messageLabel = NSTextField(wrappingLabelWithString: tr("splitRouteEntryMessage"))
         messageLabel.font = .systemFont(ofSize: 13)
         messageLabel.textColor = .secondaryLabelColor
+        let guidanceTitleLabel = NSTextField(labelWithString: tr("splitRouteEntryGuidanceTitle"))
+        guidanceTitleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        let guidanceMessageLabel = NSTextField(
+            wrappingLabelWithString: tr("splitRouteEntryGuidanceMessage")
+        )
+        guidanceMessageLabel.font = .systemFont(ofSize: 11)
+        guidanceMessageLabel.textColor = .secondaryLabelColor
+        let guidanceExampleLabel = NSTextField(
+            wrappingLabelWithString: tr("splitRouteEntryGuidanceExample")
+        )
+        guidanceExampleLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        guidanceExampleLabel.textColor = .secondaryLabelColor
         let hintLabel = NSTextField(wrappingLabelWithString: tr("splitRouteEntryHint"))
         hintLabel.font = .systemFont(ofSize: 11)
         hintLabel.textColor = .secondaryLabelColor
 
-        let scrollView = NSScrollView()
+        let guidanceIcon = NSImageView()
+        guidanceIcon.image = NSImage(
+            systemSymbolName: "questionmark.circle.fill",
+            accessibilityDescription: tr("splitRouteEntryGuidanceTitle")
+        )
+        guidanceIcon.contentTintColor = WireRouteTheme.accentColor
+        guidanceIcon.imageScaling = .scaleProportionallyUpOrDown
+        guidanceIcon.setContentHuggingPriority(.required, for: .horizontal)
+
+        let guidanceTextStack = NSStackView(views: [
+            guidanceTitleLabel,
+            guidanceMessageLabel,
+            guidanceExampleLabel
+        ])
+        guidanceTextStack.orientation = .vertical
+        guidanceTextStack.alignment = .leading
+        guidanceTextStack.spacing = 4
+        let guidanceStack = NSStackView(views: [guidanceIcon, guidanceTextStack])
+        guidanceStack.orientation = .horizontal
+        guidanceStack.alignment = .top
+        guidanceStack.spacing = 10
+
+        let guidanceCard = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        guidanceCard.adaptiveBorderColor = WireRouteTheme.accentColor
+        guidanceCard.adaptiveBorderAlpha = 0.35
+        guidanceCard.layer?.borderWidth = 1
+        guidanceCard.layer?.cornerRadius = 10
+        guidanceCard.layer?.cornerCurve = .continuous
+        guidanceCard.addSubview(guidanceStack)
+        guidanceStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            guidanceStack.leadingAnchor.constraint(equalTo: guidanceCard.leadingAnchor, constant: 12),
+            guidanceStack.trailingAnchor.constraint(equalTo: guidanceCard.trailingAnchor, constant: -12),
+            guidanceStack.topAnchor.constraint(equalTo: guidanceCard.topAnchor, constant: 10),
+            guidanceStack.bottomAnchor.constraint(equalTo: guidanceCard.bottomAnchor, constant: -10),
+            guidanceIcon.widthAnchor.constraint(equalToConstant: 18),
+            guidanceIcon.heightAnchor.constraint(equalToConstant: 18),
+            guidanceMessageLabel.widthAnchor.constraint(equalTo: guidanceTextStack.widthAnchor),
+            guidanceExampleLabel.widthAnchor.constraint(equalTo: guidanceTextStack.widthAnchor)
+        ])
+
+        let scrollView = WireRouteTextEditorScrollView()
         scrollView.documentView = routesTextView
+        scrollView.updateWireRouteTheme()
         scrollView.hasVerticalScroller = true
-        scrollView.borderType = .noBorder
-        scrollView.wantsLayer = true
-        scrollView.layer?.cornerRadius = 12
-        scrollView.layer?.cornerCurve = .continuous
-        scrollView.layer?.borderWidth = 1
-        scrollView.layer?.borderColor = NSColor.separatorColor.cgColor
 
         cancelButton.target = self
         cancelButton.action = #selector(cancelClicked)
         saveButton.target = self
         saveButton.action = #selector(saveClicked)
         saveButton.keyEquivalent = "\r"
-        saveButton.bezelStyle = .rounded
+        saveButton.bezelStyle = .regularSquare
         let buttonRow = NSStackView(views: [cancelButton, saveButton])
         buttonRow.orientation = .horizontal
         buttonRow.alignment = .centerY
@@ -69,13 +123,39 @@ private final class MacSplitRouteEntryViewController: NSViewController {
         footer.spacing = 12
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let stack = NSStackView(views: [titleLabel, messageLabel, scrollView, hintLabel, footer])
+        let routesStack = NSStackView(views: [guidanceCard, scrollView, hintLabel])
+        routesStack.orientation = .vertical
+        routesStack.alignment = .leading
+        routesStack.spacing = 10
+
+        let routesCard = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
+        routesCard.adaptiveBorderColor = .separatorColor
+        routesCard.adaptiveBorderAlpha = 0.65
+        routesCard.layer?.borderWidth = 1
+        routesCard.layer?.cornerRadius = 14
+        routesCard.layer?.cornerCurve = .continuous
+        routesCard.addSubview(routesStack)
+        routesStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            routesStack.leadingAnchor.constraint(equalTo: routesCard.leadingAnchor, constant: 14),
+            routesStack.trailingAnchor.constraint(equalTo: routesCard.trailingAnchor, constant: -14),
+            routesStack.topAnchor.constraint(equalTo: routesCard.topAnchor, constant: 14),
+            routesStack.bottomAnchor.constraint(equalTo: routesCard.bottomAnchor, constant: -12),
+            guidanceCard.widthAnchor.constraint(equalTo: routesStack.widthAnchor),
+            scrollView.widthAnchor.constraint(equalTo: routesStack.widthAnchor),
+            hintLabel.widthAnchor.constraint(equalTo: routesStack.widthAnchor)
+        ])
+
+        let stack = NSStackView(views: [titleLabel, messageLabel, routesCard, footer])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
         stack.setCustomSpacing(4, after: titleLabel)
         stack.setCustomSpacing(18, after: messageLabel)
-        stack.setCustomSpacing(8, after: scrollView)
         container.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -83,12 +163,11 @@ private final class MacSplitRouteEntryViewController: NSViewController {
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
             stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 22),
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
-            scrollView.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
-            hintLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 140),
+            routesCard.widthAnchor.constraint(equalTo: stack.widthAnchor),
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
-        container.frame = NSRect(x: 0, y: 0, width: 560, height: 390)
+        container.frame = NSRect(x: 0, y: 0, width: 560, height: 520)
         view = container
     }
 
@@ -113,6 +192,636 @@ private final class MacSplitRouteEntryViewController: NSViewController {
                 self.presentingViewController?.dismiss(self)
             }
         }
+    }
+}
+
+@MainActor
+private final class MacDNSProtectionViewController: NSViewController, NSTextFieldDelegate {
+    var onSave: ((DNSProtectionPolicy, @escaping @MainActor @Sendable (WireGuardAppError?) -> Void) -> Void)?
+    var onEditProfileDNS: (() -> Void)?
+
+    private let currentPolicy: DNSProtectionPolicy
+    private let profileSummary: ProfileDNSRouteSummary
+    private let isTunnelActive: Bool
+    private let modeControl = WireRouteSegmentedControl(
+        labels: [tr("dnsProtectionProfileDNS"), tr("dnsProtectionEncryptedDNS")],
+        trackingMode: .selectOne,
+        target: nil,
+        action: nil
+    )
+    private let presetPopUp = WireRoutePopUpButton()
+    private let presetDescriptionLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        return label
+    }()
+    private let resolverURLField = WireRouteTextField()
+    private let bootstrapServersField = WireRouteTextField()
+    private let profileFieldsStack = NSStackView()
+    private let resolverFieldsStack = NSStackView()
+    private let errorLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.textColor = .systemRed
+        label.isHidden = true
+        return label
+    }()
+    private let editProfileButton = WireRouteButton(
+        title: tr("dnsProtectionEditProfileDNS"),
+        target: nil,
+        action: nil
+    )
+    private let cancelButton = WireRouteButton(title: tr("macRouterOSCancel"), target: nil, action: nil)
+    private let saveButton = WireRouteButton(title: tr("dnsProtectionSave"), target: nil, action: nil)
+    private var isSaving = false
+
+    init(
+        policy: DNSProtectionPolicy,
+        profileSummary: ProfileDNSRouteSummary,
+        isTunnelActive: Bool
+    ) {
+        currentPolicy = policy
+        self.profileSummary = profileSummary
+        self.isTunnelActive = isTunnelActive
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        let container = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
+
+        let iconView = NSImageView()
+        iconView.image = NSImage(
+            systemSymbolName: "lock.shield.fill",
+            accessibilityDescription: tr("dnsProtectionTitle")
+        )
+        iconView.contentTintColor = WireRouteTheme.accentColor
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+
+        let titleLabel = NSTextField(labelWithString: tr("dnsProtectionTitle"))
+        titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
+        let introLabel = NSTextField(wrappingLabelWithString: tr("dnsProtectionIntro"))
+        introLabel.font = .systemFont(ofSize: 13)
+        introLabel.textColor = .secondaryLabelColor
+        let titleStack = NSStackView(views: [titleLabel, introLabel])
+        titleStack.orientation = .vertical
+        titleStack.alignment = .leading
+        titleStack.spacing = 3
+        let header = NSStackView(views: [iconView, titleStack])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 14
+
+        let modeLabel = makeFieldLabel(tr("dnsProtectionMode"))
+        modeControl.segmentStyle = .rounded
+        modeControl.selectedSegment = currentPolicy.mode == .encryptedHTTPS ? 1 : 0
+        modeControl.target = self
+        modeControl.action = #selector(modeChanged)
+
+        configureProfileFieldsStack()
+        configurePresetPopUp()
+        resolverURLField.placeholderString = tr("dnsProtectionResolverURLPlaceholder")
+        bootstrapServersField.placeholderString = tr("dnsProtectionBootstrapPlaceholder")
+        resolverURLField.delegate = self
+        bootstrapServersField.delegate = self
+        if currentPolicy.mode == .encryptedHTTPS {
+            resolverURLField.stringValue = currentPolicy.serverURL?.absoluteString ?? ""
+            bootstrapServersField.stringValue = currentPolicy.bootstrapServers.joined(separator: ", ")
+        }
+
+        let bootstrapHelp = NSTextField(wrappingLabelWithString: tr("dnsProtectionBootstrapHelp"))
+        bootstrapHelp.font = .systemFont(ofSize: 11)
+        bootstrapHelp.textColor = .secondaryLabelColor
+
+        let internalDNSWarningIcon = NSImageView()
+        internalDNSWarningIcon.image = NSImage(
+            systemSymbolName: "exclamationmark.triangle.fill",
+            accessibilityDescription: tr("dnsProtectionEncryptedInternalWarning")
+        )
+        internalDNSWarningIcon.contentTintColor = .systemOrange
+        internalDNSWarningIcon.imageScaling = .scaleProportionallyUpOrDown
+        internalDNSWarningIcon.setContentHuggingPriority(.required, for: .horizontal)
+        let internalDNSWarningLabel = NSTextField(
+            wrappingLabelWithString: tr("dnsProtectionEncryptedInternalWarning")
+        )
+        internalDNSWarningLabel.font = .systemFont(ofSize: 11)
+        internalDNSWarningLabel.textColor = .secondaryLabelColor
+        internalDNSWarningLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let internalDNSWarning = NSStackView(views: [internalDNSWarningIcon, internalDNSWarningLabel])
+        internalDNSWarning.orientation = .horizontal
+        internalDNSWarning.alignment = .top
+        internalDNSWarning.spacing = 8
+        let internalDNSWarningPanel = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        internalDNSWarningPanel.adaptiveBorderColor = .separatorColor
+        internalDNSWarningPanel.adaptiveBorderAlpha = 0.65
+        internalDNSWarningPanel.layer?.borderWidth = 1
+        internalDNSWarningPanel.layer?.cornerRadius = 10
+        internalDNSWarningPanel.layer?.cornerCurve = .continuous
+        internalDNSWarningPanel.addSubview(internalDNSWarning)
+        internalDNSWarning.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            internalDNSWarning.leadingAnchor.constraint(equalTo: internalDNSWarningPanel.leadingAnchor, constant: 12),
+            internalDNSWarning.trailingAnchor.constraint(equalTo: internalDNSWarningPanel.trailingAnchor, constant: -12),
+            internalDNSWarning.topAnchor.constraint(equalTo: internalDNSWarningPanel.topAnchor, constant: 10),
+            internalDNSWarning.bottomAnchor.constraint(equalTo: internalDNSWarningPanel.bottomAnchor, constant: -10)
+        ])
+
+        resolverFieldsStack.orientation = .vertical
+        resolverFieldsStack.alignment = .leading
+        resolverFieldsStack.spacing = 8
+        resolverFieldsStack.addArrangedSubview(internalDNSWarningPanel)
+        resolverFieldsStack.setCustomSpacing(16, after: internalDNSWarningPanel)
+        let profileOverrideMessage: String
+        if profileSummary.servers.isEmpty {
+            profileOverrideMessage = tr("dnsProtectionEncryptedOverridesNone")
+        } else {
+            profileOverrideMessage = tr(
+                format: "dnsProtectionEncryptedOverrides (%@)",
+                profileSummary.servers.map(\.address).joined(separator: ", ")
+            )
+        }
+        let profileOverridePanel = makeNoticePanel(
+            message: profileOverrideMessage,
+            symbolName: "arrow.triangle.swap",
+            tintColor: WireRouteTheme.accentColor
+        )
+        resolverFieldsStack.addArrangedSubview(profileOverridePanel)
+        resolverFieldsStack.setCustomSpacing(16, after: profileOverridePanel)
+        resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionProvider")))
+        resolverFieldsStack.addArrangedSubview(presetPopUp)
+        resolverFieldsStack.addArrangedSubview(presetDescriptionLabel)
+        resolverFieldsStack.setCustomSpacing(16, after: presetDescriptionLabel)
+        resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionResolverURL")))
+        resolverFieldsStack.addArrangedSubview(resolverURLField)
+        resolverFieldsStack.setCustomSpacing(16, after: resolverURLField)
+        resolverFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionBootstrapServers")))
+        resolverFieldsStack.addArrangedSubview(bootstrapServersField)
+        resolverFieldsStack.addArrangedSubview(bootstrapHelp)
+
+        let stateLabel = NSTextField(wrappingLabelWithString: tr("dnsProtectionAppliesNextConnection"))
+        stateLabel.font = .systemFont(ofSize: 11)
+        stateLabel.textColor = .secondaryLabelColor
+        stateLabel.isHidden = !isTunnelActive
+
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelClicked)
+        saveButton.target = self
+        saveButton.action = #selector(saveClicked)
+        saveButton.keyEquivalent = "\r"
+        saveButton.bezelStyle = .regularSquare
+        let buttonRow = NSStackView(views: [cancelButton, saveButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 10
+        let buttonSpacer = NSView()
+        buttonSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let footer = NSStackView(views: [errorLabel, buttonSpacer, buttonRow])
+        footer.orientation = .horizontal
+        footer.alignment = .centerY
+        footer.spacing = 12
+
+        let configurationStack = NSStackView(views: [
+            modeLabel,
+            modeControl,
+            profileFieldsStack,
+            resolverFieldsStack,
+            stateLabel
+        ])
+        configurationStack.orientation = .vertical
+        configurationStack.alignment = .leading
+        configurationStack.spacing = 10
+        configurationStack.setCustomSpacing(18, after: modeControl)
+
+        let configurationCard = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
+        configurationCard.adaptiveBorderColor = .separatorColor
+        configurationCard.adaptiveBorderAlpha = 0.65
+        configurationCard.layer?.borderWidth = 1
+        configurationCard.layer?.cornerRadius = 14
+        configurationCard.layer?.cornerCurve = .continuous
+        configurationCard.addSubview(configurationStack)
+        configurationStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            configurationStack.leadingAnchor.constraint(equalTo: configurationCard.leadingAnchor, constant: 18),
+            configurationStack.trailingAnchor.constraint(equalTo: configurationCard.trailingAnchor, constant: -18),
+            configurationStack.topAnchor.constraint(equalTo: configurationCard.topAnchor, constant: 16),
+            configurationStack.bottomAnchor.constraint(equalTo: configurationCard.bottomAnchor, constant: -16)
+        ])
+
+        let stack = NSStackView(views: [header, configurationCard, footer])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 18
+        stack.setCustomSpacing(22, after: header)
+        container.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 26),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -26),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -22),
+            header.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 42),
+            iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
+            configurationCard.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            modeControl.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
+            profileFieldsStack.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
+            resolverFieldsStack.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
+            internalDNSWarningPanel.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            profileOverridePanel.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            internalDNSWarningIcon.widthAnchor.constraint(equalToConstant: 16),
+            internalDNSWarningIcon.heightAnchor.constraint(equalTo: internalDNSWarningIcon.widthAnchor),
+            presetPopUp.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            presetDescriptionLabel.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            resolverURLField.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            bootstrapServersField.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            bootstrapHelp.widthAnchor.constraint(equalTo: resolverFieldsStack.widthAnchor),
+            stateLabel.widthAnchor.constraint(equalTo: configurationStack.widthAnchor),
+            footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        ])
+
+        container.frame = NSRect(x: 0, y: 0, width: 620, height: targetContentHeight())
+        view = container
+        updateMode()
+    }
+
+    @objc private func modeChanged() {
+        errorLabel.isHidden = true
+        updateMode()
+    }
+
+    private func updateMode() {
+        let isEncrypted = modeControl.selectedSegment == 1
+        profileFieldsStack.isHidden = isEncrypted
+        resolverFieldsStack.isHidden = !isEncrypted
+        updateSaveButtonState()
+        resizeForContent()
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        resizeForContent()
+    }
+
+    private func configureProfileFieldsStack() {
+        profileFieldsStack.orientation = .vertical
+        profileFieldsStack.alignment = .leading
+        profileFieldsStack.spacing = 8
+
+        let pathLabel = makeFieldLabel(tr("dnsProtectionProfilePath"))
+        let pathDescription = NSTextField(
+            wrappingLabelWithString: tr("dnsProtectionProfilePathDescription")
+        )
+        pathDescription.font = .systemFont(ofSize: 11)
+        pathDescription.textColor = .secondaryLabelColor
+        profileFieldsStack.addArrangedSubview(pathLabel)
+        profileFieldsStack.addArrangedSubview(pathDescription)
+        pathDescription.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+        profileFieldsStack.setCustomSpacing(16, after: pathDescription)
+
+        if !profileSummary.isConfigurationAvailable {
+            let unavailable = makeNoticePanel(
+                message: tr("dnsProtectionProfileUnavailable"),
+                symbolName: "exclamationmark.triangle.fill",
+                tintColor: .systemOrange
+            )
+            profileFieldsStack.addArrangedSubview(unavailable)
+            unavailable.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+        } else if profileSummary.servers.isEmpty {
+            let emptyMessage = profileSummary.searchDomains.isEmpty
+                ? tr("dnsProtectionProfileNoServers")
+                : tr("dnsProtectionProfileNoServersWithSearchDomains")
+            let empty = makeNoticePanel(
+                message: emptyMessage,
+                symbolName: "questionmark.diamond.fill",
+                tintColor: .systemOrange
+            )
+            profileFieldsStack.addArrangedSubview(empty)
+            empty.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+        } else {
+            profileFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionProfileServers")))
+            for server in profileSummary.servers {
+                let row = makeProfileServerRow(server)
+                profileFieldsStack.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+            }
+            if profileSummary.servers.contains(where: { $0.route == .outsideTunnel }) {
+                let warning = makeNoticePanel(
+                    message: tr("dnsProtectionProfileOutsideTunnelWarning"),
+                    symbolName: "exclamationmark.triangle.fill",
+                    tintColor: .systemOrange
+                )
+                profileFieldsStack.addArrangedSubview(warning)
+                warning.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+            }
+        }
+
+        if !profileSummary.searchDomains.isEmpty {
+            if let lastView = profileFieldsStack.arrangedSubviews.last {
+                profileFieldsStack.setCustomSpacing(16, after: lastView)
+            }
+            profileFieldsStack.addArrangedSubview(makeFieldLabel(tr("dnsProtectionProfileSearchDomains")))
+            let domains = NSTextField(
+                wrappingLabelWithString: profileSummary.searchDomains.joined(separator: "  ·  ")
+            )
+            domains.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            domains.textColor = .secondaryLabelColor
+            domains.isSelectable = true
+            profileFieldsStack.addArrangedSubview(domains)
+            domains.widthAnchor.constraint(equalTo: profileFieldsStack.widthAnchor).isActive = true
+        }
+
+        editProfileButton.target = self
+        editProfileButton.action = #selector(editProfileDNSClicked)
+        editProfileButton.bezelStyle = .regularSquare
+        if let lastView = profileFieldsStack.arrangedSubviews.last {
+            profileFieldsStack.setCustomSpacing(18, after: lastView)
+        }
+        profileFieldsStack.addArrangedSubview(editProfileButton)
+    }
+
+    private func makeProfileServerRow(_ server: ProfileDNSRouteSummary.Server) -> NSView {
+        let icon = NSImageView()
+        icon.image = NSImage(
+            systemSymbolName: "server.rack",
+            accessibilityDescription: tr("dnsProtectionProfileServers")
+        )
+        icon.contentTintColor = WireRouteTheme.accentColor
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+
+        let address = NSTextField(labelWithString: server.address)
+        address.font = .monospacedSystemFont(ofSize: 13, weight: .medium)
+        address.lineBreakMode = .byTruncatingMiddle
+        address.isSelectable = true
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let throughTunnel = server.route == .throughTunnel
+        let badge = makeRouteBadge(
+            title: tr(throughTunnel ? "dnsProtectionProfileViaTunnel" : "dnsProtectionProfileOutsideTunnel"),
+            color: throughTunnel ? .systemGreen : .systemOrange
+        )
+        let content = NSStackView(views: [icon, address, spacer, badge])
+        content.orientation = .horizontal
+        content.alignment = .centerY
+        content.spacing = 10
+
+        let row = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        row.adaptiveBorderColor = .separatorColor
+        row.adaptiveBorderAlpha = 0.45
+        row.layer?.borderWidth = 1
+        row.layer?.cornerRadius = 9
+        row.layer?.cornerCurve = .continuous
+        row.addSubview(content)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 11),
+            content.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -11),
+            content.topAnchor.constraint(equalTo: row.topAnchor, constant: 9),
+            content.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -9),
+            icon.widthAnchor.constraint(equalToConstant: 15),
+            icon.heightAnchor.constraint(equalTo: icon.widthAnchor)
+        ])
+        return row
+    }
+
+    private func makeRouteBadge(title: String, color: NSColor) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 10, weight: .semibold)
+        label.textColor = color
+        let badge = NSView()
+        badge.wantsLayer = true
+        badge.layer?.backgroundColor = color.withAlphaComponent(0.13).cgColor
+        badge.layer?.cornerRadius = 7
+        badge.addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: badge.leadingAnchor, constant: 7),
+            label.trailingAnchor.constraint(equalTo: badge.trailingAnchor, constant: -7),
+            label.topAnchor.constraint(equalTo: badge.topAnchor, constant: 3),
+            label.bottomAnchor.constraint(equalTo: badge.bottomAnchor, constant: -3)
+        ])
+        return badge
+    }
+
+    private func makeNoticePanel(message: String, symbolName: String, tintColor: NSColor) -> NSView {
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: message)
+        icon.contentTintColor = tintColor
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        let label = NSTextField(wrappingLabelWithString: message)
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let content = NSStackView(views: [icon, label])
+        content.orientation = .horizontal
+        content.alignment = .top
+        content.spacing = 8
+        let panel = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        panel.adaptiveBorderColor = .separatorColor
+        panel.adaptiveBorderAlpha = 0.5
+        panel.layer?.borderWidth = 1
+        panel.layer?.cornerRadius = 10
+        panel.layer?.cornerCurve = .continuous
+        panel.addSubview(content)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 12),
+            content.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -12),
+            content.topAnchor.constraint(equalTo: panel.topAnchor, constant: 10),
+            content.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -10),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalTo: icon.widthAnchor)
+        ])
+        return panel
+    }
+
+    @objc private func editProfileDNSClicked() {
+        let action = onEditProfileDNS
+        presentingViewController?.dismiss(self)
+        DispatchQueue.main.async {
+            action?()
+        }
+    }
+
+    private func resizeForContent() {
+        guard isViewLoaded else { return }
+        let size = NSSize(width: 620, height: targetContentHeight())
+        preferredContentSize = size
+        view.window?.setContentSize(size)
+    }
+
+    private func targetContentHeight() -> CGFloat {
+        if modeControl.selectedSegment == 1 {
+            return 690
+        }
+        var height: CGFloat = profileSummary.servers.isEmpty ? 500 : 500
+        height += CGFloat(min(profileSummary.servers.count, 6)) * 44
+        if profileSummary.servers.contains(where: { $0.route == .outsideTunnel }) {
+            height += 58
+        }
+        if !profileSummary.searchDomains.isEmpty {
+            height += 56
+        }
+        return min(760, height)
+    }
+
+    private func configurePresetPopUp() {
+        presetPopUp.removeAllItems()
+        presetPopUp.addItems(withTitles: DNSProtectionPreset.allCases.map(\.localizedTitle))
+        presetPopUp.addItem(withTitle: tr("dnsPresetCustom"))
+        presetPopUp.controlSize = .regular
+        presetPopUp.font = .systemFont(ofSize: 13)
+        presetPopUp.target = self
+        presetPopUp.action = #selector(presetChanged)
+
+        if let preset = DNSProtectionPreset.matching(currentPolicy),
+           let index = DNSProtectionPreset.allCases.firstIndex(of: preset) {
+            presetPopUp.selectItem(at: index)
+        } else {
+            presetPopUp.selectItem(at: DNSProtectionPreset.allCases.count)
+        }
+        updatePresetDescription()
+    }
+
+    @objc private func presetChanged() {
+        let selectedIndex = presetPopUp.indexOfSelectedItem
+        guard DNSProtectionPreset.allCases.indices.contains(selectedIndex) else {
+            updatePresetDescription()
+            updateSaveButtonState()
+            return
+        }
+        let preset = DNSProtectionPreset.allCases[selectedIndex]
+        resolverURLField.stringValue = preset.serverURLString
+        bootstrapServersField.stringValue = preset.bootstrapServers.joined(separator: ", ")
+        errorLabel.isHidden = true
+        updatePresetDescription()
+        updateSaveButtonState()
+    }
+
+    private func updatePresetDescription() {
+        let selectedIndex = presetPopUp.indexOfSelectedItem
+        if DNSProtectionPreset.allCases.indices.contains(selectedIndex) {
+            presetDescriptionLabel.stringValue = DNSProtectionPreset.allCases[selectedIndex].localizedDescription
+        } else {
+            presetDescriptionLabel.stringValue = tr("dnsPresetCustomDescription")
+        }
+    }
+
+    @objc private func cancelClicked() {
+        presentingViewController?.dismiss(self)
+    }
+
+    @objc private func saveClicked() {
+        guard hasUnsavedChanges else { return }
+        let policy: DNSProtectionPolicy
+        if modeControl.selectedSegment == 0 {
+            policy = .profile
+        } else {
+            do {
+                policy = try DNSProtectionPolicy.encryptedHTTPS(
+                    serverURLString: resolverURLField.stringValue,
+                    bootstrapServerStrings: parsedBootstrapServers()
+                )
+            } catch DNSProtectionPolicyError.invalidServerURL {
+                showError(tr("dnsProtectionInvalidURLMessage"))
+                return
+            } catch DNSProtectionPolicyError.invalidBootstrapServer(let server) {
+                showError(tr(format: "dnsProtectionInvalidBootstrapMessage (%@)", server))
+                return
+            } catch {
+                showError(tr("dnsProtectionInvalidStoredMessage"))
+                return
+            }
+        }
+
+        guard let onSave else { return }
+        setSaving(true)
+        onSave(policy) { [weak self] error in
+            guard let self else { return }
+            self.setSaving(false)
+            if let error {
+                self.showError(error.alertText.message)
+            } else {
+                self.presentingViewController?.dismiss(self)
+            }
+        }
+    }
+
+    private func parsedBootstrapServers() -> [String] {
+        let separators = CharacterSet(charactersIn: ",\n \t")
+        return bootstrapServersField.stringValue
+            .components(separatedBy: separators)
+            .filter { !$0.isEmpty }
+    }
+
+    private func showError(_ message: String) {
+        errorLabel.stringValue = message
+        errorLabel.isHidden = false
+    }
+
+    private func setSaving(_ isSaving: Bool) {
+        self.isSaving = isSaving
+        updateSaveButtonState()
+        cancelButton.isEnabled = !isSaving
+        modeControl.isEnabled = !isSaving
+        editProfileButton.isEnabled = !isSaving
+        presetPopUp.isEnabled = !isSaving
+        resolverURLField.isEnabled = !isSaving
+        bootstrapServersField.isEnabled = !isSaving
+    }
+
+    private var hasUnsavedChanges: Bool {
+        if modeControl.selectedSegment == 0 {
+            return currentPolicy.mode != .profile
+        }
+        guard currentPolicy.mode == .encryptedHTTPS else { return true }
+        let resolverURL = resolverURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return resolverURL != currentPolicy.serverURL?.absoluteString
+            || parsedBootstrapServers() != currentPolicy.bootstrapServers
+    }
+
+    private func updateSaveButtonState() {
+        saveButton.isEnabled = !isSaving && hasUnsavedChanges
+    }
+
+    private func makeFieldLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        return label
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        if presetPopUp.indexOfSelectedItem != DNSProtectionPreset.allCases.count {
+            presetPopUp.selectItem(at: DNSProtectionPreset.allCases.count)
+            updatePresetDescription()
+        }
+        updateSaveButtonState()
     }
 }
 
@@ -172,38 +881,40 @@ class TunnelDetailTableViewController: NSViewController {
     }()
 
     let editButton: NSButton = {
-        let button = NSButton()
+        let button = WireRouteButton()
         button.title = tr("macButtonEdit")
         button.setButtonType(.momentaryPushIn)
-        button.bezelStyle = .rounded
+        button.bezelStyle = .regularSquare
         button.toolTip = tr("macToolTipEditTunnel")
         return button
     }()
 
-    let box: NSBox = {
-        let box = NSBox()
-        box.titlePosition = .noTitle
-        box.boxType = .custom
-        box.fillColor = .controlBackgroundColor
-        box.borderColor = NSColor.separatorColor.withAlphaComponent(0.55)
-        box.borderWidth = 1
-        box.cornerRadius = 16
+    let box: AppearanceAwareMaterialView = {
+        let box = AppearanceAwareMaterialView(material: .contentBackground, blendingMode: .withinWindow)
+        box.adaptiveBorderColor = .separatorColor
+        box.adaptiveBorderAlpha = 0.65
+        box.layer?.borderWidth = 1
+        box.layer?.cornerRadius = 16
+        box.layer?.cornerCurve = .continuous
         return box
     }()
 
-    private let heroCard: NSBox = {
-        let box = NSBox()
-        box.titlePosition = .noTitle
-        box.boxType = .custom
-        box.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.82)
-        box.borderColor = NSColor.systemBlue.withAlphaComponent(0.28)
-        box.borderWidth = 1
-        box.cornerRadius = 18
+    private let heroCard: AppearanceAwareMaterialView = {
+        let box = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .raised
+        )
+        box.adaptiveBorderColor = .separatorColor
+        box.adaptiveBorderAlpha = 0.65
+        box.layer?.borderWidth = 1
+        box.layer?.cornerRadius = 18
+        box.layer?.cornerCurve = .continuous
         return box
     }()
     private let identityImageView: NSImageView = {
         let imageView = NSImageView()
-        imageView.contentTintColor = .systemBlue
+        imageView.contentTintColor = WireRouteTheme.accentColor
         imageView.imageScaling = .scaleProportionallyUpOrDown
         return imageView
     }()
@@ -219,7 +930,7 @@ class TunnelDetailTableViewController: NSViewController {
         label.textColor = .secondaryLabelColor
         return label
     }()
-    private let routeModeControl = NSSegmentedControl(
+    private let routeModeControl = WireRouteSegmentedControl(
         labels: [tr("macTunnelRoutingSplit"), tr("macTunnelRoutingFull")],
         trackingMode: .selectOne,
         target: nil,
@@ -239,10 +950,32 @@ class TunnelDetailTableViewController: NSViewController {
         indicator.isDisplayedWhenStopped = false
         return indicator
     }()
+    private let dnsProtectionDescriptionLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        label.maximumNumberOfLines = 2
+        return label
+    }()
+    private let dnsProtectionButton: NSButton = {
+        let button = WireRouteButton(title: "", target: nil, action: nil)
+        button.bezelStyle = .regularSquare
+        button.image = NSImage(
+            systemSymbolName: "lock.shield",
+            accessibilityDescription: tr("dnsProtectionTitle")
+        )
+        button.imagePosition = .imageLeading
+        return button
+    }()
     private let connectionButton: NSButton = {
-        let button = NSButton(title: "", target: nil, action: nil)
-        button.bezelStyle = .rounded
-        button.controlSize = .large
+        let button = WireRouteButton(title: "", target: nil, action: nil)
+        button.bezelStyle = .regularSquare
+        button.bezelColor = WireRouteTheme.accentColor
+        button.image = NSImage(
+            systemSymbolName: "power",
+            accessibilityDescription: tr("macToggleStatusButtonActivate")
+        )
+        button.imagePosition = .imageLeading
         button.setContentHuggingPriority(.required, for: .horizontal)
         return button
     }()
@@ -252,6 +985,7 @@ class TunnelDetailTableViewController: NSViewController {
         label.textColor = .secondaryLabelColor
         return label
     }()
+    private lazy var activityDashboard = WireRouteActivityDashboardView(tunnel: tunnel)
 
     let tunnelsManager: TunnelsManager
     let tunnel: TunnelContainer
@@ -280,6 +1014,12 @@ class TunnelDetailTableViewController: NSViewController {
         tunnelViewModel = TunnelViewModel(tunnelConfiguration: tunnel.tunnelConfiguration)
         onDemandViewModel = ActivateOnDemandViewModel(tunnel: tunnel)
         super.init(nibName: nil, bundle: nil)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: .wireRouteAppearanceDidChange,
+            object: nil
+        )
         updateTableViewModelRowsBySection()
         updateTableViewModelRows()
         statusObservationToken = tunnel.observe(\TunnelContainer.status) { [weak self] _, _ in
@@ -310,6 +1050,12 @@ class TunnelDetailTableViewController: NSViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    @objc private func themeDidChange() {
+        identityImageView.contentTintColor = WireRouteTheme.accentColor
+        connectionButton.bezelColor = WireRouteTheme.accentColor
+        view.needsDisplay = true
+    }
+
     override func loadView() {
         tableView.dataSource = self
         tableView.delegate = self
@@ -324,6 +1070,12 @@ class TunnelDetailTableViewController: NSViewController {
         routeModeControl.segmentStyle = .rounded
         connectionButton.target = self
         connectionButton.action = #selector(handleToggleActiveStatusAction)
+        dnsProtectionButton.target = self
+        dnsProtectionButton.action = #selector(dnsProtectionClicked)
+        activityDashboard.onOpenHistory = { [weak self] in
+            guard let self else { return }
+            self.presentAsSheet(ActivityMonitorViewController(tunnel: self.tunnel))
+        }
 
         let clipView = NSClipView()
         clipView.documentView = tableView
@@ -340,7 +1092,11 @@ class TunnelDetailTableViewController: NSViewController {
         identityText.spacing = 3
         let identitySpacer = NSView()
         identitySpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let identityRow = NSStackView(views: [identityImageView, identityText, identitySpacer, editButton])
+        let actionRow = NSStackView(views: [connectionButton, editButton])
+        actionRow.orientation = .horizontal
+        actionRow.alignment = .centerY
+        actionRow.spacing = 8
+        let identityRow = NSStackView(views: [identityImageView, identityText, identitySpacer, actionRow])
         identityRow.orientation = .horizontal
         identityRow.alignment = .centerY
         identityRow.spacing = 14
@@ -359,13 +1115,26 @@ class TunnelDetailTableViewController: NSViewController {
         let descriptionSpacer = NSView()
         descriptionSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let descriptionRow = NSStackView(
-            views: [routeDescriptionLabel, descriptionSpacer, connectionButton]
+            views: [routeDescriptionLabel, descriptionSpacer]
         )
         descriptionRow.orientation = .horizontal
         descriptionRow.alignment = .centerY
         descriptionRow.spacing = 16
 
-        let heroStack = NSStackView(views: [identityRow, routingRow, descriptionRow])
+        let dnsLabel = NSTextField(labelWithString: tr("dnsProtectionTitle"))
+        dnsLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        let dnsTextStack = NSStackView(views: [dnsLabel, dnsProtectionDescriptionLabel])
+        dnsTextStack.orientation = .vertical
+        dnsTextStack.alignment = .leading
+        dnsTextStack.spacing = 2
+        let dnsSpacer = NSView()
+        dnsSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let dnsRow = NSStackView(views: [dnsTextStack, dnsSpacer, dnsProtectionButton])
+        dnsRow.orientation = .horizontal
+        dnsRow.alignment = .centerY
+        dnsRow.spacing = 16
+
+        let heroStack = NSStackView(views: [identityRow, routingRow, descriptionRow, dnsRow])
         heroStack.orientation = .vertical
         heroStack.alignment = .leading
         heroStack.spacing = 15
@@ -374,13 +1143,13 @@ class TunnelDetailTableViewController: NSViewController {
         heroStack.translatesAutoresizingMaskIntoConstraints = false
 
         let containerView = NSView()
-        containerView.wantsLayer = true
-        containerView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         containerView.addSubview(heroCard)
+        containerView.addSubview(activityDashboard)
         containerView.addSubview(technicalDetailsLabel)
         containerView.addSubview(box)
         containerView.addSubview(scrollView)
         heroCard.translatesAutoresizingMaskIntoConstraints = false
+        activityDashboard.translatesAutoresizingMaskIntoConstraints = false
         technicalDetailsLabel.translatesAutoresizingMaskIntoConstraints = false
         box.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -393,6 +1162,7 @@ class TunnelDetailTableViewController: NSViewController {
             identityRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
             routingRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
             descriptionRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
+            dnsRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
             identityImageView.widthAnchor.constraint(equalToConstant: 44),
             identityImageView.heightAnchor.constraint(equalTo: identityImageView.widthAnchor),
             routeModeControl.widthAnchor.constraint(equalToConstant: 220),
@@ -404,7 +1174,10 @@ class TunnelDetailTableViewController: NSViewController {
             heroCard.topAnchor.constraint(equalTo: containerView.topAnchor),
             heroCard.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             heroCard.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            technicalDetailsLabel.topAnchor.constraint(equalTo: heroCard.bottomAnchor, constant: 18),
+            activityDashboard.topAnchor.constraint(equalTo: heroCard.bottomAnchor, constant: 14),
+            activityDashboard.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            activityDashboard.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            technicalDetailsLabel.topAnchor.constraint(equalTo: activityDashboard.bottomAnchor, constant: 18),
             technicalDetailsLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 4),
             box.topAnchor.constraint(equalTo: technicalDetailsLabel.bottomAnchor, constant: 8),
             box.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
@@ -418,11 +1191,15 @@ class TunnelDetailTableViewController: NSViewController {
 
         NSLayoutConstraint.activate([
             containerView.widthAnchor.constraint(greaterThanOrEqualToConstant: 500),
-            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 480)
+            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 700)
         ])
 
         view = containerView
         updateDashboard()
+        activityDashboard.update(
+            configuration: tunnel.tunnelConfiguration,
+            isActive: tunnel.status == .active
+        )
     }
 
     func updateTableViewModelRowsBySection() {
@@ -487,6 +1264,30 @@ class TunnelDetailTableViewController: NSViewController {
                 tunnelsManager.startDeactivation(of: tunnel)
             }
         }
+    }
+
+    @objc private func dnsProtectionClicked() {
+        let dnsViewController = MacDNSProtectionViewController(
+            policy: tunnel.dnsProtectionPolicy,
+            profileSummary: tunnel.profileDNSRouteSummary,
+            isTunnelActive: tunnel.status != .inactive
+        )
+        dnsViewController.onEditProfileDNS = { [weak self] in
+            self?.handleEditTunnelAction()
+        }
+        dnsViewController.onSave = { [weak self] policy, completion in
+            guard let self else {
+                completion(TunnelDNSProtectionError.invalidStoredConfiguration)
+                return
+            }
+            self.tunnelsManager.setDNSProtectionPolicy(policy, on: self.tunnel) { error in
+                if error == nil {
+                    self.updateDashboard()
+                }
+                completion(error)
+            }
+        }
+        presentAsSheet(dnsViewController)
     }
 
     @objc private func routingModeChanged() {
@@ -559,6 +1360,8 @@ class TunnelDetailTableViewController: NSViewController {
         routeDescriptionLabel.stringValue = tunnel.routingMode == .full
             ? tr("tunnelRoutingFullDescription")
             : tr("tunnelRoutingSplitDescription")
+        dnsProtectionButton.title = tunnel.dnsProtectionPolicy.localizedTitle
+        dnsProtectionDescriptionLabel.stringValue = tunnel.dnsProtectionPolicy.localizedDescription
         identityImageView.image = NSImage(
             systemSymbolName: tunnel.routingMode == .full
                 ? "globe.americas.fill"
@@ -566,16 +1369,29 @@ class TunnelDetailTableViewController: NSViewController {
             accessibilityDescription: tr("macTunnelTrafficRouting")
         ) ?? NSImage(systemSymbolName: "network", accessibilityDescription: nil)
         connectionButton.title = Self.localizedToggleStatusActionText(for: tunnel)
+        connectionButton.toolTip = connectionButton.title
         connectionButton.isEnabled = tunnel.hasOnDemandRules
             || tunnel.status == .active
             || tunnel.status == .inactive
         switch tunnel.status {
         case .active, .restarting, .reasserting:
             statusLabel.textColor = .systemGreen
+            connectionButton.image = NSImage(
+                systemSymbolName: "stop.fill",
+                accessibilityDescription: connectionButton.title
+            )
         case .activating, .waiting, .deactivating:
             statusLabel.textColor = .systemOrange
+            connectionButton.image = NSImage(
+                systemSymbolName: "ellipsis",
+                accessibilityDescription: connectionButton.title
+            )
         case .inactive:
             statusLabel.textColor = .secondaryLabelColor
+            connectionButton.image = NSImage(
+                systemSymbolName: "power",
+                accessibilityDescription: connectionButton.title
+            )
         }
     }
 
@@ -595,6 +1411,11 @@ class TunnelDetailTableViewController: NSViewController {
 
     func applyTunnelConfiguration(tunnelConfiguration: TunnelConfiguration) {
         // Incorporates changes from tunnelConfiguation. Ignores any changes in peer ordering.
+
+        activityDashboard.update(
+            configuration: tunnelConfiguration,
+            isActive: tunnel.status == .active
+        )
 
         let tableView = self.tableView
 
@@ -872,7 +1693,7 @@ extension TunnelDetailTableViewController: NSTableViewDelegate {
         }
     }
 
-    private static func localizedToggleStatusActionText(for tunnel: TunnelContainer) -> String {
+    static func localizedToggleStatusActionText(for tunnel: TunnelContainer) -> String {
         if tunnel.hasOnDemandRules {
             let turnOn = !tunnel.isActivateOnDemandEnabled
             if turnOn {

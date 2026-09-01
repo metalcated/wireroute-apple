@@ -14,11 +14,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var manageTunnelsRootVC: ManageTunnelsRootViewController?
     var manageTunnelsWindowObject: NSWindow?
-    var routerOSWindowObject: NSWindow?
-    var routerOSSettingsWindowObject: NSWindow?
     var onAppDeactivation: (() -> Void)?
+    private var aboutWindowController: NSWindowController?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        WireRouteTheme.applyStoredPreference()
         // To workaround a possible AppKit bug that causes the main menu to become unresponsive sometimes
         // (especially when launched through Xcode) if we call setActivationPolicy(.regular) in
         // in applicationDidFinishLaunching, we set it to .prohibited here.
@@ -30,12 +30,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         Logger.configureGlobal(tagged: "APP", withFilePath: FileManager.logFileURL?.path)
-        registerLoginItem(shouldLaunchAtLogin: true)
+#if DEBUG
+        let isAppStoreScreenshotMode = ProcessInfo.processInfo.arguments.contains("--app-store-screenshots")
+#else
+        let isAppStoreScreenshotMode = false
+#endif
+        if !isAppStoreScreenshotMode {
+            registerLoginItem(shouldLaunchAtLogin: true)
+        }
 
         var isLaunchedAtLogin = false
         if let appleEvent = NSAppleEventManager.shared().currentAppleEvent {
             isLaunchedAtLogin = LaunchedAtLoginDetector.isLaunchedAtLogin(openAppleEvent: appleEvent)
         }
+#if DEBUG
+        if isAppStoreScreenshotMode {
+            isLaunchedAtLogin = false
+        }
+#endif
 
         NSApp.mainMenu = MainMenu(application: NSApp, applicationDelegate: NSApp.delegate)
         setDockIconAndMainMenuVisibility(isVisible: !isLaunchedAtLogin)
@@ -62,11 +74,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.statusItemController = statusItemController
 
                 if !isLaunchedAtLogin {
+#if DEBUG
+                    self.showManageTunnelsWindow { [weak self] window in
+                        self?.configureAppStoreScreenshotIfNeeded(window: window, tunnelsManager: tunnelsManager)
+                    }
+#else
                     self.showManageTunnelsWindow(completion: nil)
+#endif
                 }
             }
         }
     }
+
+#if DEBUG
+    private func configureAppStoreScreenshotIfNeeded(
+        window: NSWindow?,
+        tunnelsManager: TunnelsManager
+    ) {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--app-store-screenshots"), let window else { return }
+
+        window.setFrame(NSRect(x: 0, y: 0, width: 1440, height: 900), display: true)
+        window.center()
+
+        let route = arguments
+            .first(where: { $0.hasPrefix("--app-store-screen=") })?
+            .replacingOccurrences(of: "--app-store-screen=", with: "")
+
+        switch route {
+        case "routeros":
+            manageTunnelsRootVC?.selectRouterOSManager()
+        case "settings":
+            manageTunnelsRootVC?.selectSettings()
+        case "activity":
+            guard tunnelsManager.numberOfTunnels() > 0 else { return }
+            let tunnel = tunnelsManager.tunnel(at: 0)
+            manageTunnelsRootVC?.selectTunnel(tunnel)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                guard let detailViewController = self?.manageTunnelsRootVC?.tunnelDetailVC else { return }
+                detailViewController.presentAsSheet(ActivityMonitorViewController(tunnel: tunnel))
+            }
+        default:
+            guard tunnelsManager.numberOfTunnels() > 0 else { return }
+            manageTunnelsRootVC?.selectTunnel(tunnelsManager.tunnel(at: 0))
+        }
+    }
+#endif
 
     @objc func confirmAndQuit() {
         let alert = NSAlert()
@@ -196,50 +249,148 @@ extension AppDelegate {
         if let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
             appVersion += " (\(appBuild))"
         }
-        let appVersionString = [
-            tr(format: "macAppVersion (%@)", appVersion),
-            tr(format: "macGoBackendVersion (%@)", WIREGUARD_GO_VERSION)
-        ].joined(separator: "\n")
+
+        if let aboutWindowController {
+            NSApp.activate(ignoringOtherApps: true)
+            aboutWindowController.showWindow(nil)
+            aboutWindowController.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let aboutViewController = WireRouteAboutViewController(
+            appVersion: appVersion,
+            backendVersion: WIREGUARD_GO_VERSION
+        )
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 390),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = tr("macMenuAbout")
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.contentViewController = aboutViewController
+        panel.setContentSize(NSSize(width: 500, height: 390))
+        panel.center()
+        WireRouteTheme.apply(to: panel)
+
+        let windowController = NSWindowController(window: panel)
+        aboutWindowController = windowController
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationVersion: appVersionString,
-            .version: "",
-            .credits: ""
-        ])
+        windowController.showWindow(nil)
+        panel.makeKeyAndOrderFront(nil)
     }
 
     @objc func showRouterOSManager() {
-        guard let tunnelsManager else { return }
-        if routerOSWindowObject == nil {
-            let viewController = RouterOSManagerViewController(tunnelsManager: tunnelsManager)
-            let window = NSWindow(contentViewController: viewController)
-            window.title = tr("macRouterOSWindowTitle")
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 780, height: 620))
-            window.minSize = NSSize(width: 680, height: 520)
-            window.setFrameAutosaveName(NSWindow.FrameAutosaveName("RouterOSManagerWindow"))
-            window.isReleasedWhenClosed = false
-            routerOSWindowObject = window
-        }
-        setDockIconAndMainMenuVisibility(isVisible: true) { [weak routerOSWindowObject] in
-            routerOSWindowObject?.makeKeyAndOrderFront(self)
+        showManageTunnelsWindow { [weak self] window in
+            guard window != nil else { return }
+            self?.manageTunnelsRootVC?.selectRouterOSManager()
         }
     }
 
     @objc func showRouterOSSettings() {
-        if routerOSSettingsWindowObject == nil {
-            let viewController = RouterOSSettingsViewController()
-            let window = NSWindow(contentViewController: viewController)
-            window.title = tr("macRouterOSSettingsWindowTitle")
-            window.styleMask = [.titled, .closable]
-            window.setContentSize(NSSize(width: 650, height: 480))
-            window.setFrameAutosaveName(NSWindow.FrameAutosaveName("RouterOSSettingsWindow"))
-            window.isReleasedWhenClosed = false
-            routerOSSettingsWindowObject = window
+        showManageTunnelsWindow { [weak self] window in
+            guard window != nil else { return }
+            self?.manageTunnelsRootVC?.selectSettings()
         }
-        setDockIconAndMainMenuVisibility(isVisible: true) { [weak routerOSSettingsWindowObject] in
-            routerOSSettingsWindowObject?.makeKeyAndOrderFront(self)
-        }
+    }
+}
+
+@MainActor
+private final class WireRouteAboutViewController: NSViewController {
+    private let appVersion: String
+    private let backendVersion: String
+
+    init(appVersion: String, backendVersion: String) {
+        self.appVersion = appVersion
+        self.backendVersion = backendVersion
+        super.init(nibName: nil, bundle: nil)
+        preferredContentSize = NSSize(width: 500, height: 390)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        let rootView = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .surface
+        )
+
+        let iconView = NSImageView(image: NSApp.applicationIconImage)
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+
+        let titleLabel = NSTextField(labelWithString: "WireRoute")
+        titleLabel.font = .systemFont(ofSize: 26, weight: .semibold)
+        titleLabel.textColor = .labelColor
+        titleLabel.alignment = .center
+
+        let appVersionLabel = makeLabel(
+            tr(format: "macAppVersion (%@)", appVersion),
+            font: .systemFont(ofSize: 14, weight: .regular)
+        )
+        let backendVersionLabel = makeLabel(
+            tr(format: "macGoBackendVersion (%@)", backendVersion),
+            font: .monospacedSystemFont(ofSize: 13, weight: .regular)
+        )
+
+        let versionStack = NSStackView(views: [appVersionLabel, backendVersionLabel])
+        versionStack.orientation = .vertical
+        versionStack.alignment = .centerX
+        versionStack.spacing = 5
+
+        let copyright = (Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String ?? "")
+            .replacingOccurrences(of: ". Portions", with: ".\nPortions")
+        let copyrightLabel = makeLabel(
+            copyright,
+            font: .systemFont(ofSize: 12, weight: .regular),
+            color: .secondaryLabelColor
+        )
+        copyrightLabel.maximumNumberOfLines = 2
+        copyrightLabel.lineBreakMode = .byWordWrapping
+
+        let contentStack = NSStackView(views: [iconView, titleLabel, versionStack, copyrightLabel])
+        contentStack.orientation = .vertical
+        contentStack.alignment = .centerX
+        contentStack.spacing = 14
+        contentStack.setCustomSpacing(18, after: iconView)
+        contentStack.setCustomSpacing(20, after: versionStack)
+
+        rootView.addSubview(contentStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        copyrightLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            contentStack.centerXAnchor.constraint(equalTo: rootView.centerXAnchor),
+            contentStack.centerYAnchor.constraint(equalTo: rootView.centerYAnchor, constant: 5),
+            contentStack.leadingAnchor.constraint(greaterThanOrEqualTo: rootView.leadingAnchor, constant: 44),
+            contentStack.trailingAnchor.constraint(lessThanOrEqualTo: rootView.trailingAnchor, constant: -44),
+            iconView.widthAnchor.constraint(equalToConstant: 96),
+            iconView.heightAnchor.constraint(equalToConstant: 96),
+            copyrightLabel.widthAnchor.constraint(equalToConstant: 400)
+        ])
+
+        view = rootView
+    }
+
+    private func makeLabel(
+        _ text: String,
+        font: NSFont,
+        color: NSColor = .labelColor
+    ) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = font
+        label.textColor = color
+        label.alignment = .center
+        return label
     }
 }
 
@@ -263,6 +414,7 @@ extension AppDelegate: StatusMenuWindowDelegate {
             window.minSize = NSSize(width: 900, height: 580)
             window.titlebarAppearsTransparent = true
             window.setFrameAutosaveName(NSWindow.FrameAutosaveName("ManageTunnelsWindow")) // Auto-save window position and size
+            WireRouteTheme.apply(to: window)
             manageTunnelsWindowObject = window
             tunnelsTracker?.manageTunnelsRootVC = manageTunnelsRootVC
         }

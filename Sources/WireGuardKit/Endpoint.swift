@@ -4,6 +4,18 @@
 import Foundation
 import Network
 
+#if os(iOS)
+private struct EndpointLocationResolutionError: LocalizedError, Sendable {
+    let errorCode: Int32
+    let hostname: String
+
+    var errorDescription: String? {
+        let message = String(cString: gai_strerror(errorCode))
+        return "\(hostname): \(message)"
+    }
+}
+#endif
+
 public struct Endpoint: @unchecked Sendable {
     public let host: NWEndpoint.Host
     public let port: NWEndpoint.Port
@@ -98,4 +110,66 @@ extension Endpoint {
             fatalError()
         }
     }
+
+    #if os(iOS)
+    func resolvedForEndpointLocation() throws -> Endpoint {
+        guard case .name(let hostname, _) = host else {
+            return self
+        }
+
+        var hints = addrinfo()
+        hints.ai_flags = AI_ALL
+        hints.ai_family = AF_UNSPEC
+        hints.ai_socktype = SOCK_DGRAM
+        hints.ai_protocol = IPPROTO_UDP
+
+        var resultPointer: UnsafeMutablePointer<addrinfo>?
+        defer {
+            resultPointer.flatMap { freeaddrinfo($0) }
+        }
+
+        let errorCode = getaddrinfo(hostname, "\(port)", &hints, &resultPointer)
+        if errorCode != 0 {
+            throw EndpointLocationResolutionError(errorCode: errorCode, hostname: hostname)
+        }
+
+        var ipv4Address: IPv4Address?
+        var ipv6Address: IPv6Address?
+        var next = resultPointer
+        while let addressInfo = next?.pointee {
+            if let socketAddress = addressInfo.ai_addr {
+                var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                let nameInfoResult = getnameinfo(
+                    socketAddress,
+                    addressInfo.ai_addrlen,
+                    &hostBuffer,
+                    socklen_t(hostBuffer.count),
+                    nil,
+                    0,
+                    NI_NUMERICHOST
+                )
+                if nameInfoResult == 0 {
+                    let addressBytes = hostBuffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+                    let addressString = String(decoding: addressBytes, as: UTF8.self)
+                    if addressInfo.ai_family == AF_INET, let address = IPv4Address(addressString) {
+                        ipv4Address = address
+                        break
+                    }
+                    if addressInfo.ai_family == AF_INET6, let address = IPv6Address(addressString) {
+                        ipv6Address = address
+                    }
+                }
+            }
+            next = addressInfo.ai_next
+        }
+
+        if let ipv4Address {
+            return Endpoint(host: .ipv4(ipv4Address), port: port)
+        }
+        if let ipv6Address {
+            return Endpoint(host: .ipv6(ipv6Address), port: port)
+        }
+        throw EndpointLocationResolutionError(errorCode: EAI_NONAME, hostname: hostname)
+    }
+    #endif
 }

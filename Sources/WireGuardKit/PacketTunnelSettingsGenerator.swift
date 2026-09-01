@@ -16,15 +16,18 @@ class PacketTunnelSettingsGenerator {
     let tunnelConfiguration: TunnelConfiguration
     let resolvedEndpoints: [Endpoint?]
     let blockedAddressFamilies: BlockedAddressFamilies
+    let dnsProtectionPolicy: DNSProtectionPolicy
 
     init(
         tunnelConfiguration: TunnelConfiguration,
         resolvedEndpoints: [Endpoint?],
-        blockedAddressFamilies: BlockedAddressFamilies = []
+        blockedAddressFamilies: BlockedAddressFamilies = [],
+        dnsProtectionPolicy: DNSProtectionPolicy = .profile
     ) {
         self.tunnelConfiguration = tunnelConfiguration
         self.resolvedEndpoints = resolvedEndpoints
         self.blockedAddressFamilies = blockedAddressFamilies
+        self.dnsProtectionPolicy = dnsProtectionPolicy
     }
 
     func endpointUapiConfiguration() -> (String, [EndpointResolutionResult?]) {
@@ -89,15 +92,7 @@ class PacketTunnelSettingsGenerator {
          */
         let networkSettings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
 
-        if !tunnelConfiguration.interface.dnsSearch.isEmpty || !tunnelConfiguration.interface.dns.isEmpty {
-            let dnsServerStrings = tunnelConfiguration.interface.dns.map { $0.stringRepresentation }
-            let dnsSettings = NEDNSSettings(servers: dnsServerStrings)
-            dnsSettings.searchDomains = tunnelConfiguration.interface.dnsSearch
-            if !tunnelConfiguration.interface.dns.isEmpty {
-                dnsSettings.matchDomains = [""] // All DNS queries must first go through the tunnel's DNS
-            }
-            networkSettings.dnsSettings = dnsSettings
-        }
+        networkSettings.dnsSettings = makeDNSSettings()
 
         let mtu = tunnelConfiguration.interface.mtu ?? 0
 
@@ -143,6 +138,35 @@ class PacketTunnelSettingsGenerator {
         networkSettings.ipv6Settings = ipv6Settings
 
         return networkSettings
+    }
+
+    private func makeDNSSettings() -> NEDNSSettings? {
+        let searchDomains = tunnelConfiguration.interface.dnsSearch
+
+        switch dnsProtectionPolicy.mode {
+        case .profile:
+            guard !searchDomains.isEmpty || !tunnelConfiguration.interface.dns.isEmpty else {
+                return nil
+            }
+            let dnsServerStrings = tunnelConfiguration.interface.dns.map { $0.stringRepresentation }
+            let dnsSettings = NEDNSSettings(servers: dnsServerStrings)
+            dnsSettings.searchDomains = searchDomains
+            if !dnsServerStrings.isEmpty {
+                dnsSettings.matchDomains = [""]
+            }
+            return dnsSettings
+
+        case .encryptedHTTPS:
+            guard let serverURL = dnsProtectionPolicy.serverURL else {
+                preconditionFailure("Validated encrypted DNS policy is missing its server URL")
+            }
+            let dnsSettings = NEDNSOverHTTPSSettings(servers: dnsProtectionPolicy.bootstrapServers)
+            dnsSettings.serverURL = serverURL
+            dnsSettings.searchDomains = searchDomains
+            dnsSettings.matchDomains = [""]
+            dnsSettings.matchDomainsNoSearch = true
+            return dnsSettings
+        }
     }
 
     private func addresses() -> ([NEIPv4Route], [NEIPv6Route]) {

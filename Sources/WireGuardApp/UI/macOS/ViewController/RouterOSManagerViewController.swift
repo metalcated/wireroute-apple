@@ -5,6 +5,69 @@ import CoreImage.CIFilterBuiltins
 import UniformTypeIdentifiers
 
 @MainActor
+enum ConfigurationQRCodePresenter {
+    static func present(_ configuration: TunnelConfiguration, from sourceViewController: NSViewController) {
+        guard let window = sourceViewController.view.window else { return }
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(configuration.asWgQuickConfig().utf8)
+        filter.correctionLevel = "M"
+        guard let outputImage = filter.outputImage else {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = tr("macRouterOSQRCodeFailed")
+            alert.addButton(withTitle: tr("macRouterOSDone"))
+            alert.beginSheetModal(for: window) { _ in }
+            return
+        }
+        let scaledImage = outputImage.transformed(
+            by: CGAffineTransform(scaleX: 8, y: 8)
+        )
+        let representation = NSCIImageRep(ciImage: scaledImage)
+        let image = NSImage(size: representation.size)
+        image.addRepresentation(representation)
+
+        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: 320, height: 320))
+        imageView.image = image
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = configuration.name ?? tr("macRouterOSExistingPeerDefaultName")
+        alert.informativeText = tr("macRouterOSQRCodeMessage")
+        alert.accessoryView = imageView
+        alert.addButton(withTitle: tr("macRouterOSDone"))
+        alert.beginSheetModal(for: window) { _ in }
+    }
+}
+
+@MainActor
+enum SensitiveKeyClipboardPresenter {
+    static func confirmAndCopy(_ privateKey: String, from sourceViewController: NSViewController) {
+        guard let window = sourceViewController.view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr("macRouterOSCopyPrivateKeyTitle")
+        alert.informativeText = tr("macRouterOSCopyPrivateKeyMessage")
+        alert.addButton(withTitle: tr("macRouterOSCopyPrivateKeyConfirm"))
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            copy(privateKey)
+        }
+    }
+
+    static func copy(_ value: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+            let currentPasteboard = NSPasteboard.general
+            guard currentPasteboard.string(forType: .string) == value else { return }
+            currentPasteboard.clearContents()
+        }
+    }
+}
+
+@MainActor
 private final class RouterOSDiscoveryTableView: NSTableView {
     var contextMenuProvider: ((Int) -> NSMenu?)?
 
@@ -14,6 +77,52 @@ private final class RouterOSDiscoveryTableView: NSTableView {
         guard targetRow >= 0 else { return nil }
         selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
         return contextMenuProvider?(targetRow)
+    }
+}
+
+@MainActor
+private final class RouterOSDiscoveryRowView: NSTableRowView {
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard WireRouteTheme.isBlueNordic else {
+            super.drawBackground(in: dirtyRect)
+            return
+        }
+        let rowIndex = (superview as? NSTableView)?.row(for: self) ?? 0
+        let surface: WireRouteTheme.Surface = rowIndex.isMultiple(of: 2) ? .inset : .surface
+        WireRouteTheme.color(for: surface).setFill()
+        dirtyRect.fill()
+    }
+}
+
+@MainActor
+private final class RouterOSDiscoveryHeaderCell: NSTableHeaderCell {
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        guard WireRouteTheme.isBlueNordic else {
+            super.draw(withFrame: cellFrame, in: controlView)
+            return
+        }
+
+        WireRouteTheme.color(for: .surface).setFill()
+        cellFrame.fill()
+        WireRouteTheme.borderColor.withAlphaComponent(0.75).setFill()
+        NSRect(x: cellFrame.minX, y: cellFrame.minY, width: cellFrame.width, height: 1).fill()
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .left
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraphStyle
+        ]
+        let title = NSAttributedString(string: stringValue, attributes: attributes)
+        let titleSize = title.size()
+        let titleRect = NSRect(
+            x: cellFrame.minX + 10,
+            y: cellFrame.midY - titleSize.height / 2,
+            width: max(0, cellFrame.width - 20),
+            height: titleSize.height
+        )
+        title.draw(in: titleRect)
     }
 }
 
@@ -58,28 +167,17 @@ private final class RouterOSRemovePeerOptionsView: NSStackView {
 @MainActor
 final class RouterOSManagerViewController: NSViewController {
     private struct ConnectedContext: Sendable {
+        let connectionID: UUID
         let baseURL: URL
         let credentials: RouterOSCredentials
         let trustedCertificate: RouterOSServerCertificate?
     }
 
     private enum DiscoveryRow {
-        case interface(RouterOSWireGuardInterface)
         case peer(RouterOSWireGuardPeer)
-
-        var type: String {
-            switch self {
-            case .interface:
-                return tr("macRouterOSInterfaceType")
-            case .peer:
-                return tr("macRouterOSPeerType")
-            }
-        }
 
         var name: String {
             switch self {
-            case .interface(let interface):
-                return interface.name
             case .peer(let peer):
                 return peer.name ?? peer.comment ?? tr("macRouterOSUnnamedPeer")
             }
@@ -87,11 +185,6 @@ final class RouterOSManagerViewController: NSViewController {
 
         var detail: String {
             switch self {
-            case .interface(let interface):
-                if let port = interface.listenPort {
-                    return tr(format: "macRouterOSListenPort (%d)", port)
-                }
-                return "—"
             case .peer(let peer):
                 return peer.interfaceName
             }
@@ -99,11 +192,6 @@ final class RouterOSManagerViewController: NSViewController {
 
         var status: String {
             switch self {
-            case .interface(let interface):
-                if interface.isDisabled {
-                    return tr("macRouterOSDisabled")
-                }
-                return interface.isRunning ? tr("macRouterOSRunning") : tr("macRouterOSStopped")
             case .peer(let peer):
                 if peer.isDisabled {
                     return tr("macRouterOSDisabled")
@@ -116,14 +204,21 @@ final class RouterOSManagerViewController: NSViewController {
         }
     }
 
-    private let urlField = NSTextField()
     private let tunnelsManager: TunnelsManager
-    private let usernameField = NSTextField()
-    private let passwordField = NSSecureTextField()
-    private let connectButton = NSButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
-    private let settingsButton = NSButton(title: tr("macRouterOSSettings"), target: nil, action: nil)
-    private let addPeerButton = NSButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
-    private let importPeerButton = NSButton(title: tr("macRouterOSImportExistingPeer"), target: nil, action: nil)
+    private let connectionPopUp = WireRoutePopUpButton()
+    private let connectButton = WireRouteButton(title: tr("macRouterOSConnect"), target: nil, action: nil)
+    private let manageConnectionsButton = WireRouteButton(
+        title: tr("macRouterOSManageConnections"),
+        target: nil,
+        action: nil
+    )
+    private let addPeerButton = WireRouteButton(title: tr("macRouterOSSetUpPeer"), target: nil, action: nil)
+    private let importPeerButton = WireRouteButton(title: tr("macRouterOSImportExistingPeer"), target: nil, action: nil)
+    private let showAllPeersButton = NSButton(
+        checkboxWithTitle: tr("macRouterOSShowAllPeers"),
+        target: nil,
+        action: nil
+    )
     private let progressIndicator = NSProgressIndicator()
     private let messageLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSReadOnlyMessage"))
     private let summaryLabel = NSTextField(labelWithString: tr("macRouterOSNotConnected"))
@@ -137,6 +232,10 @@ final class RouterOSManagerViewController: NSViewController {
     private var connectionTask: Task<Void, Never>?
     private var isBusy = false
     private var contextPeer: RouterOSWireGuardPeer?
+    private var savedConnections = [RouterOSStoredConnection]()
+    var onOpenSettings: (() -> Void)?
+
+    private static let selectedConnectionKey = "WireRoute.RouterOSSelectedConnection"
 
     init(tunnelsManager: TunnelsManager) {
         self.tunnelsManager = tunnelsManager
@@ -149,8 +248,6 @@ final class RouterOSManagerViewController: NSViewController {
 
     override func loadView() {
         let view = NSView()
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         let titleLabel = NSTextField(labelWithString: tr("macRouterOSTitle"))
         titleLabel.font = .systemFont(ofSize: 28, weight: .bold)
@@ -160,12 +257,13 @@ final class RouterOSManagerViewController: NSViewController {
 
         let readOnlyBadgeLabel = NSTextField(labelWithString: tr("macRouterOSReadOnlyBadge"))
         readOnlyBadgeLabel.font = .systemFont(ofSize: 11, weight: .semibold)
-        readOnlyBadgeLabel.textColor = .systemBlue
+        readOnlyBadgeLabel.textColor = WireRouteTheme.accentColor
         readOnlyBadgeLabel.alignment = .center
 
-        let readOnlyBadge = NSView()
+        let readOnlyBadge = AppearanceAwareLayerView()
         readOnlyBadge.wantsLayer = true
-        readOnlyBadge.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
+        readOnlyBadge.adaptiveBackgroundColor = WireRouteTheme.accentColor
+        readOnlyBadge.adaptiveBackgroundAlpha = 0.12
         readOnlyBadge.layer?.cornerRadius = 7
         readOnlyBadge.layer?.cornerCurve = .continuous
         readOnlyBadge.addSubview(readOnlyBadgeLabel)
@@ -178,15 +276,9 @@ final class RouterOSManagerViewController: NSViewController {
             readOnlyBadge.heightAnchor.constraint(equalToConstant: 24)
         ])
 
-        settingsButton.target = self
-        settingsButton.action = #selector(settingsClicked)
-        settingsButton.bezelStyle = .rounded
-        settingsButton.controlSize = .regular
-        settingsButton.setContentHuggingPriority(.required, for: .horizontal)
-
         let headerSpacer = NSView()
         headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let headerRow = NSStackView(views: [titleLabel, readOnlyBadge, headerSpacer, settingsButton])
+        let headerRow = NSStackView(views: [titleLabel, readOnlyBadge, headerSpacer])
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
         headerRow.spacing = 12
@@ -203,18 +295,28 @@ final class RouterOSManagerViewController: NSViewController {
         summaryLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         addPeerButton.target = self
         addPeerButton.action = #selector(addPeerClicked)
-        addPeerButton.bezelStyle = .rounded
-        addPeerButton.controlSize = .large
+        addPeerButton.bezelStyle = .regularSquare
+        addPeerButton.controlSize = .regular
         addPeerButton.isEnabled = false
         addPeerButton.setContentHuggingPriority(.required, for: .horizontal)
         importPeerButton.target = self
         importPeerButton.action = #selector(importExistingPeerClicked)
-        importPeerButton.bezelStyle = .rounded
-        importPeerButton.controlSize = .large
+        importPeerButton.bezelStyle = .regularSquare
+        importPeerButton.controlSize = .regular
         importPeerButton.isEnabled = false
         importPeerButton.toolTip = tr("macRouterOSImportExistingPeerHelp")
         importPeerButton.setContentHuggingPriority(.required, for: .horizontal)
-        let summaryRow = NSStackView(views: [summaryLabel, importPeerButton, addPeerButton])
+        showAllPeersButton.target = self
+        showAllPeersButton.action = #selector(showAllPeersChanged)
+        showAllPeersButton.state = .off
+        showAllPeersButton.isEnabled = false
+        showAllPeersButton.toolTip = tr("macRouterOSShowAllPeersHelp")
+        showAllPeersButton.setContentHuggingPriority(.required, for: .horizontal)
+        let summarySpacer = NSView()
+        summarySpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let summaryRow = NSStackView(
+            views: [summaryLabel, summarySpacer, showAllPeersButton, importPeerButton, addPeerButton]
+        )
         summaryRow.orientation = .horizontal
         summaryRow.alignment = .centerY
         summaryRow.spacing = 12
@@ -226,7 +328,16 @@ final class RouterOSManagerViewController: NSViewController {
         configureTableView()
         scrollView.documentView = tableView
 
-        let tableContainer = NSView()
+        let tableContainer = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .inset
+        )
+        tableContainer.adaptiveBorderColor = .separatorColor
+        tableContainer.adaptiveBorderAlpha = 0.45
+        tableContainer.layer?.cornerRadius = 12
+        tableContainer.layer?.cornerCurve = .continuous
+        tableContainer.layer?.borderWidth = 1
         tableContainer.addSubview(scrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         emptyStateLabel.alignment = .center
@@ -274,69 +385,96 @@ final class RouterOSManagerViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(savedConnectionsDidChange),
+            name: RouterOSCredentialStore.connectionsDidChange,
+            object: nil
+        )
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
-            urlField.stringValue = "https://router.example"
-            usernameField.stringValue = "reviewer"
-            passwordField.stringValue = ""
+            savedConnections = [RouterOSStoredConnection(
+                id: UUID(),
+                name: "Office Router",
+                url: "https://router.example",
+                username: "reviewer",
+                password: ""
+            )]
+            populateConnectionPopUp(preferredID: savedConnections[0].id)
             return
         }
         #endif
-        loadStoredConnection()
+        reloadSavedConnections()
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        #if DEBUG
+        guard !ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") else { return }
+        #endif
+        reloadSavedConnections()
     }
 
     private func makeConnectionCard() -> NSView {
-        let card = NSView()
-        card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        let card = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
+        card.adaptiveBorderColor = .separatorColor
+        card.adaptiveBorderAlpha = 0.65
         card.layer?.cornerRadius = 14
         card.layer?.cornerCurve = .continuous
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
         card.layer?.borderWidth = 1
 
-        urlField.placeholderString = "https://router.example"
-        usernameField.placeholderString = tr("macRouterOSUsernamePlaceholder")
-        passwordField.placeholderString = tr("macRouterOSPasswordPlaceholder")
-        for field in [urlField, usernameField, passwordField] {
-            field.controlSize = .large
-            field.font = .systemFont(ofSize: 14)
-            field.delegate = self
-        }
+        let titleLabel = NSTextField(labelWithString: tr("macRouterOSConnectionTitle"))
+        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        let helpLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionHelp"))
+        helpLabel.font = .systemFont(ofSize: 12)
+        helpLabel.textColor = .secondaryLabelColor
+
+        connectionPopUp.controlSize = .regular
+        connectionPopUp.font = .systemFont(ofSize: 14)
+        connectionPopUp.target = self
+        connectionPopUp.action = #selector(connectionSelectionChanged)
 
         connectButton.target = self
         connectButton.action = #selector(connectClicked)
-        connectButton.bezelStyle = .rounded
-        connectButton.controlSize = .large
+        connectButton.bezelStyle = .regularSquare
+        connectButton.controlSize = .regular
         connectButton.keyEquivalent = "\r"
+
+        manageConnectionsButton.target = self
+        manageConnectionsButton.action = #selector(manageConnectionsClicked)
+        manageConnectionsButton.bezelStyle = .regularSquare
+        manageConnectionsButton.controlSize = .regular
 
         progressIndicator.style = .spinning
         progressIndicator.controlSize = .small
         progressIndicator.isDisplayedWhenStopped = false
 
-        let connectRow = NSStackView(views: [connectButton, progressIndicator])
+        let rowSpacer = NSView()
+        rowSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let connectRow = NSStackView(views: [connectionPopUp, connectButton, progressIndicator, rowSpacer, manageConnectionsButton])
         connectRow.orientation = .horizontal
         connectRow.alignment = .centerY
         connectRow.spacing = 10
 
-        let grid = NSGridView(views: [
-            [NSTextField(labelWithString: tr("macRouterOSAddress")), urlField],
-            [NSTextField(labelWithString: tr("macRouterOSUsername")), usernameField],
-            [NSTextField(labelWithString: tr("macRouterOSPassword")), passwordField],
-            [NSView(), connectRow]
-        ])
-        grid.rowSpacing = 10
-        grid.columnSpacing = 14
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 1).xPlacement = .fill
+        let stack = NSStackView(views: [titleLabel, connectRow, helpLabel])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 9
+        connectRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        helpLabel.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 
-        card.addSubview(grid)
-        grid.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            grid.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
-            grid.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
-            grid.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
-            grid.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
-            urlField.widthAnchor.constraint(greaterThanOrEqualToConstant: 360)
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            connectionPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 300)
         ])
         return card
     }
@@ -344,6 +482,7 @@ final class RouterOSManagerViewController: NSViewController {
     private func configureTableView() {
         tableView.dataSource = self
         tableView.delegate = self
+        tableView.backgroundColor = .clear
         tableView.headerView = NSTableHeaderView()
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.rowHeight = 30
@@ -353,30 +492,107 @@ final class RouterOSManagerViewController: NSViewController {
         }
 
         let columns: [(String, String, CGFloat)] = [
-            ("type", tr("macRouterOSColumnType"), 100),
-            ("name", tr("macRouterOSColumnName"), 190),
-            ("detail", tr("macRouterOSColumnInterface"), 180),
+            ("name", tr("macRouterOSColumnName"), 240),
+            ("detail", tr("macRouterOSColumnInterface"), 200),
             ("status", tr("macRouterOSColumnStatus"), 220)
         ]
         for (identifier, title, width) in columns {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
             column.title = title
+            column.headerCell = RouterOSDiscoveryHeaderCell(textCell: title)
             column.width = width
             column.minWidth = 90
             tableView.addTableColumn(column)
         }
     }
 
-    private func loadStoredConnection() {
+    private var selectedConnection: RouterOSStoredConnection? {
+        guard let identifier = connectionPopUp.selectedItem?.representedObject as? String,
+              let id = UUID(uuidString: identifier) else {
+            return nil
+        }
+        return savedConnections.first { $0.id == id }
+    }
+
+    @objc private func savedConnectionsDidChange() {
+        reloadSavedConnections()
+    }
+
+    private func reloadSavedConnections() {
+        let preferredID = selectedConnection?.id
+            ?? UserDefaults.standard.string(forKey: Self.selectedConnectionKey).flatMap(UUID.init(uuidString:))
         do {
-            guard let storedConnection = try RouterOSCredentialStore.load() else { return }
-            urlField.stringValue = storedConnection.url
-            usernameField.stringValue = storedConnection.username
-            passwordField.stringValue = storedConnection.password
+            savedConnections = try RouterOSCredentialStore.loadAll().sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+            populateConnectionPopUp(preferredID: preferredID)
+
+            if let context = connectedContext {
+                let matchingConnection = savedConnections.first { $0.id == context.connectionID }
+                let stillMatches = matchingConnection.map {
+                    URL(string: $0.url) == context.baseURL
+                        && $0.username == context.credentials.username
+                        && $0.password == context.credentials.password
+                } ?? false
+                if !stillMatches {
+                    invalidateDiscovery()
+                    messageLabel.stringValue = tr("macRouterOSReconnectRequired")
+                    messageLabel.textColor = .secondaryLabelColor
+                }
+            }
         } catch {
+            savedConnections = []
+            populateConnectionPopUp(preferredID: nil)
             messageLabel.stringValue = error.localizedDescription
             messageLabel.textColor = .systemRed
         }
+    }
+
+    private func populateConnectionPopUp(preferredID: UUID?) {
+        connectionPopUp.removeAllItems()
+        if savedConnections.isEmpty {
+            connectionPopUp.addItem(withTitle: tr("macRouterOSNoConnections"))
+        }
+        for connection in savedConnections {
+            let host = URL(string: connection.url)?.host ?? connection.url
+            let title = connection.name.compare(
+                host,
+                options: [.caseInsensitive, .diacriticInsensitive]
+            ) == .orderedSame ? connection.name : "\(connection.name) — \(host)"
+            connectionPopUp.addItem(withTitle: title)
+            connectionPopUp.lastItem?.representedObject = connection.id.uuidString
+        }
+
+        let selectedIndex = preferredID.flatMap { id in
+            savedConnections.firstIndex { $0.id == id }
+        } ?? (savedConnections.isEmpty ? nil : 0)
+        if let selectedIndex {
+            connectionPopUp.selectItem(at: selectedIndex)
+            UserDefaults.standard.set(savedConnections[selectedIndex].id.uuidString, forKey: Self.selectedConnectionKey)
+        }
+
+        let hasConnections = !savedConnections.isEmpty
+        connectionPopUp.isEnabled = hasConnections && !isBusy
+        connectButton.isEnabled = hasConnections && !isBusy
+        updateConnectButtonPresentation()
+        connectionPopUp.toolTip = hasConnections
+            ? tr("macRouterOSConnectionSelectorHelp")
+            : tr("macRouterOSNoConnectionsHelp")
+        reloadDiscoveryTable()
+    }
+
+    @objc private func connectionSelectionChanged() {
+        guard let selectedConnection else { return }
+        UserDefaults.standard.set(selectedConnection.id.uuidString, forKey: Self.selectedConnectionKey)
+        if let context = connectedContext, context.connectionID != selectedConnection.id {
+            invalidateDiscovery()
+            messageLabel.stringValue = tr("macRouterOSReconnectRequired")
+            messageLabel.textColor = .secondaryLabelColor
+        }
+    }
+
+    @objc private func manageConnectionsClicked() {
+        onOpenSettings?()
     }
 
     @objc private func connectClicked() {
@@ -385,16 +601,14 @@ final class RouterOSManagerViewController: NSViewController {
         messageLabel.textColor = .secondaryLabelColor
         messageLabel.stringValue = tr("macRouterOSConnecting")
 
-        guard let url = URL(string: urlField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let storedConnection = selectedConnection else {
+            showError(tr("macRouterOSNoConnectionsHelp"))
+            return
+        }
+        guard let url = URL(string: storedConnection.url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             showError(RouterOSClientError.invalidBaseURL.localizedDescription)
             return
         }
-
-        let storedConnection = RouterOSStoredConnection(
-            url: url.absoluteString,
-            username: usernameField.stringValue,
-            password: passwordField.stringValue
-        )
         connect(to: url, storedConnection: storedConnection)
     }
 
@@ -430,27 +644,15 @@ final class RouterOSManagerViewController: NSViewController {
                     from: addresses ?? []
                 )
                 connectedContext = ConnectedContext(
+                    connectionID: storedConnection.id,
                     baseURL: url,
                     credentials: credentials,
                     trustedCertificate: trustedCertificate
                 )
-                rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
-                reloadDiscoveryTable()
+                rebuildDiscoveryRows()
                 addPeerButton.isEnabled = !interfaces.isEmpty
-                summaryLabel.stringValue = tr(
-                    format: "macRouterOSDiscoverySummary (%d,%d)",
-                    interfaces.count,
-                    peers.count
-                )
                 messageLabel.stringValue = tr("macRouterOSConnectedReadOnly")
                 messageLabel.textColor = .systemGreen
-
-                do {
-                    try RouterOSCredentialStore.save(storedConnection)
-                } catch {
-                    messageLabel.stringValue = tr("macRouterOSConnectedCredentialWarning")
-                    messageLabel.textColor = .systemOrange
-                }
             } catch is CancellationError {
                 return
             } catch let certificateError as RouterOSTLSCertificateError {
@@ -472,17 +674,26 @@ final class RouterOSManagerViewController: NSViewController {
 
     private func setConnecting(_ isConnecting: Bool) {
         isBusy = isConnecting
-        connectButton.isEnabled = !isConnecting
-        urlField.isEnabled = !isConnecting
-        usernameField.isEnabled = !isConnecting
-        passwordField.isEnabled = !isConnecting
+        connectButton.isEnabled = !isConnecting && selectedConnection != nil
+        updateConnectButtonPresentation()
+        connectionPopUp.isEnabled = !isConnecting && !savedConnections.isEmpty
+        manageConnectionsButton.isEnabled = !isConnecting
         addPeerButton.isEnabled = !isConnecting && connectedContext != nil && !interfaces.isEmpty
+        showAllPeersButton.isEnabled = !isConnecting && connectedContext != nil && !peers.isEmpty
         updateImportPeerButtonState()
         if isConnecting {
             progressIndicator.startAnimation(nil)
         } else {
             progressIndicator.stopAnimation(nil)
         }
+    }
+
+    private func updateConnectButtonPresentation() {
+        let isConnectedToSelection = connectedContext?.connectionID == selectedConnection?.id
+        connectButton.title = tr(isConnectedToSelection ? "macRouterOSConnected" : "macRouterOSConnect")
+        connectButton.toolTip = isConnectedToSelection
+            ? tr("macRouterOSConnectedRefreshHelp")
+            : tr("macRouterOSConnect")
     }
 
     private func showError(_ message: String) {
@@ -626,6 +837,7 @@ final class RouterOSManagerViewController: NSViewController {
 
     private func invalidateDiscovery() {
         connectedContext = nil
+        updateConnectButtonPresentation()
         interfaces = []
         peers = []
         publicEndpointSuggestion = nil
@@ -634,6 +846,11 @@ final class RouterOSManagerViewController: NSViewController {
         summaryLabel.stringValue = tr("macRouterOSNotConnected")
         addPeerButton.isEnabled = false
         importPeerButton.isEnabled = false
+        showAllPeersButton.isEnabled = false
+    }
+
+    @objc private func showAllPeersChanged() {
+        rebuildDiscoveryRows()
     }
 
     private var selectedPeer: RouterOSWireGuardPeer? {
@@ -1155,13 +1372,17 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     @objc private func addPeerClicked() {
-        guard connectedContext != nil, !interfaces.isEmpty else { return }
+        guard let connectedContext, !interfaces.isEmpty else { return }
+        let defaultInterface = savedConnections.first {
+            $0.id == connectedContext.connectionID
+        }?.defaultInterface
         let setupViewController = RouterOSPeerSetupViewController(
             interfaces: interfaces,
             existingPeers: peers,
             existingTunnelNames: Set(tunnelsManager.mapTunnels { $0.name }),
             publicEndpointSuggestion: publicEndpointSuggestion,
-            peerDefaults: RouterOSPeerDefaultsStore.load()
+            peerDefaults: RouterOSPeerDefaultsStore.load(),
+            preferredInterfaceName: defaultInterface
         )
         setupViewController.onCancel = { [weak self, weak setupViewController] in
             guard let self, let setupViewController else { return }
@@ -1201,10 +1422,6 @@ final class RouterOSManagerViewController: NSViewController {
             guard response == .OK, let url = panel.url else { return }
             self?.importExistingPeer(peer, from: url)
         }
-    }
-
-    @objc private func settingsClicked() {
-        (NSApp.delegate as? AppDelegate)?.showRouterOSSettings()
     }
 
     private func createPeer(_ proposal: RouterOSPeerSetupViewController.Proposal) {
@@ -1247,13 +1464,7 @@ final class RouterOSManagerViewController: NSViewController {
                 guard !Task.isCancelled else { return }
 
                 peers.append(createdPeer)
-                rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
-                reloadDiscoveryTable()
-                summaryLabel.stringValue = tr(
-                    format: "macRouterOSDiscoverySummary (%d,%d)",
-                    interfaces.count,
-                    peers.count
-                )
+                rebuildDiscoveryRows()
                 messageLabel.stringValue = tr("macRouterOSPeerImporting")
                 messageLabel.textColor = .secondaryLabelColor
                 importClientConfiguration(
@@ -1460,13 +1671,21 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     private func rebuildDiscoveryRows() {
-        rows = interfaces.map(DiscoveryRow.interface) + peers.map(DiscoveryRow.peer)
+        let displayedPeers = showAllPeersButton.state == .on
+            ? peers
+            : peers.filter(Self.isWireRouteManagedPeer)
+        rows = displayedPeers.map(DiscoveryRow.peer)
+        contextPeer = nil
+        tableView.deselectAll(nil)
         reloadDiscoveryTable()
-        summaryLabel.stringValue = tr(
-            format: "macRouterOSDiscoverySummary (%d,%d)",
-            interfaces.count,
-            peers.count
-        )
+        showAllPeersButton.isEnabled = !isBusy && connectedContext != nil && !peers.isEmpty
+        summaryLabel.stringValue = showAllPeersButton.state == .on
+            ? tr(format: "macRouterOSAllPeersSummary (%d)", peers.count)
+            : tr(format: "macRouterOSManagedPeersSummary (%d,%d)", displayedPeers.count, peers.count)
+    }
+
+    private static func isWireRouteManagedPeer(_ peer: RouterOSWireGuardPeer) -> Bool {
+        RouterOSPeerCreation.isWireRouteManagedComment(peer.comment)
     }
 
     private func showExistingPeerImportError(title: String, message: String) {
@@ -1516,56 +1735,15 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     private func showConfigurationQRCode(_ configuration: TunnelConfiguration) {
-        guard let window = view.window else { return }
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(configuration.asWgQuickConfig().utf8)
-        filter.correctionLevel = "M"
-        guard let outputImage = filter.outputImage else {
-            showError(tr("macRouterOSQRCodeFailed"))
-            return
-        }
-        let scaledImage = outputImage.transformed(
-            by: CGAffineTransform(scaleX: 8, y: 8)
-        )
-        let representation = NSCIImageRep(ciImage: scaledImage)
-        let image = NSImage(size: representation.size)
-        image.addRepresentation(representation)
-
-        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: 320, height: 320))
-        imageView.image = image
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = configuration.name ?? tr("macRouterOSExistingPeerDefaultName")
-        alert.informativeText = tr("macRouterOSQRCodeMessage")
-        alert.accessoryView = imageView
-        alert.addButton(withTitle: tr("macRouterOSDone"))
-        alert.beginSheetModal(for: window) { _ in }
+        ConfigurationQRCodePresenter.present(configuration, from: self)
     }
 
     private func confirmCopyPrivateKey(_ privateKey: String) {
-        guard let window = view.window else { return }
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = tr("macRouterOSCopyPrivateKeyTitle")
-        alert.informativeText = tr("macRouterOSCopyPrivateKeyMessage")
-        alert.addButton(withTitle: tr("macRouterOSCopyPrivateKeyConfirm"))
-        alert.addButton(withTitle: tr("macRouterOSCancel"))
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            self?.copySensitiveConfiguration(privateKey)
-        }
+        SensitiveKeyClipboardPresenter.confirmAndCopy(privateKey, from: self)
     }
 
     private func copySensitiveConfiguration(_ value: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(value, forType: .string)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
-            let currentPasteboard = NSPasteboard.general
-            guard currentPasteboard.string(forType: .string) == value else { return }
-            currentPasteboard.clearContents()
-        }
+        SensitiveKeyClipboardPresenter.copy(value)
     }
 
     private func saveConfiguration(_ configuration: WireGuardClientConfiguration) {
@@ -1619,6 +1797,15 @@ final class RouterOSManagerViewController: NSViewController {
     private func reloadDiscoveryTable() {
         tableView.usesAlternatingRowBackgroundColors = !rows.isEmpty
         emptyStateLabel.isHidden = !rows.isEmpty
+        if connectedContext == nil {
+            emptyStateLabel.stringValue = savedConnections.isEmpty
+                ? tr("macRouterOSNoConnectionsHelp")
+                : tr("macRouterOSEmptyDiscovery")
+        } else if peers.isEmpty {
+            emptyStateLabel.stringValue = tr("macRouterOSNoPeers")
+        } else {
+            emptyStateLabel.stringValue = tr("macRouterOSNoManagedPeers")
+        }
         tableView.reloadData()
         updateImportPeerButtonState()
     }
@@ -1629,14 +1816,16 @@ extension RouterOSManagerViewController: NSTableViewDataSource, NSTableViewDeleg
         rows.count
     }
 
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        return RouterOSDiscoveryRowView()
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard let tableColumn, rows.indices.contains(row) else { return nil }
         let identifier = tableColumn.identifier
         let cell = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView ?? makeCell(identifier: identifier)
         let discoveryRow = rows[row]
         switch identifier.rawValue {
-        case "type":
-            cell.textField?.stringValue = discoveryRow.type
         case "name":
             cell.textField?.stringValue = discoveryRow.name
         case "detail":
@@ -1713,51 +1902,565 @@ enum RouterOSPeerDefaultsStore {
 }
 
 @MainActor
-final class RouterOSSettingsViewController: NSViewController {
-    private let endpointField = NSTextField()
-    private let dnsField = NSTextField()
-    private let routesField = NSTextField()
-    private let keepaliveField = NSTextField()
+private final class RouterOSConnectionEditorViewController: NSViewController {
+    private let existingConnection: RouterOSStoredConnection?
+    private let existingConnections: [RouterOSStoredConnection]
+    private let nameField = WireRouteTextField()
+    private let addressField = WireRouteTextField()
+    private let usernameField = WireRouteTextField()
+    private let passwordField = WireRouteSecureTextField()
+    private let defaultInterfacePopUp = WireRoutePopUpButton()
+    private let loadInterfacesButton = WireRouteButton(
+        title: tr("macRouterOSLoadInterfaces"),
+        target: nil,
+        action: nil
+    )
+    private let interfaceProgressIndicator = NSProgressIndicator()
+    private let defaultInterfaceHelpLabel = NSTextField(wrappingLabelWithString: "")
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
+    private let saveButton = WireRouteButton(title: tr("macRouterOSSaveConnection"), target: nil, action: nil)
+    private let onSave: (RouterOSStoredConnection) throws -> Void
+    private var interfaceTask: Task<Void, Never>?
 
-    override func viewWillAppear() {
-        super.viewWillAppear()
-        loadStoredDefaults()
-        errorLabel.isHidden = true
+    init(
+        connection: RouterOSStoredConnection?,
+        existingConnections: [RouterOSStoredConnection],
+        onSave: @escaping (RouterOSStoredConnection) throws -> Void
+    ) {
+        existingConnection = connection
+        self.existingConnections = existingConnections
+        self.onSave = onSave
+        super.init(nibName: nil, bundle: nil)
+        preferredContentSize = NSSize(width: 700, height: 490)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func loadView() {
-        let view = NSView()
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let view = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
+        let titleLabel = NSTextField(labelWithString: tr(
+            existingConnection == nil
+                ? "macRouterOSAddConnectionTitle"
+                : "macRouterOSEditConnectionTitle"
+        ))
+        titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
+        let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionEditorHelp"))
+        subtitleLabel.font = .systemFont(ofSize: 12)
+        subtitleLabel.textColor = .secondaryLabelColor
 
-        let titleLabel = NSTextField(labelWithString: tr("macRouterOSSettingsTitle"))
+        nameField.placeholderString = tr("macRouterOSConnectionNamePlaceholder")
+        addressField.placeholderString = "https://router.example"
+        usernameField.placeholderString = tr("macRouterOSUsernamePlaceholder")
+        passwordField.placeholderString = existingConnection == nil
+            ? tr("macRouterOSPasswordRequiredPlaceholder")
+            : tr("macRouterOSPasswordKeepPlaceholder")
+        for field in [nameField, addressField, usernameField, passwordField] {
+            field.controlSize = .large
+            field.font = .systemFont(ofSize: 14)
+        }
+
+        if let existingConnection {
+            nameField.stringValue = existingConnection.name
+            addressField.stringValue = existingConnection.url
+            usernameField.stringValue = existingConnection.username
+        }
+
+        configureDefaultInterfacePopUp(preferredInterface: existingConnection?.defaultInterface)
+        defaultInterfacePopUp.controlSize = .regular
+        defaultInterfacePopUp.font = .systemFont(ofSize: 14)
+        loadInterfacesButton.target = self
+        loadInterfacesButton.action = #selector(loadInterfacesClicked)
+        loadInterfacesButton.bezelStyle = .regularSquare
+        loadInterfacesButton.controlSize = .regular
+        interfaceProgressIndicator.style = .spinning
+        interfaceProgressIndicator.controlSize = .small
+        interfaceProgressIndicator.isDisplayedWhenStopped = false
+        defaultInterfaceHelpLabel.stringValue = tr("macRouterOSDefaultInterfaceConnectHelp")
+        defaultInterfaceHelpLabel.font = .systemFont(ofSize: 11)
+        defaultInterfaceHelpLabel.textColor = .secondaryLabelColor
+        let interfaceRow = NSStackView(
+            views: [defaultInterfacePopUp, loadInterfacesButton, interfaceProgressIndicator]
+        )
+        interfaceRow.orientation = .horizontal
+        interfaceRow.alignment = .centerY
+        interfaceRow.spacing = 8
+        let defaultInterfaceStack = NSStackView(views: [interfaceRow, defaultInterfaceHelpLabel])
+        defaultInterfaceStack.orientation = .vertical
+        defaultInterfaceStack.alignment = .leading
+        defaultInterfaceStack.spacing = 4
+        interfaceRow.widthAnchor.constraint(equalTo: defaultInterfaceStack.widthAnchor).isActive = true
+        defaultInterfaceHelpLabel.widthAnchor.constraint(equalTo: defaultInterfaceStack.widthAnchor).isActive = true
+        defaultInterfacePopUp.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        defaultInterfacePopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 230).isActive = true
+
+        let grid = NSGridView(views: [
+            [fieldLabel(tr("macRouterOSConnectionName")), nameField],
+            [fieldLabel(tr("macRouterOSAddress")), addressField],
+            [fieldLabel(tr("macRouterOSUsername")), usernameField],
+            [fieldLabel(tr("macRouterOSPassword")), passwordField],
+            [fieldLabel(tr("macRouterOSDefaultInterface")), defaultInterfaceStack]
+        ])
+        grid.rowSpacing = 12
+        grid.columnSpacing = 14
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .fill
+
+        let card = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .surface
+        )
+        card.adaptiveBorderColor = .separatorColor
+        card.adaptiveBorderAlpha = 0.65
+        card.layer?.cornerRadius = 14
+        card.layer?.cornerCurve = .continuous
+        card.layer?.borderWidth = 1
+        card.addSubview(grid)
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            grid.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            grid.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
+            grid.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
+            nameField.widthAnchor.constraint(greaterThanOrEqualToConstant: 360)
+        ])
+
+        errorLabel.font = .systemFont(ofSize: 12)
+        errorLabel.textColor = .systemRed
+        errorLabel.isHidden = true
+
+        let cancelButton = WireRouteButton(title: tr("macRouterOSCancel"), target: self, action: #selector(cancelClicked))
+        cancelButton.bezelStyle = .regularSquare
+        saveButton.target = self
+        saveButton.action = #selector(saveClicked)
+        saveButton.bezelStyle = .regularSquare
+        saveButton.keyEquivalent = "\r"
+        let buttonSpacer = NSView()
+        buttonSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let buttonRow = NSStackView(views: [buttonSpacer, cancelButton, saveButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 10
+
+        let stack = NSStackView(views: [titleLabel, subtitleLabel, card, errorLabel, buttonRow])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.setCustomSpacing(4, after: titleLabel)
+        stack.setCustomSpacing(18, after: subtitleLabel)
+        stack.setCustomSpacing(8, after: card)
+        view.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 22),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -22),
+            subtitleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            card.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            errorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            buttonRow.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        ])
+        self.view = view
+    }
+
+    private func fieldLabel(_ value: String) -> NSTextField {
+        let label = NSTextField(labelWithString: value)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        return label
+    }
+
+    @objc private func cancelClicked() {
+        interfaceTask?.cancel()
+        dismiss(self)
+    }
+
+    @objc private func saveClicked() {
+        guard let connection = validatedConnection() else { return }
+        do {
+            try onSave(connection)
+            dismiss(self)
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    @objc private func loadInterfacesClicked() {
+        guard let connection = validatedConnection(),
+              let url = URL(string: connection.url) else {
+            return
+        }
+        interfaceTask?.cancel()
+        errorLabel.isHidden = true
+        defaultInterfaceHelpLabel.stringValue = tr("macRouterOSLoadingInterfaces")
+        defaultInterfaceHelpLabel.textColor = .secondaryLabelColor
+        loadInterfaces(from: url, connection: connection)
+    }
+
+    private func validatedConnection() -> RouterOSStoredConnection? {
+        let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let address = addressField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = usernameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newPassword = passwordField.stringValue
+
+        guard !name.isEmpty else {
+            showError(tr("macRouterOSConnectionNameRequired"))
+            return nil
+        }
+        let duplicateName = existingConnections.contains {
+            $0.id != existingConnection?.id
+                && $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+        guard !duplicateName else {
+            showError(tr("macRouterOSConnectionNameDuplicate"))
+            return nil
+        }
+        guard let url = URL(string: address),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host != nil else {
+            showError(tr("macRouterOSConnectionAddressInvalid"))
+            return nil
+        }
+        guard !username.isEmpty else {
+            showError(tr("macRouterOSConnectionUsernameRequired"))
+            return nil
+        }
+        let password = newPassword.isEmpty ? existingConnection?.password ?? "" : newPassword
+        guard !password.isEmpty else {
+            showError(tr("macRouterOSConnectionPasswordRequired"))
+            return nil
+        }
+
+        return RouterOSStoredConnection(
+            id: existingConnection?.id ?? UUID(),
+            name: name,
+            url: url.absoluteString,
+            username: username,
+            password: password,
+            defaultInterface: selectedDefaultInterface
+        )
+    }
+
+    private var selectedDefaultInterface: String? {
+        guard defaultInterfacePopUp.indexOfSelectedItem > 0 else { return nil }
+        return defaultInterfacePopUp.selectedItem?.representedObject as? String
+    }
+
+    private func configureDefaultInterfacePopUp(preferredInterface: String?) {
+        defaultInterfacePopUp.removeAllItems()
+        defaultInterfacePopUp.addItem(withTitle: tr("macRouterOSAutomatic"))
+        if let preferredInterface, !preferredInterface.isEmpty {
+            defaultInterfacePopUp.addItem(withTitle: preferredInterface)
+            defaultInterfacePopUp.lastItem?.representedObject = preferredInterface
+            defaultInterfacePopUp.selectItem(at: 1)
+        } else {
+            defaultInterfacePopUp.selectItem(at: 0)
+        }
+    }
+
+    private func populateDefaultInterfacePopUp(
+        interfaces: [RouterOSWireGuardInterface],
+        preferredInterface: String?
+    ) {
+        defaultInterfacePopUp.removeAllItems()
+        defaultInterfacePopUp.addItem(withTitle: tr("macRouterOSAutomatic"))
+        for interface in interfaces {
+            let suffix = interface.isDisabled ? " — \(tr("macRouterOSDisabled"))" : ""
+            defaultInterfacePopUp.addItem(withTitle: interface.name + suffix)
+            defaultInterfacePopUp.lastItem?.representedObject = interface.name
+        }
+
+        if let preferredInterface,
+           let preferredIndex = interfaces.firstIndex(where: { $0.name == preferredInterface }) {
+            defaultInterfacePopUp.selectItem(at: preferredIndex + 1)
+        } else if let activeIndex = interfaces.firstIndex(where: { $0.isRunning && !$0.isDisabled }) {
+            defaultInterfacePopUp.selectItem(at: activeIndex + 1)
+        } else if let enabledIndex = interfaces.firstIndex(where: { !$0.isDisabled }) {
+            defaultInterfacePopUp.selectItem(at: enabledIndex + 1)
+        } else if !interfaces.isEmpty {
+            defaultInterfacePopUp.selectItem(at: 1)
+        } else {
+            defaultInterfacePopUp.selectItem(at: 0)
+        }
+    }
+
+    private func loadInterfaces(from url: URL, connection: RouterOSStoredConnection) {
+        setLoadingInterfaces(true)
+        interfaceTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let trustedCertificate = try RouterOSCertificateStore.load(for: url)
+                let client = try RouterOSClient<URLSessionRouterOSHTTPTransport>(
+                    baseURL: url,
+                    credentials: RouterOSCredentials(
+                        username: connection.username,
+                        password: connection.password
+                    ),
+                    trustedCertificate: trustedCertificate
+                )
+                let interfaces = try await client.wireGuardInterfaces()
+                guard !Task.isCancelled else { return }
+
+                let previousSelection = selectedDefaultInterface ?? connection.defaultInterface
+                populateDefaultInterfacePopUp(
+                    interfaces: interfaces,
+                    preferredInterface: previousSelection
+                )
+                if interfaces.isEmpty {
+                    showError(tr("macRouterOSNoInterfacesForDefault"))
+                    defaultInterfaceHelpLabel.stringValue = tr("macRouterOSNoInterfacesForDefault")
+                    defaultInterfaceHelpLabel.textColor = .systemOrange
+                } else {
+                    defaultInterfaceHelpLabel.stringValue = tr(
+                        format: "macRouterOSInterfacesLoaded (%d)",
+                        interfaces.count
+                    )
+                    defaultInterfaceHelpLabel.textColor = .systemGreen
+                }
+            } catch is CancellationError {
+                return
+            } catch let certificateError as RouterOSTLSCertificateError {
+                setLoadingInterfaces(false)
+                presentCertificateReview(
+                    certificateError,
+                    routerURL: url,
+                    connection: connection
+                )
+                return
+            } catch {
+                showError(error.localizedDescription)
+                defaultInterfaceHelpLabel.stringValue = tr("macRouterOSDefaultInterfaceConnectHelp")
+                defaultInterfaceHelpLabel.textColor = .secondaryLabelColor
+            }
+            setLoadingInterfaces(false)
+        }
+    }
+
+    private func setLoadingInterfaces(_ isLoading: Bool) {
+        for field in [nameField, addressField, usernameField, passwordField] {
+            field.isEnabled = !isLoading
+        }
+        defaultInterfacePopUp.isEnabled = !isLoading
+        loadInterfacesButton.isEnabled = !isLoading
+        saveButton.isEnabled = !isLoading
+        if isLoading {
+            interfaceProgressIndicator.startAnimation(nil)
+        } else {
+            interfaceProgressIndicator.stopAnimation(nil)
+        }
+    }
+
+    private func presentCertificateReview(
+        _ error: RouterOSTLSCertificateError,
+        routerURL: URL,
+        connection: RouterOSStoredConnection
+    ) {
+        guard let window = view.window else {
+            showError(error.localizedDescription)
+            return
+        }
+
+        let certificate: RouterOSServerCertificate
+        let expectedFingerprint: String?
+        let isReplacement: Bool
+        let alert = NSAlert()
+        switch error {
+        case .untrusted(let received):
+            certificate = received
+            expectedFingerprint = nil
+            isReplacement = false
+            alert.alertStyle = .warning
+            alert.messageText = tr("macRouterOSCertificateUntrustedTitle")
+            alert.informativeText = tr("macRouterOSCertificateUntrustedMessage")
+        case .changed(let expected, let received):
+            certificate = received
+            expectedFingerprint = expected
+            isReplacement = true
+            alert.alertStyle = .critical
+            alert.messageText = tr("macRouterOSCertificateChangedTitle")
+            alert.informativeText = tr("macRouterOSCertificateChangedMessage")
+        }
+
+        defaultInterfaceHelpLabel.stringValue = error.localizedDescription
+        defaultInterfaceHelpLabel.textColor = .systemOrange
+        alert.accessoryView = certificateDetailsView(
+            certificate,
+            expectedFingerprint: expectedFingerprint
+        )
+        let trustButton = alert.addButton(
+            withTitle: tr(
+                isReplacement
+                    ? "macRouterOSReplaceCertificateAndConnect"
+                    : "macRouterOSTrustCertificateAndConnect"
+            )
+        )
+        trustButton.hasDestructiveAction = isReplacement
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            guard response == .alertFirstButtonReturn else {
+                defaultInterfaceHelpLabel.stringValue = tr("macRouterOSCertificateNotTrusted")
+                defaultInterfaceHelpLabel.textColor = .secondaryLabelColor
+                return
+            }
+            do {
+                try RouterOSCertificateStore.save(certificate, for: routerURL)
+                defaultInterfaceHelpLabel.stringValue = tr("macRouterOSCertificateTrustedConnecting")
+                defaultInterfaceHelpLabel.textColor = .secondaryLabelColor
+                loadInterfaces(from: routerURL, connection: connection)
+            } catch {
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func certificateDetailsView(
+        _ certificate: RouterOSServerCertificate,
+        expectedFingerprint: String?
+    ) -> NSView {
+        var rows = [[NSView]]()
+        rows.append([
+            certificateDetailLabel(tr("macRouterOSCertificateRouter")),
+            certificateDetailValue("\(certificate.host):\(certificate.port)")
+        ])
+        rows.append([
+            certificateDetailLabel(tr("macRouterOSCertificateName")),
+            certificateDetailValue(
+                certificate.subjectSummary ?? tr("macRouterOSCertificateUnnamed")
+            )
+        ])
+        if let expectedFingerprint {
+            rows.append([
+                certificateDetailLabel(tr("macRouterOSCertificatePreviouslyTrusted")),
+                certificateDetailValue(expectedFingerprint, isFingerprint: true)
+            ])
+        }
+        rows.append([
+            certificateDetailLabel(tr("macRouterOSCertificatePresented")),
+            certificateDetailValue(certificate.fingerprintSHA256, isFingerprint: true)
+        ])
+
+        let containerHeight: CGFloat = expectedFingerprint == nil ? 104 : 146
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: containerHeight))
+        let grid = NSGridView(views: rows)
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        grid.rowSpacing = 9
+        grid.columnSpacing = 14
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 0).width = 120
+        grid.column(at: 1).xPlacement = .fill
+        grid.column(at: 1).width = 360
+        container.addSubview(grid)
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            grid.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            grid.topAnchor.constraint(equalTo: container.topAnchor),
+            grid.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor)
+        ])
+        return container
+    }
+
+    private func certificateDetailLabel(_ value: String) -> NSTextField {
+        let label = NSTextField(labelWithString: value)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        return label
+    }
+
+    private func certificateDetailValue(
+        _ value: String,
+        isFingerprint: Bool = false
+    ) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: value)
+        label.font = isFingerprint
+            ? .monospacedSystemFont(ofSize: 11, weight: .medium)
+            : .systemFont(ofSize: 12)
+        label.lineBreakMode = isFingerprint ? .byCharWrapping : .byTruncatingTail
+        label.maximumNumberOfLines = isFingerprint ? 0 : 1
+        label.isSelectable = isFingerprint
+        return label
+    }
+
+    private func showError(_ message: String) {
+        errorLabel.stringValue = message
+        errorLabel.isHidden = false
+    }
+}
+
+@MainActor
+final class RouterOSSettingsViewController: NSViewController {
+    private let appearancePopUp = WireRoutePopUpButton()
+    private let statusIconPopUp = WireRoutePopUpButton()
+    private let configureOnDemandButton = WireRouteButton(
+        title: tr("macSettingsConfigureOnDemand"),
+        target: nil,
+        action: nil
+    )
+    private let connectionsTableView = NSTableView()
+    private let connectionsEmptyLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionsEmpty"))
+    private let addConnectionButton = WireRouteButton(title: tr("macRouterOSAddConnection"), target: nil, action: nil)
+    private let editConnectionButton = WireRouteButton(title: tr("macRouterOSEditConnection"), target: nil, action: nil)
+    private let removeConnectionButton = WireRouteButton(title: tr("macRouterOSRemoveConnection"), target: nil, action: nil)
+    private let endpointField = WireRouteTextField()
+    private let dnsField = WireRouteTextField()
+    private let routesField = WireRouteTextField()
+    private let keepaliveField = WireRouteTextField()
+    private let errorLabel = NSTextField(wrappingLabelWithString: "")
+    private var connections = [RouterOSStoredConnection]()
+    var onConfigureOnDemand: (() -> Void)?
+    var onDemandProfileName: (() -> String?)?
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        errorLabel.isHidden = true
+        loadStoredDefaults()
+        loadConnections()
+        updateOnDemandButton()
+    }
+
+    override func loadView() {
+        let view = AppearanceAwareMaterialView(
+            material: .underWindowBackground,
+            blendingMode: .behindWindow,
+            nordicSurface: .canvas
+        )
+
+        let titleLabel = NSTextField(labelWithString: tr("macSettingsTitle"))
         titleLabel.font = .systemFont(ofSize: 25, weight: .bold)
-        let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSSettingsSubtitle"))
+        let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macSettingsSubtitle"))
         subtitleLabel.font = .systemFont(ofSize: 13)
         subtitleLabel.textColor = .secondaryLabelColor
 
         configureFields()
-        let form = makeForm()
+        let appearanceForm = makeAppearanceForm()
+        let persistentVPNForm = makePersistentVPNForm()
+        let connectionsForm = makeConnectionsForm()
+        let peerDefaultsForm = makePeerDefaultsForm()
+        let appearanceTitle = sectionTitle(tr("macSettingsAppearanceTitle"))
+        let persistentVPNTitle = sectionTitle(tr("macSettingsPersistentVPNTitle"))
+        let connectionsTitle = sectionTitle(tr("macRouterOSConnectionsTitle"))
+        let peerDefaultsTitle = sectionTitle(tr("macRouterOSSettingsTitle"))
 
-        let restoreButton = NSButton(
+        let restoreButton = WireRouteButton(
             title: tr("macRouterOSRestoreDefaults"),
             target: self,
             action: #selector(restoreDefaultsClicked)
         )
-        restoreButton.bezelStyle = .rounded
-        let cancelButton = NSButton(
-            title: tr("macRouterOSCancel"),
-            target: self,
-            action: #selector(cancelClicked)
-        )
-        cancelButton.bezelStyle = .rounded
-        let saveButton = NSButton(
-            title: tr("macRouterOSSaveDefaults"),
+        restoreButton.bezelStyle = .regularSquare
+        let saveButton = WireRouteButton(
+            title: tr("macSettingsSave"),
             target: self,
             action: #selector(saveClicked)
         )
-        saveButton.bezelStyle = .rounded
+        saveButton.bezelStyle = .regularSquare
         saveButton.keyEquivalent = "\r"
 
         errorLabel.textColor = .systemRed
@@ -1766,28 +2469,69 @@ final class RouterOSSettingsViewController: NSViewController {
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let buttonRow = NSStackView(views: [restoreButton, spacer, cancelButton, saveButton])
+        let buttonRow = NSStackView(views: [restoreButton, spacer, saveButton])
         buttonRow.orientation = .horizontal
         buttonRow.alignment = .centerY
         buttonRow.spacing = 10
 
-        let stack = NSStackView(views: [titleLabel, subtitleLabel, form, errorLabel, buttonRow])
+        let stack = NSStackView(views: [
+            titleLabel,
+            subtitleLabel,
+            appearanceTitle,
+            appearanceForm,
+            persistentVPNTitle,
+            persistentVPNForm,
+            connectionsTitle,
+            connectionsForm,
+            peerDefaultsTitle,
+            peerDefaultsForm,
+            errorLabel,
+            buttonRow
+        ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.setCustomSpacing(4, after: titleLabel)
         stack.setCustomSpacing(20, after: subtitleLabel)
-        stack.setCustomSpacing(16, after: form)
+        stack.setCustomSpacing(6, after: appearanceTitle)
+        stack.setCustomSpacing(18, after: appearanceForm)
+        stack.setCustomSpacing(6, after: persistentVPNTitle)
+        stack.setCustomSpacing(18, after: persistentVPNForm)
+        stack.setCustomSpacing(6, after: connectionsTitle)
+        stack.setCustomSpacing(18, after: connectionsForm)
+        stack.setCustomSpacing(6, after: peerDefaultsTitle)
+        stack.setCustomSpacing(16, after: peerDefaultsForm)
 
-        view.addSubview(stack)
+        let documentView = NSView()
+        documentView.addSubview(stack)
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = documentView
+        view.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        documentView.translatesAutoresizingMaskIntoConstraints = false
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 26),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -26),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -22),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 26),
+            stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -26),
+            stack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 24),
+            documentView.bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: 22),
             subtitleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            form.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            appearanceForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            persistentVPNForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            connectionsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            peerDefaultsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             errorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             buttonRow.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
@@ -1796,6 +2540,24 @@ final class RouterOSSettingsViewController: NSViewController {
     }
 
     private func configureFields() {
+        appearancePopUp.removeAllItems()
+        for appearance in WireRouteAppearance.allCases {
+            appearancePopUp.addItem(withTitle: appearance.localizedTitle)
+            appearancePopUp.lastItem?.representedObject = appearance.rawValue
+        }
+        appearancePopUp.controlSize = .regular
+        appearancePopUp.font = .systemFont(ofSize: 14)
+
+        statusIconPopUp.removeAllItems()
+        for style in StatusItemIconStyle.allCases {
+            statusIconPopUp.addItem(withTitle: style.localizedTitle)
+            guard let item = statusIconPopUp.lastItem else { continue }
+            item.representedObject = style.rawValue
+            item.image = StatusItemController.previewImage(for: style)
+        }
+        statusIconPopUp.controlSize = .regular
+        statusIconPopUp.font = .systemFont(ofSize: 14)
+
         endpointField.placeholderString = tr("macRouterOSEndpointPlaceholder")
         dnsField.placeholderString = tr("macRouterOSDNSPlaceholder")
         routesField.placeholderString = tr("macRouterOSRoutesPlaceholder")
@@ -1808,6 +2570,33 @@ final class RouterOSSettingsViewController: NSViewController {
     }
 
     private func loadStoredDefaults() {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            if let item = appearancePopUp.itemArray.first(where: {
+                $0.representedObject as? String == WireRouteAppearance.blueNordic.rawValue
+            }) {
+                appearancePopUp.select(item)
+            }
+            if let styleIndex = StatusItemIconStyle.allCases.firstIndex(of: .adaptive) {
+                statusIconPopUp.selectItem(at: styleIndex)
+            }
+            endpointField.stringValue = "vpn.example.com"
+            dnsField.stringValue = "1.1.1.1, 9.9.9.9"
+            routesField.stringValue = "10.0.0.0/8, 192.168.0.0/16"
+            keepaliveField.integerValue = 25
+            return
+        }
+#endif
+        let appearance = WireRouteAppearancePreference.load()
+        if let item = appearancePopUp.itemArray.first(where: {
+            $0.representedObject as? String == appearance.rawValue
+        }) {
+            appearancePopUp.select(item)
+        }
+        let iconStyle = StatusItemIconPreference.load()
+        if let styleIndex = StatusItemIconStyle.allCases.firstIndex(of: iconStyle) {
+            statusIconPopUp.selectItem(at: styleIndex)
+        }
         let peerDefaults = RouterOSPeerDefaultsStore.load()
         endpointField.stringValue = peerDefaults.endpointAddress ?? ""
         dnsField.stringValue = peerDefaults.dnsServers.joined(separator: ", ")
@@ -1815,14 +2604,240 @@ final class RouterOSSettingsViewController: NSViewController {
         keepaliveField.integerValue = Int(peerDefaults.persistentKeepalive)
     }
 
-    private func makeForm() -> NSView {
-        let card = NSView()
-        card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-        card.layer?.cornerRadius = 14
-        card.layer?.cornerCurve = .continuous
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
-        card.layer?.borderWidth = 1
+    private func makeAppearanceForm() -> NSView {
+        let card = makeCard()
+        let themeHelpLabel = NSTextField(wrappingLabelWithString: tr("macSettingsThemeHelp"))
+        themeHelpLabel.font = .systemFont(ofSize: 11)
+        themeHelpLabel.textColor = .secondaryLabelColor
+        let themeStack = NSStackView(views: [appearancePopUp, themeHelpLabel])
+        themeStack.orientation = .vertical
+        themeStack.alignment = .leading
+        themeStack.spacing = 4
+
+        let iconHelpLabel = NSTextField(wrappingLabelWithString: tr("macStatusIconHelp"))
+        iconHelpLabel.font = .systemFont(ofSize: 11)
+        iconHelpLabel.textColor = .secondaryLabelColor
+        let iconStack = NSStackView(views: [statusIconPopUp, iconHelpLabel])
+        iconStack.orientation = .vertical
+        iconStack.alignment = .leading
+        iconStack.spacing = 4
+
+        let grid = NSGridView(views: [
+            [fieldLabel(tr("macSettingsThemeLabel")), themeStack],
+            [fieldLabel(tr("macSettingsMenuBarIconLabel")), iconStack]
+        ])
+        grid.rowSpacing = 14
+        grid.columnSpacing = 15
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .fill
+        for rowIndex in 0 ... 1 {
+            grid.row(at: rowIndex).yPlacement = .top
+        }
+
+        card.addSubview(grid)
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            grid.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            grid.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            grid.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            appearancePopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 250),
+            statusIconPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 250),
+            themeHelpLabel.widthAnchor.constraint(equalTo: themeStack.widthAnchor),
+            iconHelpLabel.widthAnchor.constraint(equalTo: iconStack.widthAnchor)
+        ])
+        return card
+    }
+
+    private func makePersistentVPNForm() -> NSView {
+        let card = makeCard()
+
+        let serviceLabel = NSTextField(labelWithString: tr("macSettingsPersistentVPNServiceLabel"))
+        serviceLabel.font = .systemFont(ofSize: 13, weight: .medium)
+
+        let explanationLabel = NSTextField(
+            wrappingLabelWithString: tr("macSettingsPersistentVPNExplanation")
+        )
+        explanationLabel.font = .systemFont(ofSize: 11)
+        explanationLabel.textColor = .secondaryLabelColor
+        explanationLabel.maximumNumberOfLines = 0
+
+        let informationStack = NSStackView(views: [serviceLabel, explanationLabel])
+        informationStack.orientation = .vertical
+        informationStack.alignment = .leading
+        informationStack.spacing = 5
+        informationStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let serviceSwitch = NSSwitch()
+        serviceSwitch.state = .off
+        serviceSwitch.isEnabled = false
+        serviceSwitch.toolTip = tr("macSettingsPersistentVPNExplanation")
+        serviceSwitch.setAccessibilityLabel(tr("macSettingsPersistentVPNServiceLabel"))
+        serviceSwitch.setAccessibilityHelp(tr("macSettingsPersistentVPNExplanation"))
+
+        let stateLabel = NSTextField(labelWithString: tr("macSettingsPersistentVPNStatus"))
+        stateLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        stateLabel.textColor = .tertiaryLabelColor
+        let stateStack = NSStackView(views: [serviceSwitch, stateLabel])
+        stateStack.orientation = .horizontal
+        stateStack.alignment = .centerY
+        stateStack.spacing = 8
+
+        configureOnDemandButton.target = self
+        configureOnDemandButton.action = #selector(configureOnDemandClicked)
+        configureOnDemandButton.bezelStyle = .regularSquare
+        configureOnDemandButton.setAccessibilityHelp(tr("macSettingsConfigureOnDemandHelp"))
+
+        let actionStack = NSStackView(views: [stateStack, configureOnDemandButton])
+        actionStack.orientation = .vertical
+        actionStack.alignment = .leading
+        actionStack.spacing = 10
+        actionStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [informationStack, spacer, actionStack])
+        row.orientation = .horizontal
+        row.alignment = .top
+        row.spacing = 18
+
+        card.addSubview(row)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            informationStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 250),
+            explanationLabel.widthAnchor.constraint(equalTo: informationStack.widthAnchor),
+            configureOnDemandButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 172)
+        ])
+        updateOnDemandButton()
+        return card
+    }
+
+    private func updateOnDemandButton() {
+        let profileName = onDemandProfileName?()
+        configureOnDemandButton.isEnabled = onConfigureOnDemand != nil && profileName != nil
+        if let profileName {
+            configureOnDemandButton.toolTip = tr(
+                format: "macSettingsConfigureOnDemandProfile (%@)",
+                profileName
+            )
+        } else {
+            configureOnDemandButton.toolTip = tr("macSettingsConfigureOnDemandUnavailable")
+        }
+    }
+
+    @objc private func configureOnDemandClicked() {
+        onConfigureOnDemand?()
+    }
+
+    private func makeConnectionsForm() -> NSView {
+        let card = makeCard()
+        let helpLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionsHelp"))
+        helpLabel.font = .systemFont(ofSize: 12)
+        helpLabel.textColor = .secondaryLabelColor
+
+        connectionsTableView.dataSource = self
+        connectionsTableView.delegate = self
+        connectionsTableView.backgroundColor = .clear
+        connectionsTableView.headerView = NSTableHeaderView()
+        connectionsTableView.rowHeight = 30
+        connectionsTableView.intercellSpacing = NSSize(width: 8, height: 2)
+        connectionsTableView.usesAlternatingRowBackgroundColors = false
+        connectionsTableView.target = self
+        connectionsTableView.doubleAction = #selector(editConnectionClicked)
+
+        let columns: [(String, String, CGFloat)] = [
+            ("connectionName", tr("macRouterOSConnectionName"), 160),
+            ("connectionAddress", tr("macRouterOSAddress"), 250),
+            ("connectionUsername", tr("macRouterOSUsername"), 130),
+            ("connectionInterface", tr("macRouterOSDefaultInterface"), 150)
+        ]
+        for (identifier, title, width) in columns {
+            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
+            column.title = title
+            column.headerCell = RouterOSDiscoveryHeaderCell(textCell: title)
+            column.width = width
+            column.minWidth = 90
+            connectionsTableView.addTableColumn(column)
+        }
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = connectionsTableView
+
+        let listContainer = AppearanceAwareMaterialView(
+            material: .contentBackground,
+            blendingMode: .withinWindow,
+            nordicSurface: .inset
+        )
+        listContainer.adaptiveBorderColor = .separatorColor
+        listContainer.adaptiveBorderAlpha = 0.45
+        listContainer.layer?.cornerRadius = 10
+        listContainer.layer?.cornerCurve = .continuous
+        listContainer.layer?.borderWidth = 1
+        listContainer.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        connectionsEmptyLabel.alignment = .center
+        connectionsEmptyLabel.font = .systemFont(ofSize: 12)
+        connectionsEmptyLabel.textColor = .tertiaryLabelColor
+        listContainer.addSubview(connectionsEmptyLabel)
+        connectionsEmptyLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: listContainer.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor),
+            connectionsEmptyLabel.centerXAnchor.constraint(equalTo: listContainer.centerXAnchor),
+            connectionsEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: 8),
+            connectionsEmptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: listContainer.leadingAnchor, constant: 24),
+            connectionsEmptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: listContainer.trailingAnchor, constant: -24),
+            listContainer.heightAnchor.constraint(equalToConstant: 150)
+        ])
+
+        addConnectionButton.target = self
+        addConnectionButton.action = #selector(addConnectionClicked)
+        editConnectionButton.target = self
+        editConnectionButton.action = #selector(editConnectionClicked)
+        removeConnectionButton.target = self
+        removeConnectionButton.action = #selector(removeConnectionClicked)
+        for button in [addConnectionButton, editConnectionButton, removeConnectionButton] {
+            button.bezelStyle = .regularSquare
+        }
+        let buttonSpacer = NSView()
+        buttonSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let buttonRow = NSStackView(views: [addConnectionButton, editConnectionButton, removeConnectionButton, buttonSpacer])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 8
+
+        let stack = NSStackView(views: [helpLabel, listContainer, buttonRow])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        helpLabel.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        buttonRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+
+        card.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16)
+        ])
+        updateConnectionButtons()
+        return card
+    }
+
+    private func makePeerDefaultsForm() -> NSView {
+        let card = makeCard()
 
         let endpointStack = valueStack(
             field: endpointField,
@@ -1862,6 +2877,16 @@ final class RouterOSSettingsViewController: NSViewController {
         return card
     }
 
+    private func makeCard() -> AppearanceAwareMaterialView {
+        let card = AppearanceAwareMaterialView(material: .contentBackground, blendingMode: .withinWindow)
+        card.adaptiveBorderColor = .separatorColor
+        card.adaptiveBorderAlpha = 0.65
+        card.layer?.cornerRadius = 14
+        card.layer?.cornerCurve = .continuous
+        card.layer?.borderWidth = 1
+        return card
+    }
+
     private func valueStack(field: NSTextField, help: String) -> NSStackView {
         let helpLabel = NSTextField(wrappingLabelWithString: help)
         helpLabel.font = .systemFont(ofSize: 11)
@@ -1881,16 +2906,124 @@ final class RouterOSSettingsViewController: NSViewController {
         return label
     }
 
+    private func sectionTitle(_ value: String) -> NSTextField {
+        let label = NSTextField(labelWithString: value)
+        label.font = .systemFont(ofSize: 14, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        return label
+    }
+
+    private var selectedStoredConnection: RouterOSStoredConnection? {
+        let row = connectionsTableView.selectedRow
+        guard connections.indices.contains(row) else { return nil }
+        return connections[row]
+    }
+
+    private func loadConnections(selecting connectionID: UUID? = nil) {
+        let preferredID = connectionID ?? selectedStoredConnection?.id
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshots") {
+            connections = [RouterOSStoredConnection(
+                id: UUID(uuidString: "D0C0A100-0000-4000-8000-000000000001")!,
+                name: "Office Router",
+                url: "https://router.example",
+                username: "reviewer",
+                password: "",
+                defaultInterface: "wg-remote"
+            )]
+            connectionsTableView.reloadData()
+            connectionsTableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            connectionsEmptyLabel.isHidden = true
+            updateConnectionButtons()
+            return
+        }
+#endif
+        do {
+            connections = try RouterOSCredentialStore.loadAll().sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+            connectionsTableView.reloadData()
+            if let preferredID, let index = connections.firstIndex(where: { $0.id == preferredID }) {
+                connectionsTableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+                connectionsTableView.scrollRowToVisible(index)
+            } else if !connections.isEmpty {
+                connectionsTableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            }
+            connectionsEmptyLabel.isHidden = !connections.isEmpty
+            updateConnectionButtons()
+        } catch {
+            connections = []
+            connectionsTableView.reloadData()
+            connectionsEmptyLabel.isHidden = false
+            updateConnectionButtons()
+            showSettingsError(error.localizedDescription)
+        }
+    }
+
+    private func updateConnectionButtons() {
+        let hasSelection = selectedStoredConnection != nil
+        editConnectionButton.isEnabled = hasSelection
+        removeConnectionButton.isEnabled = hasSelection
+    }
+
+    @objc private func addConnectionClicked() {
+        presentConnectionEditor(connection: nil)
+    }
+
+    @objc private func editConnectionClicked() {
+        guard let connection = selectedStoredConnection else { return }
+        presentConnectionEditor(connection: connection)
+    }
+
+    private func presentConnectionEditor(connection: RouterOSStoredConnection?) {
+        let editor = RouterOSConnectionEditorViewController(
+            connection: connection,
+            existingConnections: connections
+        ) { [weak self] savedConnection in
+            try RouterOSCredentialStore.save(savedConnection)
+            self?.loadConnections(selecting: savedConnection.id)
+        }
+        presentAsSheet(editor)
+    }
+
+    @objc private func removeConnectionClicked() {
+        guard let connection = selectedStoredConnection, let window = view.window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr(format: "macRouterOSRemoveConnectionTitle (%@)", connection.name)
+        alert.informativeText = tr("macRouterOSRemoveConnectionMessage")
+        let removeButton = alert.addButton(withTitle: tr("macRouterOSRemoveConnectionConfirm"))
+        removeButton.hasDestructiveAction = true
+        alert.addButton(withTitle: tr("macRouterOSCancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            do {
+                try RouterOSCredentialStore.delete(id: connection.id)
+                self?.loadConnections()
+            } catch {
+                self?.showSettingsError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func showSettingsError(_ message: String) {
+        errorLabel.stringValue = message
+        errorLabel.textColor = .systemRed
+        errorLabel.isHidden = false
+    }
+
     @objc private func restoreDefaultsClicked() {
         endpointField.stringValue = ""
         dnsField.stringValue = ""
         routesField.stringValue = ""
         keepaliveField.integerValue = Int(RouterOSPeerDefaults.standard.persistentKeepalive)
+        if let blueNordicItem = appearancePopUp.itemArray.first(where: {
+            $0.representedObject as? String == WireRouteAppearance.blueNordic.rawValue
+        }) {
+            appearancePopUp.select(blueNordicItem)
+        }
+        statusIconPopUp.selectItem(at: StatusItemIconStyle.allCases.firstIndex(of: .adaptive) ?? 0)
         errorLabel.isHidden = true
-    }
-
-    @objc private func cancelClicked() {
-        view.window?.performClose(nil)
     }
 
     @objc private func saveClicked() {
@@ -1907,10 +3040,24 @@ final class RouterOSSettingsViewController: NSViewController {
                 persistentKeepalive: persistentKeepalive
             )
             RouterOSPeerDefaultsStore.save(peerDefaults)
-            errorLabel.isHidden = true
-            view.window?.performClose(nil)
+            let selectedIndex = statusIconPopUp.indexOfSelectedItem
+            guard StatusItemIconStyle.allCases.indices.contains(selectedIndex) else {
+                return
+            }
+            let iconStyle = StatusItemIconStyle.allCases[selectedIndex]
+            StatusItemIconPreference.save(iconStyle)
+            (NSApp.delegate as? AppDelegate)?.statusItemController?.setIconStyle(iconStyle)
+            guard let appearanceRawValue = appearancePopUp.selectedItem?.representedObject as? String,
+                  let appearance = WireRouteAppearance(rawValue: appearanceRawValue) else {
+                return
+            }
+            WireRouteTheme.apply(appearance)
+            errorLabel.stringValue = tr("macSettingsSaved")
+            errorLabel.textColor = .systemGreen
+            errorLabel.isHidden = false
         } catch {
             errorLabel.stringValue = error.localizedDescription
+            errorLabel.textColor = .systemRed
             errorLabel.isHidden = false
         }
     }
@@ -1918,5 +3065,56 @@ final class RouterOSSettingsViewController: NSViewController {
     private static func splitValues(_ value: String) -> [String] {
         let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
         return value.components(separatedBy: separators).filter { !$0.isEmpty }
+    }
+}
+
+extension RouterOSSettingsViewController: NSTableViewDataSource, NSTableViewDelegate {
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        connections.count
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        RouterOSDiscoveryRowView()
+    }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard let tableColumn, connections.indices.contains(row) else { return nil }
+        let identifier = tableColumn.identifier
+        let cell = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView
+            ?? makeConnectionCell(identifier: identifier)
+        let connection = connections[row]
+        switch identifier.rawValue {
+        case "connectionName":
+            cell.textField?.stringValue = connection.name
+        case "connectionAddress":
+            cell.textField?.stringValue = connection.url
+        case "connectionUsername":
+            cell.textField?.stringValue = connection.username
+        case "connectionInterface":
+            cell.textField?.stringValue = connection.defaultInterface ?? tr("macRouterOSAutomatic")
+        default:
+            cell.textField?.stringValue = ""
+        }
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        updateConnectionButtons()
+    }
+
+    private func makeConnectionCell(identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
+        let cell = NSTableCellView()
+        cell.identifier = identifier
+        let label = NSTextField(labelWithString: "")
+        label.lineBreakMode = .byTruncatingMiddle
+        cell.textField = label
+        cell.addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
+            label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+        ])
+        return cell
     }
 }

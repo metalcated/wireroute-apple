@@ -210,6 +210,7 @@ public final class WireGuardAdapter: @unchecked Sendable {
     public func start(
         tunnelConfiguration: TunnelConfiguration,
         blockedAddressFamilies: BlockedAddressFamilies = [],
+        dnsProtectionPolicy: DNSProtectionPolicy = .profile,
         completionHandler: @escaping @Sendable (WireGuardAdapterError?) -> Void
     ) {
         workQueue.async {
@@ -227,7 +228,8 @@ public final class WireGuardAdapter: @unchecked Sendable {
             do {
                 let settingsGenerator = try self.makeSettingsGenerator(
                     with: tunnelConfiguration,
-                    blockedAddressFamilies: blockedAddressFamilies
+                    blockedAddressFamilies: blockedAddressFamilies,
+                    dnsProtectionPolicy: dnsProtectionPolicy
                 )
                 try self.setNetworkSettings(settingsGenerator.generateNetworkSettings())
 
@@ -281,6 +283,7 @@ public final class WireGuardAdapter: @unchecked Sendable {
     public func update(
         tunnelConfiguration: TunnelConfiguration,
         blockedAddressFamilies: BlockedAddressFamilies = [],
+        dnsProtectionPolicy: DNSProtectionPolicy = .profile,
         completionHandler: @escaping @Sendable (WireGuardAdapterError?) -> Void
     ) {
         workQueue.async {
@@ -300,7 +303,8 @@ public final class WireGuardAdapter: @unchecked Sendable {
             do {
                 let settingsGenerator = try self.makeSettingsGenerator(
                     with: tunnelConfiguration,
-                    blockedAddressFamilies: blockedAddressFamilies
+                    blockedAddressFamilies: blockedAddressFamilies,
+                    dnsProtectionPolicy: dnsProtectionPolicy
                 )
                 try self.setNetworkSettings(settingsGenerator.generateNetworkSettings())
 
@@ -431,12 +435,14 @@ public final class WireGuardAdapter: @unchecked Sendable {
     /// - Returns: an instance of type `PacketTunnelSettingsGenerator`.
     private func makeSettingsGenerator(
         with tunnelConfiguration: TunnelConfiguration,
-        blockedAddressFamilies: BlockedAddressFamilies
+        blockedAddressFamilies: BlockedAddressFamilies,
+        dnsProtectionPolicy: DNSProtectionPolicy
     ) throws -> PacketTunnelSettingsGenerator {
         return PacketTunnelSettingsGenerator(
             tunnelConfiguration: tunnelConfiguration,
             resolvedEndpoints: try self.resolvePeers(for: tunnelConfiguration),
-            blockedAddressFamilies: blockedAddressFamilies
+            blockedAddressFamilies: blockedAddressFamilies,
+            dnsProtectionPolicy: dnsProtectionPolicy
         )
     }
 

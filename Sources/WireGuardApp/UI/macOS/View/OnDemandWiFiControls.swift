@@ -38,10 +38,10 @@ class OnDemandControlsRow: NSView {
         .anySSID, .onlySpecificSSIDs, .exceptSpecificSSIDs
     ]
 
-    let onDemandSSIDOptionsPopup = NSPopUpButton()
+    let onDemandSSIDOptionsPopup = WireRoutePopUpButton()
 
     let onDemandSSIDsField: NSTokenField = {
-        let tokenField = NSTokenField()
+        let tokenField = WireRouteTokenField()
         tokenField.tokenizingCharacterSet = CharacterSet([])
         tokenField.tokenStyle = .squared
         NSLayoutConstraint.activate([

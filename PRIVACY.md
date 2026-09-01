@@ -1,14 +1,16 @@
 # WireRoute Privacy Policy
 
-Effective date: August 28, 2026
+Effective date: August 29, 2026
 
 This policy describes the data practices of the WireRoute applications for iOS and macOS.
 
 ## Summary
 
-WireRoute does not require an account and does not operate a developer-controlled VPN, analytics, advertising, telemetry, or crash-reporting service. The project does not collect or sell personal data, track users, or use third-party advertising or analytics SDKs.
+WireRoute does not require an account and does not operate a developer-controlled VPN, analytics, advertising, telemetry, or crash-reporting service. The project does not collect or sell personal data, track users, or use third-party advertising or analytics SDKs. The iOS map and optional, user-initiated endpoint-location feature make the limited external requests described below.
 
-Under Apple's App Store privacy definition, data processed only on the device is not collected. Based on the current source and data-flow audit, neither the WireRoute project nor an integrated third-party partner receives data from the app for storage or later access.
+WireRoute does not collect, sell, use for secondary purposes, or disclose VPN-derived user data to any third party for any purpose.
+
+Under Apple's App Store privacy definition, data processed only on the device is not collected. The WireRoute project does not receive data from the app for storage or later access. The default iOS map provider receives ordinary requests needed to render the viewed map area. If you explicitly choose to locate a public VPN endpoint, the lookup provider receives the network request needed to return that approximate location. Apple's map service receives rendering requests only while you select the Detailed map layer.
 
 ## Data Stored on Your Device
 
@@ -17,12 +19,15 @@ WireRoute stores information needed to provide the features you choose:
 - Tunnel profiles, routing preferences, on-demand rules, endpoints, DNS servers, public keys, and sensitive tunnel configuration material
 - Sensitive tunnel configuration material in Apple Keychain and system-managed VPN preferences
 - Local diagnostic logs in the shared app container
+- Local per-profile connection activity, including session times, byte counts, transfer rates, and last-handshake times
 - Wi-Fi network names used for optional on-demand rules
 - On macOS, optional RouterOS connection details, credentials, trusted certificate pins, peer defaults, and recoverable client configuration material
 
 RouterOS passwords, trusted certificate data, and recoverable client configuration material are stored in Apple Keychain. Non-secret RouterOS peer defaults are stored in local application preferences.
 
 Diagnostic logs can contain network interface names, endpoint hostnames or addresses, public keys, handshake status, and error details. Logs stay on the device unless you explicitly export or share them.
+
+Activity history is written by the packet-tunnel extension to a local SQLite database in the shared app container. It does not contain tunnel keys, endpoints, routes, DNS settings, or packet contents. WireRoute does not upload activity history. You can choose a 1-day, 7-day, or 30-day retention period and clear completed history for an individual profile from its Activity screen.
 
 ## Camera and Wi-Fi Information
 
@@ -37,6 +42,8 @@ WireRoute makes network connections only to provide user-requested functionality
 - VPN traffic is sent to the WireGuard endpoint configured in the selected profile.
 - DNS requests may be sent to DNS servers configured in that profile.
 - On macOS, the optional RouterOS Peer Manager connects over HTTPS to the RouterOS address you enter. It reads the selected router's WireGuard configuration and performs only peer changes that you separately review and confirm.
+- On iOS, the default Nordic map layer loads vector tiles, glyphs, and symbols from OpenFreeMap to render the map area you view. Those HTTPS requests expose ordinary connection metadata, such as your IP address, and the requested map tile coordinates to OpenFreeMap. The map data is derived from OpenMapTiles and OpenStreetMap. Selecting the Detailed layer uses Apple MapKit instead and may make map-rendering requests under Apple's terms.
+- On iOS, if you tap **Locate endpoint** and confirm the disclosure, WireRoute sends the selected profile's resolved public endpoint IP address to ipwho.is over HTTPS. The response can include an approximate city, state or region, country, latitude, and longitude. Private and reserved addresses are rejected before lookup. Results remain in memory for the current app session and are not added to activity history. IP geolocation is inherently approximate and must not be treated as a physical address.
 
 Those systems are selected and controlled by you or your network administrator. Their operators and network providers may process traffic according to their own policies. The WireRoute project cannot access those systems or traffic.
 
@@ -48,7 +55,8 @@ If you choose to contact the project through GitHub, the information you submit 
 
 ## Your Choices and Data Removal
 
-- Delete tunnel profiles in WireRoute when you no longer need them.
+- Delete tunnel profiles in WireRoute when you no longer need them. Deleting a profile also removes its local activity history.
+- Clear completed connection history from a profile's Activity screen and choose how long new history is retained.
 - Delete exported configuration and log files from the destination where you saved them.
 - On macOS, saved RouterOS credentials and certificate pins can be removed with Keychain Access. Search for WireRoute entries and review each item before deleting it.
 - Uninstalling the app removes its ordinary app container according to Apple platform behavior. Keychain items can persist independently and may need to be removed separately.
