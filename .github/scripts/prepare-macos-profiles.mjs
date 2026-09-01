@@ -95,13 +95,32 @@ if (!certificate) {
 
 await mkdir(process.env.PROFILE_OUTPUT_DIRECTORY, { recursive: true })
 
-const findBundleID = async identifier => {
+const registerBundleID = async (identifier, name) => apiRequest('/v1/bundleIds', {
+  method: 'POST',
+  body: JSON.stringify({
+    data: {
+      type: 'bundleIds',
+      attributes: {
+        identifier,
+        name,
+        platform: 'MAC_OS'
+      }
+    }
+  })
+})
+
+const findBundleID = async (identifier, registrationName) => {
   const query = new URLSearchParams({
     'filter[identifier]': identifier,
     limit: '200'
   })
   const response = await apiRequest(`/v1/bundleIds?${query}`)
-  const bundleID = response.data.find(candidate => candidate.attributes?.identifier === identifier)
+  let bundleID = response.data.find(candidate => candidate.attributes?.identifier === identifier)
+  if (!bundleID && registrationName) {
+    const createdResponse = await registerBundleID(identifier, registrationName)
+    bundleID = createdResponse.data
+    console.log(`Registered ${identifier} for macOS direct distribution.`)
+  }
   if (!bundleID) {
     throw new Error(`Bundle ID ${identifier} is not registered in the developer account.`)
   }
@@ -171,10 +190,19 @@ const createProfile = async (name, bundleID) => apiRequest('/v1/profiles', {
 })
 
 const prepareProfile = async identifier => {
-  const bundleID = await findBundleID(identifier)
-  const capabilities = identifier === 'com.gnet.wireroute'
-    ? await ensureCapability(bundleID, 'SYSTEM_EXTENSION_INSTALL')
-    : await readBundleIDCapabilities(bundleID)
+  const isLoginItemHelper = identifier === 'com.gnet.wireroute.login-item-helper'
+  const bundleID = await findBundleID(
+    identifier,
+    isLoginItemHelper ? 'WireRoute Login Item Helper' : undefined
+  )
+  let capabilities
+  if (identifier === 'com.gnet.wireroute') {
+    capabilities = await ensureCapability(bundleID, 'SYSTEM_EXTENSION_INSTALL')
+  } else if (isLoginItemHelper) {
+    capabilities = await ensureCapability(bundleID, 'APP_GROUPS')
+  } else {
+    capabilities = await readBundleIDCapabilities(bundleID)
+  }
   const stableName = `WireRoute GitHub system extension ${identifier} ${certificate.id.slice(0, 8)}`
   const query = new URLSearchParams({
     'filter[name]': stableName,

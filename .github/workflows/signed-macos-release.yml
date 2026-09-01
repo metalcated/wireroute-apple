@@ -232,6 +232,17 @@ jobs:
               IFS=,
               echo "${profile_network_extension_values[*]}"
             )"
+            profile_app_group_values=()
+            profile_app_group_index=0
+            while profile_app_group_value="$(
+              /usr/libexec/PlistBuddy \
+                -c "Print :Entitlements:com.apple.security.application-groups:${profile_app_group_index}" \
+                "${decoded_profile_path}" 2>/dev/null
+            )"
+            do
+              profile_app_group_values+=("${profile_app_group_value}")
+              profile_app_group_index=$((profile_app_group_index + 1))
+            done
             capability_summary="$(
               jq -c --arg identifier "${bundle_identifier}" \
                 '.profiles[$identifier].capabilities' \
@@ -239,6 +250,11 @@ jobs:
             )"
 
             echo "::notice title=Developer ID profile ${bundle_identifier}::networkextension=${profile_network_extensions:-missing}; capabilities=${capability_summary}"
+
+            if [[ " ${profile_app_group_values[*]} " != *" ${APPLE_TEAM_ID}.group.com.gnet.wireroute "* ]]; then
+              echo "::error title=Developer ID entitlement mismatch::${bundle_identifier} is missing the WireRoute App Group."
+              profile_validation_failed=true
+            fi
 
             if [[ "${bundle_identifier}" != "com.gnet.wireroute.login-item-helper" ]] && \
               [[ " ${profile_network_extension_values[*]} " != *" packet-tunnel-provider-systemextension "* ]]
