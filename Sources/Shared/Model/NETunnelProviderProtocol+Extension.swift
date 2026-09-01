@@ -37,17 +37,45 @@ enum PacketTunnelProviderError: String, Error {
 extension NETunnelProviderProtocol {
     convenience init?(tunnelConfiguration: TunnelConfiguration, previouslyFrom old: NEVPNProtocol? = nil) {
         self.init()
-
-        guard let name = tunnelConfiguration.name else { return nil }
-        guard let appId = Bundle.main.bundleIdentifier else { return nil }
-        providerBundleIdentifier = "\(appId).network-extension"
-        passwordReference = Keychain.makeReference(
-            containing: tunnelConfiguration.asWgQuickConfig(),
-            called: name
-        )
-        if passwordReference == nil {
+        guard configureWireRouteMetadata(
+            for: tunnelConfiguration,
+            previouslyFrom: old
+        ), let name = tunnelConfiguration.name else {
             return nil
         }
+        guard let reference = Keychain.makeReference(
+            containing: tunnelConfiguration.asWgQuickConfig(),
+            called: name
+        ) else {
+            return nil
+        }
+        passwordReference = reference
+    }
+
+    convenience init?(
+        recoveredTunnelConfiguration tunnelConfiguration: TunnelConfiguration,
+        passwordReference: Data,
+        previouslyFrom old: NEVPNProtocol? = nil
+    ) {
+        self.init()
+        guard configureWireRouteMetadata(
+            for: tunnelConfiguration,
+            previouslyFrom: old
+        ) else {
+            return nil
+        }
+        self.passwordReference = passwordReference
+    }
+
+    private func configureWireRouteMetadata(
+        for tunnelConfiguration: TunnelConfiguration,
+        previouslyFrom old: NEVPNProtocol?
+    ) -> Bool {
+        guard let name = tunnelConfiguration.name,
+              let appId = Bundle.main.bundleIdentifier else {
+            return false
+        }
+        providerBundleIdentifier = "\(appId).network-extension"
         providerConfiguration = (old as? NETunnelProviderProtocol)?.providerConfiguration
         #if os(macOS)
         var metadata = providerConfiguration ?? [:]
@@ -70,6 +98,7 @@ extension NETunnelProviderProtocol {
         } else {
             serverAddress = "Multiple endpoints"
         }
+        return true
     }
 
     func asTunnelConfiguration(called name: String? = nil) -> TunnelConfiguration? {

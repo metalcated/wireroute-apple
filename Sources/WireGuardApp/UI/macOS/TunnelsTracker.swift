@@ -117,6 +117,6 @@ extension TunnelsTracker: TunnelsManagerActivationDelegate {
     }
 
     func tunnelActivationSucceeded(tunnel: TunnelContainer) {
-        // Nothing to do
+        AppDelegate.clearNetworkExtensionApprovalReminder()
     }
 }

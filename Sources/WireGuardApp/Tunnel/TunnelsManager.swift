@@ -20,6 +20,100 @@ private enum TunnelConfigurationStorageError: LocalizedError {
     }
 }
 
+#if os(macOS)
+private struct TunnelProfileRecoveryRecord: Codable {
+    static let currentVersion = 1
+
+    let version: Int
+    let profileID: String
+    let name: String
+    let configuration: String
+    let passwordReference: Data
+    let providerConfiguration: Data?
+    let onDemand: TunnelProfileRecoveryOnDemand
+    let isOnDemandEnabled: Bool
+}
+
+private struct TunnelProfileRecoveryOnDemand: Codable {
+    enum InterfaceScope: String, Codable {
+        case off
+        case wiFiOnly
+        case nonWiFiOnly
+        case any
+    }
+
+    enum SSIDScope: String, Codable {
+        case any
+        case only
+        case except
+    }
+
+    let interfaceScope: InterfaceScope
+    let ssidScope: SSIDScope
+    let ssids: [String]
+
+    init(_ option: ActivateOnDemandOption) {
+        switch option {
+        case .off:
+            interfaceScope = .off
+            ssidScope = .any
+            ssids = []
+        case .wiFiInterfaceOnly(let option):
+            interfaceScope = .wiFiOnly
+            (ssidScope, ssids) = Self.encode(option)
+        case .nonWiFiInterfaceOnly:
+            interfaceScope = .nonWiFiOnly
+            ssidScope = .any
+            ssids = []
+        case .anyInterface(let option):
+            interfaceScope = .any
+            (ssidScope, ssids) = Self.encode(option)
+        }
+    }
+
+    var option: ActivateOnDemandOption {
+        switch interfaceScope {
+        case .off:
+            return .off
+        case .wiFiOnly:
+            return .wiFiInterfaceOnly(ssidOption)
+        case .nonWiFiOnly:
+            return .nonWiFiInterfaceOnly
+        case .any:
+            return .anyInterface(ssidOption)
+        }
+    }
+
+    private var ssidOption: ActivateOnDemandSSIDOption {
+        switch ssidScope {
+        case .any:
+            return .anySSID
+        case .only:
+            return ssids.isEmpty ? .anySSID : .onlySpecificSSIDs(ssids)
+        case .except:
+            return .exceptSpecificSSIDs(ssids)
+        }
+    }
+
+    private static func encode(_ option: ActivateOnDemandSSIDOption) -> (SSIDScope, [String]) {
+        switch option {
+        case .anySSID:
+            return (.any, [])
+        case .onlySpecificSSIDs(let ssids):
+            return (.only, ssids)
+        case .exceptSpecificSSIDs(let ssids):
+            return (.except, ssids)
+        }
+    }
+}
+
+private struct PreparedMacOSTunnelManagers {
+    let managers: [NETunnelProviderManager]
+    let recoveredNames: [String]
+    let failedRecoveryNames: [String]
+}
+#endif
+
 @MainActor
 protocol TunnelsManagerListDelegate: AnyObject {
     func tunnelAdded(at index: Int)
@@ -45,8 +139,19 @@ class TunnelsManager {
     private var waiteeObservationToken: NSKeyValueObservation?
     private var configurationsObservationToken: NotificationToken?
 
-    init(tunnelProviders: [NETunnelProviderManager]) {
+    #if os(macOS)
+    private(set) var recoveredTunnelNames: [String]
+    var profilesRecoveryHandler: (([String]) -> Void)?
+    private var isReloadingTunnelConfigurations = false
+    private var didAttemptProfileRecovery: Bool
+    #endif
+
+    init(tunnelProviders: [NETunnelProviderManager], recoveredTunnelNames: [String] = []) {
         tunnels = tunnelProviders.map { TunnelContainer(tunnel: $0) }.sorted { TunnelsManager.tunnelNameIsLessThan($0.name, $1.name) }
+        #if os(macOS)
+        self.recoveredTunnelNames = recoveredTunnelNames
+        didAttemptProfileRecovery = !recoveredTunnelNames.isEmpty
+        #endif
         startObservingTunnelStatuses()
         startObservingTunnelConfigurations()
     }
@@ -73,6 +178,20 @@ class TunnelsManager {
                     return
                 }
 
+                #if os(macOS)
+                let prepared = await prepareMacOSTunnelManagers(managers ?? [])
+                let recoveryNames = Array(
+                    Set(prepared.recoveredNames + prepared.failedRecoveryNames)
+                ).sorted(by: tunnelNameIsLessThan)
+                completionHandler(
+                    .success(
+                        TunnelsManager(
+                            tunnelProviders: prepared.managers,
+                            recoveredTunnelNames: recoveryNames
+                        )
+                    )
+                )
+                #elseif os(iOS)
                 var tunnelManagers = managers ?? []
                 var refs: Set<Data> = []
                 var tunnelNames: Set<String> = []
@@ -85,18 +204,7 @@ class TunnelsManager {
                     let didMigrate = proto.migrateConfigurationIfNeeded(called: tunnelName)
                     let didSynchronizeRouting = proto.asTunnelConfiguration(called: tunnelName)
                         .map(proto.synchronizeWireRouteRoutingMetadata) ?? false
-                    #if os(iOS)
                     let passwordRef = proto.verifyConfigurationReference() ? proto.passwordReference : nil
-                    #elseif os(macOS)
-                    let passwordRef: Data?
-                    if proto.providerConfiguration?["UID"] as? uid_t == getuid() {
-                        passwordRef = proto.verifyConfigurationReference() ? proto.passwordReference : nil
-                    } else {
-                        passwordRef = proto.passwordReference // To handle multiple users in macOS, we skip verifying
-                    }
-                    #else
-                    #error("Unimplemented")
-                    #endif
                     if let ref = passwordRef {
                         refs.insert(ref)
                         if didMigrate || didSynchronizeRouting {
@@ -109,22 +217,72 @@ class TunnelsManager {
                     }
                 }
                 Keychain.deleteReferences(except: refs)
-                #if os(iOS)
                 RecentTunnelsTracker.cleanupTunnels(except: tunnelNames)
-                #endif
                 completionHandler(.success(TunnelsManager(tunnelProviders: tunnelManagers)))
+                #else
+                #error("Unimplemented")
+                #endif
             }
         }
         #endif
     }
 
     func reload() {
-        NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, _ in
-            let transfer = UncheckedTransfer(value: managers)
+        #if os(macOS)
+        guard !isReloadingTunnelConfigurations else { return }
+        isReloadingTunnelConfigurations = true
+        #endif
+        NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
+            let transfer = UncheckedTransfer(value: (managers, error))
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                #if os(macOS)
+                defer { self.isReloadingTunnelConfigurations = false }
+                #endif
 
-                let loadedTunnelProviders = transfer.value ?? []
+                let (managers, error) = transfer.value
+                if let error {
+                    wg_log(.error, message: "Failed to reload tunnel provider managers: \(error)")
+                    return
+                }
+                guard let managers else {
+                    wg_log(.error, staticMessage: "Tunnel provider reload returned neither configurations nor an error; preserving the current profile list")
+                    return
+                }
+
+                let loadedTunnelProviders: [NETunnelProviderManager]
+                #if os(macOS)
+                let loadedNames = Set(managers.compactMap(\.localizedDescription))
+                let missingCurrentNames = Set(self.tunnels.map(\.name)).subtracting(loadedNames)
+                if self.didAttemptProfileRecovery && !missingCurrentNames.isEmpty {
+                    let names = missingCurrentNames.sorted(by: Self.tunnelNameIsLessThan)
+                    self.profilesRecoveryHandler?(names)
+                    wg_log(.error, staticMessage: "A recovered VPN preference disappeared again; preserving the current profile list until the extension is enabled and recovery is retried")
+                    return
+                }
+                let prepared = await Self.prepareMacOSTunnelManagers(managers)
+                let recoveryNames = Array(
+                    Set(prepared.recoveredNames + prepared.failedRecoveryNames)
+                ).sorted(by: Self.tunnelNameIsLessThan)
+                if !recoveryNames.isEmpty {
+                    self.didAttemptProfileRecovery = true
+                    self.recoveredTunnelNames = Array(
+                        Set(self.recoveredTunnelNames + recoveryNames)
+                    ).sorted(by: Self.tunnelNameIsLessThan)
+                    self.profilesRecoveryHandler?(recoveryNames)
+                }
+                if prepared.managers.isEmpty,
+                   !self.tunnels.isEmpty,
+                   !prepared.failedRecoveryNames.isEmpty {
+                    wg_log(.error, staticMessage: "Profile recovery could not be saved while reloading; preserving the current profile list for retry")
+                    return
+                }
+                loadedTunnelProviders = prepared.managers
+                #elseif os(iOS)
+                loadedTunnelProviders = managers
+                #else
+                #error("Unimplemented")
+                #endif
 
                 for (index, currentTunnel) in self.tunnels.enumerated().reversed() {
                     if !loadedTunnelProviders.contains(where: { $0.isEquivalentTo(currentTunnel) }) {
@@ -134,6 +292,7 @@ class TunnelsManager {
                     }
                 }
                 for loadedTunnelProvider in loadedTunnelProviders {
+                    #if os(iOS)
                     if let proto = loadedTunnelProvider.protocolConfiguration as? NETunnelProviderProtocol {
                         let tunnelName = loadedTunnelProvider.localizedDescription ?? "unknown"
                         let didMigrate = proto.migrateConfigurationIfNeeded(called: tunnelName)
@@ -143,6 +302,7 @@ class TunnelsManager {
                             try? await loadedTunnelProvider.saveToPreferences()
                         }
                     }
+                    #endif
                     if let matchingTunnel = self.tunnels.first(where: { loadedTunnelProvider.isEquivalentTo($0) }) {
                         matchingTunnel.tunnelProvider = loadedTunnelProvider
                         matchingTunnel.refreshStatus()
@@ -157,6 +317,13 @@ class TunnelsManager {
             }
         }
     }
+
+    #if os(macOS)
+    func retryProfileRecovery() {
+        didAttemptProfileRecovery = false
+        reload()
+    }
+    #endif
 
     func add(
         tunnelConfiguration: TunnelConfiguration,
@@ -200,6 +367,10 @@ class TunnelsManager {
                 completionHandler(.failure(TunnelsManagerError.systemErrorOnAddTunnel(systemError: error)))
                 return
             }
+
+            #if os(macOS)
+            Self.saveMacOSRecoveryConfiguration(for: tunnelProviderManager)
+            #endif
 
             guard let self else { return }
 
@@ -347,6 +518,9 @@ class TunnelsManager {
                 completionHandler(TunnelsManagerError.systemErrorOnModifyTunnel(systemError: error))
                 return
             }
+            #if os(macOS)
+            Self.saveMacOSRecoveryConfiguration(for: tunnelProviderManager)
+            #endif
             if isTunnelConfigurationChanged {
                 (previousProtocolConfiguration as? NETunnelProviderProtocol)?.destroyConfigurationReference()
             }
@@ -412,6 +586,10 @@ class TunnelsManager {
             if shouldDestroyConfigurationReference {
                 protocolConfiguration?.destroyConfigurationReference()
             }
+            #if os(macOS)
+            Keychain.deleteProfileRecoveryConfiguration(profileID: activityProfileIdentifier.uuidString)
+            Keychain.deleteProfileRecoveryConfigurations(named: tunnel.name)
+            #endif
             do {
                 try WireRouteActivityStore().clearAllHistory(
                     profileIdentifier: activityProfileIdentifier
@@ -491,6 +669,9 @@ class TunnelsManager {
                 completionHandler(TunnelsManagerError.systemErrorOnModifyTunnel(systemError: error))
                 return
             }
+            #if os(macOS)
+            Self.saveMacOSRecoveryConfiguration(for: tunnelProviderManager)
+            #endif
             if isActivatingOnDemand {
                 // If we're enabling on-demand, we want to make sure the tunnel is enabled.
                 // If not enabled, the OS will not turn the tunnel on/off based on our rules.
@@ -574,6 +755,9 @@ class TunnelsManager {
         Task { @MainActor in
             do {
                 try await tunnel.tunnelProvider.saveToPreferences()
+                #if os(macOS)
+                Self.saveMacOSRecoveryConfiguration(for: tunnel.tunnelProvider)
+                #endif
                 completionHandler(nil)
             } catch {
                 tunnelProtocol.providerConfiguration = previousProviderConfiguration
@@ -581,6 +765,234 @@ class TunnelsManager {
             }
         }
     }
+
+    #if os(macOS)
+    private static func prepareMacOSTunnelManagers(
+        _ loadedManagers: [NETunnelProviderManager]
+    ) async -> PreparedMacOSTunnelManagers {
+        var managers = loadedManagers
+        var recoveredNames = [String]()
+        var failedRecoveryNames = [String]()
+        let recoveryRecords = loadMacOSRecoveryConfigurations()
+        let recordsByName = Dictionary(
+            recoveryRecords.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        for manager in managers {
+            guard let proto = manager.protocolConfiguration as? NETunnelProviderProtocol else { continue }
+            let name = manager.localizedDescription ?? "unknown"
+            guard proto.providerConfiguration?["UID"] as? uid_t == getuid()
+                    || proto.providerConfiguration?["UID"] == nil else {
+                continue
+            }
+
+            let didMigrate = proto.migrateConfigurationIfNeeded(called: name)
+            let configuration = proto.asTunnelConfiguration(called: name)
+            let didSynchronizeRouting = configuration
+                .map(proto.synchronizeWireRouteRoutingMetadata) ?? false
+            if didMigrate || didSynchronizeRouting {
+                do {
+                    try await manager.saveToPreferences()
+                } catch {
+                    wg_log(.error, message: "Unable to save migrated profile '\(name)': \(error)")
+                }
+            }
+
+            if configuration != nil && proto.verifyConfigurationReference() {
+                saveMacOSRecoveryConfiguration(for: manager)
+                continue
+            }
+
+            guard let recoveryRecord = recordsByName[name] else {
+                wg_log(.error, message: "Profile '\(name)' has an unavailable Keychain configuration; preserving the VPN preference for a later retry")
+                continue
+            }
+            if await restoreMacOSProfile(manager: manager, from: recoveryRecord) {
+                recoveredNames.append(name)
+            } else {
+                failedRecoveryNames.append(name)
+            }
+        }
+
+        var usedNames = Set(managers.compactMap(\.localizedDescription))
+        for record in recoveryRecords where !usedNames.contains(record.name) {
+            let manager = NETunnelProviderManager()
+            if await restoreMacOSProfile(manager: manager, from: record) {
+                managers.append(manager)
+                usedNames.insert(record.name)
+                recoveredNames.append(record.name)
+            } else {
+                failedRecoveryNames.append(record.name)
+            }
+        }
+
+        var referencedConfigurations = Set(
+            managers.compactMap {
+                ($0.protocolConfiguration as? NETunnelProviderProtocol)?.passwordReference
+            }
+        )
+        for storedConfiguration in Keychain.tunnelConfigurations() {
+            guard !referencedConfigurations.contains(storedConfiguration.reference),
+                  !usedNames.contains(storedConfiguration.name),
+                  let configuration = try? TunnelConfiguration(
+                    fromWgQuickConfig: storedConfiguration.configuration,
+                    called: storedConfiguration.name
+                  ) else {
+                continue
+            }
+
+            let manager = NETunnelProviderManager()
+            guard manager.setRecoveredTunnelConfiguration(
+                configuration,
+                passwordReference: storedConfiguration.reference
+            ) != nil else {
+                failedRecoveryNames.append(storedConfiguration.name)
+                continue
+            }
+            manager.isEnabled = true
+            do {
+                try await manager.saveToPreferences()
+                managers.append(manager)
+                usedNames.insert(storedConfiguration.name)
+                referencedConfigurations.insert(storedConfiguration.reference)
+                recoveredNames.append(storedConfiguration.name)
+                saveMacOSRecoveryConfiguration(for: manager)
+                wg_log(.info, message: "Restored profile '\(storedConfiguration.name)' from its protected Keychain configuration")
+            } catch {
+                wg_log(.error, message: "Unable to restore profile '\(storedConfiguration.name)' from Keychain: \(error)")
+                failedRecoveryNames.append(storedConfiguration.name)
+            }
+        }
+
+        return PreparedMacOSTunnelManagers(
+            managers: managers,
+            recoveredNames: Array(Set(recoveredNames)).sorted(by: tunnelNameIsLessThan),
+            failedRecoveryNames: Array(Set(failedRecoveryNames)).sorted(by: tunnelNameIsLessThan)
+        )
+    }
+
+    private static func loadMacOSRecoveryConfigurations() -> [TunnelProfileRecoveryRecord] {
+        let decoder = JSONDecoder()
+        return Keychain.profileRecoveryConfigurations().compactMap { storedConfiguration in
+            guard let data = storedConfiguration.payload.data(using: .utf8),
+                  let record = try? decoder.decode(TunnelProfileRecoveryRecord.self, from: data),
+                  record.version == TunnelProfileRecoveryRecord.currentVersion,
+                  record.profileID == storedConfiguration.profileID else {
+                wg_log(.error, message: "Ignoring invalid profile recovery record for '\(storedConfiguration.name)'")
+                return nil
+            }
+            return record
+        }
+    }
+
+    private static func saveMacOSRecoveryConfiguration(for manager: NETunnelProviderManager) {
+        guard let proto = manager.protocolConfiguration as? NETunnelProviderProtocol,
+              proto.providerConfiguration?["UID"] as? uid_t == getuid(),
+              let reference = proto.passwordReference,
+              let configuration = manager.tunnelConfiguration,
+              let name = manager.localizedDescription else {
+            return
+        }
+
+        let providerConfiguration: Data?
+        if let metadata = proto.providerConfiguration,
+           PropertyListSerialization.propertyList(metadata, isValidFor: .binary) {
+            providerConfiguration = try? PropertyListSerialization.data(
+                fromPropertyList: metadata,
+                format: .binary,
+                options: 0
+            )
+        } else {
+            providerConfiguration = nil
+        }
+
+        let record = TunnelProfileRecoveryRecord(
+            version: TunnelProfileRecoveryRecord.currentVersion,
+            profileID: proto.wireRouteActivityProfileIdentifier.uuidString,
+            name: name,
+            configuration: configuration.asWgQuickConfig(),
+            passwordReference: reference,
+            providerConfiguration: providerConfiguration,
+            onDemand: TunnelProfileRecoveryOnDemand(ActivateOnDemandOption(from: manager)),
+            isOnDemandEnabled: manager.isOnDemandEnabled
+        )
+        guard let data = try? JSONEncoder().encode(record),
+              let payload = String(data: data, encoding: .utf8),
+              Keychain.saveProfileRecoveryConfiguration(
+                payload: payload,
+                profileID: record.profileID,
+                name: record.name
+              ) else {
+            wg_log(.error, message: "Unable to save a protected recovery record for profile '\(name)'")
+            return
+        }
+    }
+
+    private static func restoreMacOSProfile(
+        manager: NETunnelProviderManager,
+        from record: TunnelProfileRecoveryRecord
+    ) async -> Bool {
+        guard let configuration = try? TunnelConfiguration(
+            fromWgQuickConfig: record.configuration,
+            called: record.name
+        ) else {
+            wg_log(.error, message: "Profile recovery record for '\(record.name)' contains an invalid tunnel configuration")
+            return false
+        }
+
+        let previousProtocolConfiguration = manager.protocolConfiguration
+        let previousLocalizedDescription = manager.localizedDescription
+        let previousConfiguration = manager.tunnelConfiguration
+        let previousIsEnabled = manager.isEnabled
+        let previousOnDemandRules = manager.onDemandRules
+        let previousIsOnDemandEnabled = manager.isOnDemandEnabled
+
+        let canReuseReference = Keychain.openReference(called: record.passwordReference) != nil
+        let replacementProtocol: NETunnelProviderProtocol?
+        if canReuseReference {
+            replacementProtocol = manager.setRecoveredTunnelConfiguration(
+                configuration,
+                passwordReference: record.passwordReference
+            )
+        } else {
+            replacementProtocol = manager.setTunnelConfiguration(configuration)
+        }
+        guard let replacementProtocol else { return false }
+
+        if let providerConfiguration = record.providerConfiguration,
+           let propertyList = try? PropertyListSerialization.propertyList(
+            from: providerConfiguration,
+            options: [],
+            format: nil
+           ), var metadata = propertyList as? [String: Any] {
+            metadata["UID"] = getuid()
+            replacementProtocol.providerConfiguration = metadata
+        }
+        record.onDemand.option.apply(on: manager)
+        manager.isOnDemandEnabled = record.isOnDemandEnabled && !(manager.onDemandRules ?? []).isEmpty
+        manager.isEnabled = true
+
+        do {
+            try await manager.saveToPreferences()
+            saveMacOSRecoveryConfiguration(for: manager)
+            wg_log(.info, message: "Restored profile '\(record.name)' from its protected recovery record")
+            return true
+        } catch {
+            if !canReuseReference {
+                replacementProtocol.destroyConfigurationReference()
+            }
+            manager.protocolConfiguration = previousProtocolConfiguration
+            manager.localizedDescription = previousLocalizedDescription
+            manager.cacheTunnelConfiguration(previousConfiguration)
+            manager.isEnabled = previousIsEnabled
+            manager.onDemandRules = previousOnDemandRules
+            manager.isOnDemandEnabled = previousIsOnDemandEnabled
+            wg_log(.error, message: "Unable to restore profile '\(record.name)': \(error)")
+            return false
+        }
+    }
+    #endif
 
     func numberOfTunnels() -> Int {
         return tunnels.count
@@ -1005,6 +1417,29 @@ extension NETunnelProviderManager {
         protocolConfiguration = newProtocolConfiguration
         localizedDescription = tunnelConfiguration.name
         objc_setAssociatedObject(self, &NETunnelProviderManager.cachedConfigKey, tunnelConfiguration, objc_AssociationPolicy.OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return newProtocolConfiguration
+    }
+
+    @discardableResult
+    func setRecoveredTunnelConfiguration(
+        _ tunnelConfiguration: TunnelConfiguration,
+        passwordReference: Data
+    ) -> NETunnelProviderProtocol? {
+        guard let newProtocolConfiguration = NETunnelProviderProtocol(
+            recoveredTunnelConfiguration: tunnelConfiguration,
+            passwordReference: passwordReference,
+            previouslyFrom: protocolConfiguration
+        ) else {
+            return nil
+        }
+        protocolConfiguration = newProtocolConfiguration
+        localizedDescription = tunnelConfiguration.name
+        objc_setAssociatedObject(
+            self,
+            &NETunnelProviderManager.cachedConfigKey,
+            tunnelConfiguration,
+            objc_AssociationPolicy.OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
         return newProtocolConfiguration
     }
 

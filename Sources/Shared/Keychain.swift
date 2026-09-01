@@ -10,6 +10,20 @@ struct KeychainRecoveryConfiguration {
     let configuration: String
 }
 
+struct KeychainTunnelConfiguration {
+    let reference: Data
+    let name: String
+    let configuration: String
+    let modificationDate: Date
+}
+
+struct KeychainProfileRecoveryConfiguration {
+    let reference: Data
+    let profileID: String
+    let name: String
+    let payload: String
+}
+
 class Keychain {
     static func openReference(called ref: Data) -> String? {
         let (ret, result) = copyMatching([
@@ -73,6 +87,114 @@ class Keychain {
             name: name,
             configuration: configuration
         )
+    }
+
+    static func tunnelConfigurations() -> [KeychainTunnelConfiguration] {
+        guard let service = serviceIdentifier(suffix: nil) else { return [] }
+        return genericPasswordItems(service: service).compactMap { item in
+            guard let reference = item[kSecValuePersistentRef] as? Data,
+                  let label = item[kSecAttrLabel] as? String,
+                  label.hasPrefix("WireGuard Tunnel: "),
+                  let data = item[kSecValueData] as? Data,
+                  let configuration = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+            return KeychainTunnelConfiguration(
+                reference: reference,
+                name: String(label.dropFirst("WireGuard Tunnel: ".count)),
+                configuration: configuration,
+                modificationDate: item[kSecAttrModificationDate] as? Date ?? .distantPast
+            )
+        }
+        .sorted { $0.modificationDate > $1.modificationDate }
+    }
+
+    @discardableResult
+    static func saveProfileRecoveryConfiguration(
+        payload: String,
+        profileID: String,
+        name: String
+    ) -> Bool {
+        guard let service = serviceIdentifier(suffix: ".profile-recovery") else { return false }
+        let baseQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: profileID
+        ]
+        let attributes: [CFString: Any] = [
+            kSecAttrLabel: name,
+            kSecAttrDescription: "WireRoute profile recovery configuration",
+            kSecValueData: payload.data(using: .utf8) as Any
+        ]
+
+        var modernQuery = baseQuery
+        modernQuery[kSecUseDataProtectionKeychain] = true
+        var status = SecItemUpdate(modernQuery as CFDictionary, attributes as CFDictionary)
+        #if os(macOS)
+        if status == errSecItemNotFound {
+            status = SecItemUpdate(baseQuery as CFDictionary, attributes as CFDictionary)
+        }
+        #endif
+        if status == errSecSuccess {
+            return true
+        }
+        guard status == errSecItemNotFound else {
+            wg_log(.error, message: "Unable to update profile recovery configuration in keychain: \(status)")
+            return false
+        }
+
+        return makeReference(
+            containing: payload,
+            label: name,
+            account: profileID,
+            serviceSuffix: ".profile-recovery",
+            description: "WireRoute profile recovery configuration"
+        ) != nil
+    }
+
+    static func profileRecoveryConfigurations() -> [KeychainProfileRecoveryConfiguration] {
+        guard let service = serviceIdentifier(suffix: ".profile-recovery") else { return [] }
+        return genericPasswordItems(service: service).compactMap { item in
+            guard let reference = item[kSecValuePersistentRef] as? Data,
+                  let profileID = item[kSecAttrAccount] as? String,
+                  let name = item[kSecAttrLabel] as? String,
+                  let data = item[kSecValueData] as? Data,
+                  let payload = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+            return KeychainProfileRecoveryConfiguration(
+                reference: reference,
+                profileID: profileID,
+                name: name,
+                payload: payload
+            )
+        }
+    }
+
+    static func deleteProfileRecoveryConfiguration(profileID: String) {
+        guard let service = serviceIdentifier(suffix: ".profile-recovery") else { return }
+        var query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: profileID,
+            kSecUseDataProtectionKeychain: true
+        ]
+        var status = SecItemDelete(query as CFDictionary)
+        #if os(macOS)
+        if shouldTryLegacyKeychain(after: status) {
+            query.removeValue(forKey: kSecUseDataProtectionKeychain)
+            status = SecItemDelete(query as CFDictionary)
+        }
+        #endif
+        if status != errSecSuccess && status != errSecItemNotFound {
+            wg_log(.error, message: "Unable to delete profile recovery configuration from keychain: \(status)")
+        }
+    }
+
+    static func deleteProfileRecoveryConfigurations(named name: String) {
+        for configuration in profileRecoveryConfigurations() where configuration.name == name {
+            deleteReference(called: configuration.reference)
+        }
     }
 
     private static func makeReference(
@@ -202,6 +324,53 @@ class Keychain {
         }
         if let reference = result as? Data {
             return [reference]
+        }
+        return []
+    }
+
+    private static func genericPasswordItems(service: String) -> [[CFString: Any]] {
+        var items = genericPasswordItems(service: service, useDataProtectionKeychain: true)
+        #if os(macOS)
+        items.append(contentsOf: genericPasswordItems(service: service, useDataProtectionKeychain: false))
+        #endif
+
+        var references = Set<Data>()
+        return items.filter { item in
+            guard let reference = item[kSecValuePersistentRef] as? Data else { return false }
+            return references.insert(reference).inserted
+        }
+    }
+
+    private static func genericPasswordItems(
+        service: String,
+        useDataProtectionKeychain: Bool
+    ) -> [[CFString: Any]] {
+        var query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecMatchLimit: kSecMatchLimitAll,
+            kSecReturnAttributes: true,
+            kSecReturnData: true,
+            kSecReturnPersistentRef: true
+        ]
+        if useDataProtectionKeychain {
+            query[kSecUseDataProtectionKeychain] = true
+        }
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess else { return [] }
+        if let dictionaries = result as? [[CFString: Any]] {
+            return dictionaries
+        }
+        if let dictionary = result as? [CFString: Any] {
+            return [dictionary]
+        }
+        if let dictionaries = result as? [NSDictionary] {
+            return dictionaries.compactMap { $0 as? [CFString: Any] }
+        }
+        if let dictionary = result as? NSDictionary,
+           let typedDictionary = dictionary as? [CFString: Any] {
+            return [typedDictionary]
         }
         return []
     }

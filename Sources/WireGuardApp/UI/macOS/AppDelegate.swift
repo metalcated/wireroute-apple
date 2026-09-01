@@ -9,6 +9,8 @@ import ServiceManagement
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
 
+    static let networkExtensionApprovalReminderDefaultsKey = "WireRouteNetworkExtensionApprovalReminder"
+
     var tunnelsManager: TunnelsManager?
     var tunnelsTracker: TunnelsTracker?
     var statusItemController: StatusItemController?
@@ -19,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var aboutWindowController: NSWindowController?
     private var systemExtensionActivationCoordinator: SystemExtensionActivationCoordinator?
     private var shouldPresentSystemExtensionApprovalGuide = false
+    private var shouldRetryProfileRecoveryWhenActive = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         WireRouteTheme.applyStoredPreference()
@@ -33,6 +36,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         Logger.configureGlobal(tagged: "APP", withFilePath: FileManager.logFileURL?.path)
+        shouldPresentSystemExtensionApprovalGuide = UserDefaults.standard.bool(
+            forKey: Self.networkExtensionApprovalReminderDefaultsKey
+        )
 #if DEBUG
         let isAppStoreScreenshotMode = ProcessInfo.processInfo.arguments.contains("--app-store-screenshots")
 #else
@@ -49,6 +55,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 #if DEBUG
         if isAppStoreScreenshotMode {
             isLaunchedAtLogin = false
+            shouldPresentSystemExtensionApprovalGuide = false
         }
 #endif
 
@@ -68,6 +75,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             case .failure(let error):
                 ErrorPresenter.showErrorAlert(error: error, from: nil)
             case .success(let tunnelsManager):
+                if !tunnelsManager.recoveredTunnelNames.isEmpty {
+                    self.markNetworkExtensionApprovalRequired()
+                }
+                tunnelsManager.profilesRecoveryHandler = { [weak self] names in
+                    self?.handleRecoveredProfiles(names)
+                }
                 let statusMenu = StatusMenu(tunnelsManager: tunnelsManager)
                 statusMenu.windowDelegate = self
 
@@ -117,7 +130,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let launchGate = SystemExtensionLaunchGate(completion: completion)
         coordinator.activate(
             onNeedsUserApproval: { [weak self] in
-                self?.shouldPresentSystemExtensionApprovalGuide = true
+                self?.markNetworkExtensionApprovalRequired()
                 launchGate.finish()
             },
             completion: { [weak self] result in
@@ -150,10 +163,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(self)
-        alert.beginSheetModal(for: window) { response in
+        alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
+            self?.shouldRetryProfileRecoveryWhenActive = true
             Self.openSystemExtensionSettings()
         }
+    }
+
+    private func markNetworkExtensionApprovalRequired() {
+        UserDefaults.standard.set(true, forKey: Self.networkExtensionApprovalReminderDefaultsKey)
+        shouldPresentSystemExtensionApprovalGuide = true
+    }
+
+    private func handleRecoveredProfiles(_ names: [String]) {
+        guard !names.isEmpty else { return }
+        markNetworkExtensionApprovalRequired()
+        showManageTunnelsWindow { [weak self] window in
+            self?.presentSystemExtensionApprovalGuideIfNeeded(window: window)
+        }
+    }
+
+    static func clearNetworkExtensionApprovalReminder() {
+        UserDefaults.standard.set(false, forKey: networkExtensionApprovalReminderDefaultsKey)
     }
 
     private static func openSystemExtensionSettings() {
@@ -322,6 +353,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidResignActive(_ notification: Notification) {
         onAppDeactivation?()
         onAppDeactivation = nil
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard shouldRetryProfileRecoveryWhenActive else { return }
+        shouldRetryProfileRecoveryWhenActive = false
+        tunnelsManager?.retryProfileRecovery()
     }
 }
 
