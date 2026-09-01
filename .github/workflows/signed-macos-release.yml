@@ -174,6 +174,8 @@ jobs:
 
           git show "${WORKFLOW_SHA}:Sources/WireGuardApp/UI/macOS/AppDelegate.swift" \
             > Sources/WireGuardApp/UI/macOS/AppDelegate.swift
+          git show "${WORKFLOW_SHA}:Sources/WireGuardApp/Base.lproj/Localizable.strings" \
+            > Sources/WireGuardApp/Base.lproj/Localizable.strings
 
           project_script_path="${RUNNER_TEMP}/prepare-developer-id-project.mjs"
           git show "${WORKFLOW_SHA}:.github/scripts/prepare-developer-id-project.mjs" \
@@ -188,11 +190,13 @@ jobs:
 
           plutil -lint \
             Sources/WireGuardNetworkExtension/Info.plist \
+            Sources/WireGuardApp/Base.lproj/Localizable.strings \
             Sources/WireGuardApp/UI/macOS/LoginItemHelper/LoginItemHelper.entitlements
           grep -q 'com.apple.product-type.system-extension' WireGuard.xcodeproj/project.pbxproj
           grep -q 'dstSubfolderSpec = 16' WireGuard.xcodeproj/project.pbxproj
           grep -q '<string>SYSX</string>' Sources/WireGuardNetworkExtension/Info.plist
           grep -q -- '--wireroute-launched-at-login' Sources/WireGuardApp/UI/macOS/AppDelegate.swift
+          grep -q 'macSystemExtensionApprovalTitle' Sources/WireGuardApp/Base.lproj/Localizable.strings
           grep -q -- '--wireroute-launched-at-login' Sources/WireGuardApp/UI/macOS/LoginItemHelper/main.m
           if /usr/libexec/PlistBuddy \
             -c 'Print :com.apple.security.application-groups' \
