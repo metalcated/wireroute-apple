@@ -45,10 +45,7 @@ class TunnelListRow: NSView {
     }
 
     let nameLabel: NSTextField = {
-        let nameLabel = NSTextField()
-        nameLabel.isEditable = false
-        nameLabel.isSelectable = false
-        nameLabel.isBordered = false
+        let nameLabel = NSTextField(labelWithString: "")
         nameLabel.maximumNumberOfLines = 1
         nameLabel.lineBreakMode = .byTruncatingTail
         nameLabel.font = .systemFont(ofSize: 13, weight: .semibold)
