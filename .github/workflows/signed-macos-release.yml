@@ -29,6 +29,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
       ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
@@ -138,7 +139,12 @@ jobs:
             Sources/WireGuardApp/Config/Developer.xcconfig
 
           export_options_path="${RUNNER_TEMP}/ExportOptions-DeveloperID.plist"
-          cp .github/ExportOptions-DeveloperID.plist "${export_options_path}"
+          if [[ -f .github/ExportOptions-DeveloperID.plist ]]; then
+            cp .github/ExportOptions-DeveloperID.plist "${export_options_path}"
+          else
+            git show "${WORKFLOW_SHA}:.github/ExportOptions-DeveloperID.plist" \
+              > "${export_options_path}"
+          fi
           sed -i '' "s/APPLE_TEAM_ID_PLACEHOLDER/${APPLE_TEAM_ID}/" \
             "${export_options_path}"
 
