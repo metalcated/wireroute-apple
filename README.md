@@ -20,6 +20,7 @@ WireRoute records per-profile connection activity in a local SQLite database ins
 
 ## Support, Privacy, and Legal
 
+- [Approve the macOS Network Extension after a DMG install](Documentation/macos-system-extension-approval.md)
 - [Secure RouterOS WireGuard setup](ROUTEROS_SETUP.md)
 - [Support and contact](SUPPORT.md)
 - [Privacy policy](PRIVACY.md)

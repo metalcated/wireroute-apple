@@ -533,6 +533,10 @@
 "macSettingsConfigureOnDemandUnavailable" = "Create or select a profile before configuring On-Demand.";
 "macSettingsSave" = "Save Changes";
 "macSettingsSaved" = "Settings saved.";
+"macSystemExtensionApprovalTitle" = "Approve WireRoute Network Extension";
+"macSystemExtensionApprovalMessage" = "WireRoute needs one macOS approval before it can create VPN tunnels.\n\n1. Open System Settings.\n2. Go to General → Login Items & Extensions.\n3. Under Extensions, open Network Extensions and enable WireRoute Network Extension.\n\nReturn to WireRoute when finished. This guide will stop appearing after approval.";
+"macSystemExtensionApprovalOpenSettings" = "Open System Settings";
+"macSystemExtensionApprovalLater" = "Not Now";
 "macStatusIconLabel" = "Icon";
 "macStatusIconHelp" = "Default follows the menu bar appearance automatically. Dark and Light remain fixed.";
 "macStatusIconDefault" = "Default";

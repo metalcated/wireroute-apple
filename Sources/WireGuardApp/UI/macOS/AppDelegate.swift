@@ -18,6 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var onAppDeactivation: (() -> Void)?
     private var aboutWindowController: NSWindowController?
     private var systemExtensionActivationCoordinator: SystemExtensionActivationCoordinator?
+    private var shouldPresentSystemExtensionApprovalGuide = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         WireRouteTheme.applyStoredPreference()
@@ -81,13 +82,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.tunnelsTracker = tunnelsTracker
                 self.statusItemController = statusItemController
 
-                if !isLaunchedAtLogin {
+                let shouldShowManageWindow = !isLaunchedAtLogin || self.shouldPresentSystemExtensionApprovalGuide
+                if shouldShowManageWindow {
 #if DEBUG
                     self.showManageTunnelsWindow { [weak self] window in
                         self?.configureAppStoreScreenshotIfNeeded(window: window, tunnelsManager: tunnelsManager)
+                        self?.presentSystemExtensionApprovalGuideIfNeeded(window: window)
                     }
 #else
-                    self.showManageTunnelsWindow(completion: nil)
+                    self.showManageTunnelsWindow { [weak self] window in
+                        self?.presentSystemExtensionApprovalGuideIfNeeded(window: window)
+                    }
 #endif
                 }
             }
@@ -95,6 +100,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func activateSystemExtensionIfPresent(completion: @escaping @MainActor () -> Void) {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--system-extension-approval-guide") {
+            shouldPresentSystemExtensionApprovalGuide = true
+            completion()
+            return
+        }
+#endif
         guard let extensionIdentifier = SystemExtensionActivationCoordinator.embeddedSystemExtensionIdentifier else {
             completion()
             return
@@ -104,7 +116,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         systemExtensionActivationCoordinator = coordinator
         let launchGate = SystemExtensionLaunchGate(completion: completion)
         coordinator.activate(
-            onNeedsUserApproval: {
+            onNeedsUserApproval: { [weak self] in
+                self?.shouldPresentSystemExtensionApprovalGuide = true
                 launchGate.finish()
             },
             completion: { [weak self] result in
@@ -120,6 +133,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 launchGate.finish()
             }
+        )
+    }
+
+    private func presentSystemExtensionApprovalGuideIfNeeded(window: NSWindow?) {
+        guard shouldPresentSystemExtensionApprovalGuide, let window else { return }
+        shouldPresentSystemExtensionApprovalGuide = false
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.icon = NSApp.applicationIconImage
+        alert.messageText = tr("macSystemExtensionApprovalTitle")
+        alert.informativeText = tr("macSystemExtensionApprovalMessage")
+        alert.addButton(withTitle: tr("macSystemExtensionApprovalOpenSettings"))
+        alert.addButton(withTitle: tr("macSystemExtensionApprovalLater"))
+
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(self)
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            Self.openSystemExtensionSettings()
+        }
+    }
+
+    private static func openSystemExtensionSettings() {
+        if let loginItemsURL = URL(
+            string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
+        ), NSWorkspace.shared.open(loginItemsURL) {
+            return
+        }
+
+        NSWorkspace.shared.open(
+            URL(fileURLWithPath: "/System/Applications/System Settings.app", isDirectory: true)
         )
     }
 
