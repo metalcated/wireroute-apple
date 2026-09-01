@@ -102,19 +102,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let coordinator = SystemExtensionActivationCoordinator(extensionIdentifier: extensionIdentifier)
         systemExtensionActivationCoordinator = coordinator
-        coordinator.activate { [weak self] result in
-            self?.systemExtensionActivationCoordinator = nil
-            if case .failure(let error) = result {
-                let alert = NSAlert()
-                alert.alertStyle = .critical
-                alert.messageText = "WireRoute system extension could not be activated"
-                alert.informativeText = error.localizedDescription
-                alert.addButton(withTitle: tr("actionOK"))
-                NSApp.activate(ignoringOtherApps: true)
-                alert.runModal()
+        let launchGate = SystemExtensionLaunchGate(completion: completion)
+        coordinator.activate(
+            onNeedsUserApproval: {
+                launchGate.finish()
+            },
+            completion: { [weak self] result in
+                self?.systemExtensionActivationCoordinator = nil
+                if case .failure(let error) = result {
+                    let alert = NSAlert()
+                    alert.alertStyle = .critical
+                    alert.messageText = "WireRoute system extension could not be activated"
+                    alert.informativeText = error.localizedDescription
+                    alert.addButton(withTitle: tr("actionOK"))
+                    NSApp.activate(ignoringOtherApps: true)
+                    alert.runModal()
+                }
+                launchGate.finish()
             }
-            completion()
-        }
+        )
     }
 
 #if DEBUG
@@ -275,6 +281,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @MainActor
+private final class SystemExtensionLaunchGate {
+
+    private var didFinish = false
+    private let completion: @MainActor () -> Void
+
+    init(completion: @escaping @MainActor () -> Void) {
+        self.completion = completion
+    }
+
+    func finish() {
+        guard !didFinish else { return }
+        didFinish = true
+        completion()
+    }
+}
+
+@MainActor
 private final class SystemExtensionActivationCoordinator: NSObject, @preconcurrency OSSystemExtensionRequestDelegate {
 
     private enum ActivationError: LocalizedError {
@@ -305,13 +328,18 @@ private final class SystemExtensionActivationCoordinator: NSObject, @preconcurre
     }
 
     private let extensionIdentifier: String
+    private var needsUserApproval: (() -> Void)?
     private var completion: ((Result<Void, Error>) -> Void)?
 
     init(extensionIdentifier: String) {
         self.extensionIdentifier = extensionIdentifier
     }
 
-    func activate(completion: @escaping (Result<Void, Error>) -> Void) {
+    func activate(
+        onNeedsUserApproval: @escaping () -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        needsUserApproval = onNeedsUserApproval
         self.completion = completion
         let request = OSSystemExtensionRequest.activationRequest(
             forExtensionWithIdentifier: extensionIdentifier,
@@ -331,6 +359,9 @@ private final class SystemExtensionActivationCoordinator: NSObject, @preconcurre
 
     func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {
         wg_log(.info, message: "WireRoute's VPN system extension is waiting for user approval")
+        let needsUserApproval = needsUserApproval
+        self.needsUserApproval = nil
+        needsUserApproval?()
     }
 
     func request(
@@ -352,6 +383,7 @@ private final class SystemExtensionActivationCoordinator: NSObject, @preconcurre
     }
 
     private func finish(with result: Result<Void, Error>) {
+        needsUserApproval = nil
         let completion = completion
         self.completion = nil
         completion?(result)
