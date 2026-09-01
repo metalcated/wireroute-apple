@@ -4,6 +4,11 @@ import Cocoa
 
 @MainActor
 final class RouterOSPeerSetupViewController: NSViewController {
+    private enum Mode {
+        case create
+        case recover(RouterOSWireGuardPeer)
+    }
+
     private enum SetupValidationError: LocalizedError {
         case duplicateTunnelName(String)
 
@@ -20,9 +25,16 @@ final class RouterOSPeerSetupViewController: NSViewController {
         let clientConfiguration: WireGuardClientConfiguration
     }
 
+    struct RecoveryProposal: Sendable {
+        let peer: RouterOSWireGuardPeer
+        let clientConfiguration: WireGuardClientConfiguration
+    }
+
     var onCancel: (() -> Void)?
     var onCreate: ((Proposal) -> Void)?
+    var onRecover: ((RecoveryProposal) -> Void)?
 
+    private let mode: Mode
     private let interfaces: [RouterOSWireGuardInterface]
     private let existingPeers: [RouterOSWireGuardPeer]
     private let existingTunnelNames: Set<String>
@@ -61,12 +73,34 @@ final class RouterOSPeerSetupViewController: NSViewController {
         peerDefaults: RouterOSPeerDefaults,
         preferredInterfaceName: String?
     ) {
+        self.mode = .create
         self.interfaces = interfaces
         self.existingPeers = existingPeers
         self.existingTunnelNames = existingTunnelNames
         self.publicEndpointSuggestion = publicEndpointSuggestion
         self.peerDefaults = peerDefaults
         self.preferredInterfaceName = preferredInterfaceName
+        let privateKey = PrivateKey()
+        clientPrivateKey = privateKey.base64Key
+        clientPublicKey = privateKey.publicKey.base64Key
+        super.init(nibName: nil, bundle: nil)
+        preferredContentSize = NSSize(width: 700, height: 790)
+    }
+
+    init(
+        recovering peer: RouterOSWireGuardPeer,
+        interfaces: [RouterOSWireGuardInterface],
+        existingTunnelNames: Set<String>,
+        publicEndpointSuggestion: RouterOSPublicEndpointSuggestion?,
+        peerDefaults: RouterOSPeerDefaults
+    ) {
+        self.mode = .recover(peer)
+        self.interfaces = interfaces
+        existingPeers = []
+        self.existingTunnelNames = existingTunnelNames
+        self.publicEndpointSuggestion = publicEndpointSuggestion
+        self.peerDefaults = peerDefaults
+        preferredInterfaceName = peer.interfaceName
         let privateKey = PrivateKey()
         clientPrivateKey = privateKey.base64Key
         clientPublicKey = privateKey.publicKey.base64Key
@@ -85,9 +119,9 @@ final class RouterOSPeerSetupViewController: NSViewController {
             nordicSurface: .canvas
         )
 
-        let titleLabel = NSTextField(labelWithString: tr("macRouterOSSetupTitle"))
+        let titleLabel = NSTextField(labelWithString: tr(setupTitleLocalizationKey))
         titleLabel.font = .systemFont(ofSize: 25, weight: .bold)
-        let subtitleLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSSetupSubtitle"))
+        let subtitleLabel = NSTextField(wrappingLabelWithString: tr(setupSubtitleLocalizationKey))
         subtitleLabel.font = .systemFont(ofSize: 13)
         subtitleLabel.textColor = .secondaryLabelColor
 
@@ -99,6 +133,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         cancelButton.controlSize = .regular
         reviewButton.target = self
         reviewButton.action = #selector(reviewClicked)
+        reviewButton.title = tr(reviewButtonLocalizationKey)
         reviewButton.bezelStyle = .regularSquare
         reviewButton.controlSize = .regular
         reviewButton.keyEquivalent = "\r"
@@ -137,6 +172,33 @@ final class RouterOSPeerSetupViewController: NSViewController {
         self.view = view
     }
 
+    private var setupTitleLocalizationKey: String {
+        switch mode {
+        case .create:
+            return "macRouterOSSetupTitle"
+        case .recover:
+            return "macRouterOSRecoverProfileSetupTitle"
+        }
+    }
+
+    private var setupSubtitleLocalizationKey: String {
+        switch mode {
+        case .create:
+            return "macRouterOSSetupSubtitle"
+        case .recover:
+            return "macRouterOSRecoverProfileSetupSubtitle"
+        }
+    }
+
+    private var reviewButtonLocalizationKey: String {
+        switch mode {
+        case .create:
+            return "macRouterOSReviewPeer"
+        case .recover:
+            return "macRouterOSReviewRecovery"
+        }
+    }
+
     private func configureFields() {
         for interface in interfaces {
             interfacePopup.addItem(withTitle: interface.name)
@@ -149,8 +211,14 @@ final class RouterOSPeerSetupViewController: NSViewController {
         }
         interfacePopup.target = self
         interfacePopup.action = #selector(interfaceChanged)
+        if case .recover = mode {
+            interfacePopup.isEnabled = false
+        }
 
         nameField.placeholderString = tr("macRouterOSPeerNamePlaceholder")
+        if case .recover(let peer) = mode {
+            nameField.stringValue = Self.displayName(for: peer)
+        }
         clientAddressField.placeholderString = tr("macRouterOSClientAddressPlaceholder")
         clientAddressField.delegate = self
         clientAddressHelpLabel.font = .systemFont(ofSize: 11)
@@ -172,7 +240,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
         dnsField.placeholderString = tr("macRouterOSDNSPlaceholder")
         dnsField.stringValue = peerDefaults.dnsServers.joined(separator: ", ")
         keepaliveField.integerValue = Int(peerDefaults.persistentKeepalive)
-        routeModeControl.selectedSegment = 0
+        routeModeControl.selectedSegment = peerDefaults.splitRoutes.isEmpty && isRecovering ? 1 : 0
         routeModeControl.target = self
         routeModeControl.action = #selector(routeModeChanged)
 
@@ -190,8 +258,15 @@ final class RouterOSPeerSetupViewController: NSViewController {
         routesTextView.textContainerInset = NSSize(width: 8, height: 7)
         routesTextView.string = peerDefaults.splitRoutes.map(\.notation).joined(separator: ", ")
         updateEndpointPort()
-        updateClientAddressSuggestion()
+        updateClientAddress()
         updateRouteMode()
+    }
+
+    private var isRecovering: Bool {
+        if case .recover = mode {
+            return true
+        }
+        return false
     }
 
     private func makeForm() -> NSView {
@@ -329,7 +404,7 @@ final class RouterOSPeerSetupViewController: NSViewController {
 
     @objc private func interfaceChanged() {
         updateEndpointPort()
-        updateClientAddressSuggestion()
+        updateClientAddress()
     }
 
     @objc private func routeModeChanged() {
@@ -345,7 +420,20 @@ final class RouterOSPeerSetupViewController: NSViewController {
         endpointPortField.stringValue = String(port)
     }
 
-    private func updateClientAddressSuggestion() {
+    private func updateClientAddress() {
+        if case .recover(let peer) = mode {
+            if let address = RouterOSMissingProfileRecoveryValidator.suggestedClientAddress(for: peer) {
+                clientAddressField.stringValue = address.notation
+                lastSuggestedClientAddress = address.notation
+                clientAddressHelpLabel.stringValue = tr("macRouterOSRecoverProfileAddressFound")
+            } else {
+                clientAddressField.stringValue = ""
+                lastSuggestedClientAddress = nil
+                clientAddressHelpLabel.stringValue = tr("macRouterOSRecoverProfileAddressReview")
+            }
+            return
+        }
+
         let currentAddress = clientAddressField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard currentAddress.isEmpty || currentAddress == lastSuggestedClientAddress else {
             showManualClientAddressHelp()
@@ -381,7 +469,19 @@ final class RouterOSPeerSetupViewController: NSViewController {
     }
 
     private func showManualClientAddressHelp() {
-        clientAddressHelpLabel.stringValue = tr("macRouterOSClientAddressManual")
+        clientAddressHelpLabel.stringValue = tr(
+            isRecovering
+                ? "macRouterOSRecoverProfileAddressManual"
+                : "macRouterOSClientAddressManual"
+        )
+    }
+
+    private static func displayName(for peer: RouterOSWireGuardPeer) -> String {
+        let name = peer.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let comment = peer.comment?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.flatMap { $0.isEmpty ? nil : $0 }
+            ?? comment.flatMap { $0.isEmpty ? nil : $0 }
+            ?? tr("macRouterOSExistingPeerDefaultName")
     }
 
     private func updateRouteMode() {
@@ -402,8 +502,12 @@ final class RouterOSPeerSetupViewController: NSViewController {
 
     @objc private func reviewClicked() {
         do {
-            let proposal = try makeProposal()
-            showReview(for: proposal)
+            switch mode {
+            case .create:
+                showReview(for: try makeProposal())
+            case .recover(let peer):
+                showRecoveryReview(for: try makeRecoveryProposal(peer: peer))
+            }
         } catch {
             errorLabel.stringValue = error.localizedDescription
             errorLabel.isHidden = false
@@ -411,21 +515,9 @@ final class RouterOSPeerSetupViewController: NSViewController {
     }
 
     private func makeProposal() throws -> Proposal {
-        guard interfaces.indices.contains(interfacePopup.indexOfSelectedItem) else {
-            throw RouterOSProvisioningError.missingInterface
-        }
-        let interface = interfaces[interfacePopup.indexOfSelectedItem]
+        let interface = try selectedInterface()
         let clientAddress = clientAddressField.stringValue
-        guard let persistentKeepalive = Int(
-            keepaliveField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        ) else {
-            throw RouterOSProvisioningError.invalidPersistentKeepalive
-        }
-        guard let endpointPort = Int(
-            endpointPortField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        ) else {
-            throw RouterOSProvisioningError.invalidEndpointPort
-        }
+        let persistentKeepalive = try selectedPersistentKeepalive()
         let peerCreation = try RouterOSPeerCreation(
             interfaceName: interface.name,
             name: nameField.stringValue,
@@ -439,16 +531,74 @@ final class RouterOSPeerSetupViewController: NSViewController {
             throw SetupValidationError.duplicateTunnelName(peerCreation.name)
         }
 
+        let clientConfiguration = try makeClientConfiguration(
+            name: peerCreation.name,
+            clientAddress: peerCreation.clientAddress,
+            interface: interface,
+            persistentKeepalive: persistentKeepalive
+        )
+        errorLabel.isHidden = true
+        return Proposal(peerCreation: peerCreation, clientConfiguration: clientConfiguration)
+    }
+
+    private func makeRecoveryProposal(peer: RouterOSWireGuardPeer) throws -> RecoveryProposal {
+        let interface = try selectedInterface()
+        let clientAddress = try RouterOSMissingProfileRecoveryValidator.validate(
+            peer: peer,
+            interface: interface,
+            clientAddress: clientAddressField.stringValue
+        )
+        let profileName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !existingTunnelNames.contains(profileName) else {
+            throw SetupValidationError.duplicateTunnelName(profileName)
+        }
+        let clientConfiguration = try makeClientConfiguration(
+            name: profileName,
+            clientAddress: clientAddress,
+            interface: interface,
+            persistentKeepalive: try selectedPersistentKeepalive()
+        )
+        errorLabel.isHidden = true
+        return RecoveryProposal(peer: peer, clientConfiguration: clientConfiguration)
+    }
+
+    private func selectedInterface() throws -> RouterOSWireGuardInterface {
+        guard interfaces.indices.contains(interfacePopup.indexOfSelectedItem) else {
+            throw RouterOSProvisioningError.missingInterface
+        }
+        return interfaces[interfacePopup.indexOfSelectedItem]
+    }
+
+    private func selectedPersistentKeepalive() throws -> Int {
+        guard let persistentKeepalive = Int(
+            keepaliveField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        ) else {
+            throw RouterOSProvisioningError.invalidPersistentKeepalive
+        }
+        return persistentKeepalive
+    }
+
+    private func makeClientConfiguration(
+        name: String,
+        clientAddress: RoutePrefix,
+        interface: RouterOSWireGuardInterface,
+        persistentKeepalive: Int
+    ) throws -> WireGuardClientConfiguration {
         let allowedIPs: [String]
         if routeModeControl.selectedSegment == 1 {
-            allowedIPs = [peerCreation.clientAddress.family == .ipv4 ? "0.0.0.0/0" : "::/0"]
+            allowedIPs = [clientAddress.family == .ipv4 ? "0.0.0.0/0" : "::/0"]
         } else {
             allowedIPs = try RoutePrefix.parseList(routesTextView.string).map(\.notation)
         }
-        let clientConfiguration = try WireGuardClientConfiguration(
-            name: peerCreation.name,
+        guard let endpointPort = Int(
+            endpointPortField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        ) else {
+            throw RouterOSProvisioningError.invalidEndpointPort
+        }
+        return try WireGuardClientConfiguration(
+            name: name,
             privateKey: clientPrivateKey,
-            clientAddress: peerCreation.clientAddress.notation,
+            clientAddress: clientAddress.notation,
             dnsServers: Self.splitValues(dnsField.stringValue),
             serverPublicKey: interface.publicKey,
             endpointAddress: endpointField.stringValue,
@@ -456,8 +606,6 @@ final class RouterOSPeerSetupViewController: NSViewController {
             allowedIPs: allowedIPs,
             persistentKeepalive: persistentKeepalive
         )
-        errorLabel.isHidden = true
-        return Proposal(peerCreation: peerCreation, clientConfiguration: clientConfiguration)
     }
 
     private func showReview(for proposal: Proposal) {
@@ -478,6 +626,30 @@ final class RouterOSPeerSetupViewController: NSViewController {
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             self?.onCreate?(proposal)
+        }
+    }
+
+    private func showRecoveryReview(for proposal: RecoveryProposal) {
+        guard let window = view.window else { return }
+        let configuration = proposal.clientConfiguration
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr("macRouterOSRecoverProfileReviewTitle")
+        alert.informativeText = tr(
+            format: "macRouterOSRecoverProfileReviewMessage (%@,%@,%@,%@,%@,%@,%@)",
+            configuration.name,
+            proposal.peer.interfaceName,
+            configuration.clientAddress.notation,
+            "\(configuration.endpointAddress):\(configuration.endpointPort)",
+            configuration.allowedIPs.map(\.notation).joined(separator: ", "),
+            proposal.peer.publicKey,
+            clientPublicKey
+        )
+        alert.addButton(withTitle: tr("macRouterOSRecoverProfileConfirm"))
+        alert.addButton(withTitle: tr("macRouterOSBack"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.onRecover?(proposal)
         }
     }
 

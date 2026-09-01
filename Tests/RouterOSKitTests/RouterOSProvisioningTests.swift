@@ -226,6 +226,70 @@ final class RouterOSProvisioningTests: XCTestCase {
         }
     }
 
+    func testSuggestsAndValidatesMissingProfileRecoveryAddress() throws {
+        let peer = try makePeer(
+            interfaceName: "wg-remote",
+            publicKey: clientPublicKey,
+            allowedAddress: "10.255.100.10/32,192.168.0.0/16"
+        )
+        let interface = try makeInterface(
+            name: "wg-remote",
+            publicKey: serverPublicKey
+        )
+
+        XCTAssertEqual(
+            RouterOSMissingProfileRecoveryValidator.suggestedClientAddress(for: peer)?.notation,
+            "10.255.100.10/32"
+        )
+        XCTAssertEqual(
+            try RouterOSMissingProfileRecoveryValidator.validate(
+                peer: peer,
+                interface: interface,
+                clientAddress: "10.255.100.10/32"
+            ).notation,
+            "10.255.100.10/32"
+        )
+    }
+
+    func testRejectsAmbiguousOrMismatchedMissingProfileRecoveryAddress() throws {
+        let peer = try makePeer(
+            interfaceName: "wg-remote",
+            publicKey: clientPublicKey,
+            allowedAddress: "10.255.100.10/32,10.255.100.11/32"
+        )
+        let interface = try makeInterface(
+            name: "wg-remote",
+            publicKey: serverPublicKey
+        )
+        let otherInterface = try makeInterface(
+            name: "wg-other",
+            publicKey: serverPublicKey
+        )
+
+        XCTAssertNil(RouterOSMissingProfileRecoveryValidator.suggestedClientAddress(for: peer))
+        XCTAssertThrowsError(
+            try RouterOSMissingProfileRecoveryValidator.validate(
+                peer: peer,
+                interface: interface,
+                clientAddress: "10.255.100.12/32"
+            )
+        ) { error in
+            XCTAssertEqual(error as? RouterOSMissingProfileRecoveryError, .clientAddressMismatch)
+        }
+        XCTAssertThrowsError(
+            try RouterOSMissingProfileRecoveryValidator.validate(
+                peer: peer,
+                interface: otherInterface,
+                clientAddress: "10.255.100.10/32"
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? RouterOSMissingProfileRecoveryError,
+                .missingInterface("wg-remote")
+            )
+        }
+    }
+
     func testSuggestsNextIPv4HostAddressFromSelectedInterface() throws {
         let peers = try [
             makePeer(

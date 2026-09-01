@@ -423,6 +423,7 @@
 "macRouterOSContextCopyPublicKey" = "Copy Public Key";
 "macRouterOSContextCopyPrivateKey" = "Copy Client Private Key…";
 "macRouterOSContextReplaceCredentials" = "Replace Peer Credentials…";
+"macRouterOSContextRecoverMissingProfile" = "Recover Missing Profile…";
 "macRouterOSContextResumeCredentialReplacement" = "Resume Credential Replacement…";
 "macRouterOSContextRemovePeer" = "Remove Peer…";
 "macRouterOSExportPrivateData" = "export this WireRoute profile, including its private key";
@@ -435,6 +436,7 @@
 "macRouterOSQRCodeFailed" = "WireRoute could not create a QR code for this configuration.";
 "macRouterOSExportFailedTitle" = "Configuration Could Not Be Saved";
 "macRouterOSReplaceCredentialsAuthentication" = "replace this RouterOS peer's credentials and update its WireRoute profile";
+"macRouterOSRecoverProfileAuthentication" = "generate replacement credentials, update this RouterOS peer, and recover its WireRoute profile";
 "macRouterOSReplaceCredentialsRequiresProfile" = "Import the peer's saved client configuration into WireRoute before replacing its credentials.";
 "macRouterOSCredentialRecoveryStoreFailed" = "WireRoute could not securely save the replacement credentials in Keychain. RouterOS was not changed.";
 "macRouterOSCredentialRecoveryInvalid" = "The pending replacement configuration in Keychain is invalid. RouterOS was not changed.";
@@ -466,6 +468,8 @@
 "macRouterOSNone" = "None";
 "macRouterOSSetupTitle" = "Set Up a Device";
 "macRouterOSSetupSubtitle" = "WireRoute generates a fresh key pair locally, suggests safe values from RouterOS, prefills your defaults, and lets you review the exact change.";
+"macRouterOSRecoverProfileSetupTitle" = "Recover Missing Profile";
+"macRouterOSRecoverProfileSetupSubtitle" = "WireRoute will generate a new private key locally, reconstruct this peer's profile from RouterOS and your saved defaults, and let you review every value before anything changes.";
 "macRouterOSInterface" = "Interface";
 "macRouterOSPeerName" = "Device name";
 "macRouterOSPeerNamePlaceholder" = "iPhone 12 Dev";
@@ -489,11 +493,18 @@
 "macRouterOSRouteModeFull" = "Full";
 "macRouterOSFullRouteAutomatic" = "WireRoute will use the default route for the client address family.";
 "macRouterOSReviewPeer" = "Review Peer";
+"macRouterOSReviewRecovery" = "Review Recovery";
 "macRouterOSCancel" = "Cancel";
 "macRouterOSReviewTitle" = "Review RouterOS Change";
 "macRouterOSReviewMessage (%@,%@,%@,%@,%@)" = "WireRoute will add exactly one WireGuard peer. It will not change RouterOS IP addresses, firewall rules, NAT, or routes.\n\nDevice: %@\nInterface: %@\nClient address: %@\nEndpoint: %@\nClient routes: %@";
 "macRouterOSAddPeer" = "Add Peer";
 "macRouterOSBack" = "Back";
+"macRouterOSRecoverProfileAddressFound" = "Recovered from this RouterOS peer's assigned host address.";
+"macRouterOSRecoverProfileAddressReview" = "RouterOS has more than one possible host address. Enter the address this profile should use.";
+"macRouterOSRecoverProfileAddressManual" = "Confirm that this host address belongs to the selected RouterOS peer.";
+"macRouterOSRecoverProfileReviewTitle" = "Review Profile Recovery";
+"macRouterOSRecoverProfileReviewMessage (%@,%@,%@,%@,%@,%@,%@)" = "WireRoute will generate a replacement client identity, update only this RouterOS peer's public key, and securely save the reconstructed local profile. RouterOS addresses, firewall rules, NAT, and routes will not be changed. If local saving is interrupted, WireRoute keeps the replacement configuration in Keychain so recovery can resume.\n\nProfile: %@\nInterface: %@\nClient address: %@\nEndpoint: %@\nClient routes: %@\n\nCurrent public key:\n%@\n\nReplacement public key:\n%@";
+"macRouterOSRecoverProfileConfirm" = "Recover Profile";
 "macRouterOSAddingPeer" = "Adding one reviewed peer to RouterOS…";
 "macRouterOSPeerAdded" = "Peer added to RouterOS.";
 "macRouterOSPeerAddedTitle" = "Peer Added";

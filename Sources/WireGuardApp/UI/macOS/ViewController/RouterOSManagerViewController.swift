@@ -916,15 +916,19 @@ final class RouterOSManagerViewController: NSViewController {
         menu.addItem(privateKeyItem)
         menu.addItem(.separator())
 
+        let credentialActionLocalizationKey: String
+        if hasRecovery {
+            credentialActionLocalizationKey = "macRouterOSContextResumeCredentialReplacement"
+        } else if hasLocalConfiguration {
+            credentialActionLocalizationKey = "macRouterOSContextReplaceCredentials"
+        } else {
+            credentialActionLocalizationKey = "macRouterOSContextRecoverMissingProfile"
+        }
         let replaceItem = menuItem(
-            title: tr(
-                hasRecovery
-                    ? "macRouterOSContextResumeCredentialReplacement"
-                    : "macRouterOSContextReplaceCredentials"
-            ),
+            title: tr(credentialActionLocalizationKey),
             action: #selector(replaceContextPeerCredentials)
         )
-        replaceItem.isEnabled = tunnel != nil || hasRecovery
+        replaceItem.isEnabled = true
         menu.addItem(replaceItem)
         let removeItem = menuItem(
             title: tr("macRouterOSContextRemovePeer"),
@@ -984,8 +988,11 @@ final class RouterOSManagerViewController: NSViewController {
 
     @objc private func replaceContextPeerCredentials() {
         guard let peer = contextPeer else { return }
+        let authenticationLocalizationKey = existingTunnel(matching: peer)?.tunnelConfiguration == nil
+            ? "macRouterOSRecoverProfileAuthentication"
+            : "macRouterOSReplaceCredentialsAuthentication"
         PrivateDataConfirmation.confirmAccess(
-            to: tr("macRouterOSReplaceCredentialsAuthentication")
+            to: tr(authenticationLocalizationKey)
         ) { [weak self] in
             self?.beginCredentialReplacement(for: peer)
         }
@@ -1031,7 +1038,7 @@ final class RouterOSManagerViewController: NSViewController {
         }
         guard let tunnel = existingTunnel(matching: peer),
               let currentConfiguration = tunnel.tunnelConfiguration else {
-            showError(tr("macRouterOSReplaceCredentialsRequiresProfile"))
+            beginMissingProfileRecovery(for: peer)
             return
         }
 
@@ -1055,6 +1062,80 @@ final class RouterOSManagerViewController: NSViewController {
             tunnel: tunnel,
             replacementConfiguration: replacementConfiguration,
             recoveryReference: recoveryReference
+        )
+    }
+
+    private func beginMissingProfileRecovery(for peer: RouterOSWireGuardPeer) {
+        guard interfaces.contains(where: { $0.name == peer.interfaceName }) else {
+            showError(
+                RouterOSMissingProfileRecoveryError
+                    .missingInterface(peer.interfaceName)
+                    .localizedDescription
+            )
+            return
+        }
+        let occupiedTunnelNames = Set(
+            tunnelsManager.mapTunnels { tunnel in
+                tunnel.tunnelConfiguration == nil ? nil : tunnel.name
+            }.compactMap { $0 }
+        )
+        let recoveryViewController = RouterOSPeerSetupViewController(
+            recovering: peer,
+            interfaces: interfaces,
+            existingTunnelNames: occupiedTunnelNames,
+            publicEndpointSuggestion: publicEndpointSuggestion,
+            peerDefaults: RouterOSPeerDefaultsStore.load()
+        )
+        recoveryViewController.onCancel = { [weak self, weak recoveryViewController] in
+            guard let self, let recoveryViewController else { return }
+            dismiss(recoveryViewController)
+        }
+        recoveryViewController.onRecover = { [weak self, weak recoveryViewController] proposal in
+            guard let self, let recoveryViewController else { return }
+            dismiss(recoveryViewController)
+            recoverMissingProfile(proposal)
+        }
+        presentAsSheet(recoveryViewController)
+    }
+
+    private func recoverMissingProfile(
+        _ proposal: RouterOSPeerSetupViewController.RecoveryProposal
+    ) {
+        let tunnelConfiguration: TunnelConfiguration
+        do {
+            tunnelConfiguration = try TunnelConfiguration(
+                fromWgQuickConfig: proposal.clientConfiguration.wgQuickConfiguration,
+                called: proposal.clientConfiguration.name
+            )
+        } catch {
+            showError(tr("macRouterOSGeneratedConfigurationInvalid"))
+            return
+        }
+
+        let localTunnel = tunnelsManager.tunnel(named: proposal.clientConfiguration.name)
+        if localTunnel?.tunnelConfiguration != nil {
+            showError(
+                tr(
+                    format: "macRouterOSDuplicateTunnelName (%@)",
+                    proposal.clientConfiguration.name
+                )
+            )
+            return
+        }
+        guard let recoveryReference = Keychain.makeRecoveryReference(
+            containing: tunnelConfiguration.asWgQuickConfig(),
+            called: proposal.clientConfiguration.name,
+            peerID: proposal.peer.id
+        ) else {
+            showError(tr("macRouterOSCredentialRecoveryStoreFailed"))
+            return
+        }
+        performCredentialReplacement(
+            peer: proposal.peer,
+            tunnel: localTunnel,
+            replacementConfiguration: tunnelConfiguration,
+            recoveryReference: recoveryReference,
+            updateRouter: true
         )
     }
 
@@ -1122,27 +1203,17 @@ final class RouterOSManagerViewController: NSViewController {
             return
         }
 
-        guard let localTunnel else {
-            showCredentialRecoveryOptions(
-                replacementConfiguration,
-                recoveryReference: recovery.reference,
-                message: tr("macRouterOSCredentialRecoveryProfileMissing")
-            )
-            return
-        }
-
         if peer.publicKey == replacementPublicKey {
-            performCredentialReplacement(
+            finishLocalCredentialReplacement(
                 peer: peer,
                 tunnel: localTunnel,
                 replacementConfiguration: replacementConfiguration,
-                recoveryReference: recovery.reference,
-                updateRouter: false
+                recoveryReference: recovery.reference
             )
             return
         }
 
-        guard localPublicKey == peer.publicKey else {
+        guard localPublicKey == nil || localPublicKey == peer.publicKey else {
             showCredentialRecoveryOptions(
                 replacementConfiguration,
                 recoveryReference: recovery.reference,
@@ -1172,7 +1243,7 @@ final class RouterOSManagerViewController: NSViewController {
 
     private func performCredentialReplacement(
         peer: RouterOSWireGuardPeer,
-        tunnel: TunnelContainer,
+        tunnel: TunnelContainer?,
         replacementConfiguration: TunnelConfiguration,
         recoveryReference: Data,
         updateRouter: Bool
@@ -1231,25 +1302,52 @@ final class RouterOSManagerViewController: NSViewController {
 
     private func finishLocalCredentialReplacement(
         peer: RouterOSWireGuardPeer,
-        tunnel: TunnelContainer,
+        tunnel: TunnelContainer?,
         replacementConfiguration: TunnelConfiguration,
         recoveryReference: Data
     ) {
-        if tunnel.tunnelConfiguration?.interface.privateKey.publicKey.base64Key
+        if tunnel?.tunnelConfiguration?.interface.privateKey.publicKey.base64Key
             == replacementConfiguration.interface.privateKey.publicKey.base64Key {
             Keychain.deleteReference(called: recoveryReference)
             setConnecting(false)
-            credentialReplacementSucceeded(peer: peer, tunnel: tunnel)
+            if let tunnel {
+                credentialReplacementSucceeded(peer: peer, tunnel: tunnel)
+            }
             return
         }
-        tunnelsManager.modify(
-            tunnel: tunnel,
-            tunnelConfiguration: replacementConfiguration,
-            onDemandOption: tunnel.onDemandOption
-        ) { [weak self] error in
+        if let tunnel {
+            tunnelsManager.modify(
+                tunnel: tunnel,
+                tunnelConfiguration: replacementConfiguration,
+                onDemandOption: tunnel.onDemandOption
+            ) { [weak self] error in
+                guard let self else { return }
+                setConnecting(false)
+                if let error {
+                    showCredentialRecoveryOptions(
+                        replacementConfiguration,
+                        recoveryReference: recoveryReference,
+                        message: [
+                            tr("macRouterOSCredentialReplacementLocalSaveFailed"),
+                            error.alertText.message
+                        ].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                    )
+                    return
+                }
+                Keychain.deleteReference(called: recoveryReference)
+                credentialReplacementSucceeded(peer: peer, tunnel: tunnel)
+            }
+            return
+        }
+
+        tunnelsManager.add(tunnelConfiguration: replacementConfiguration) { [weak self] result in
             guard let self else { return }
             setConnecting(false)
-            if let error {
+            switch result {
+            case .success(let tunnel):
+                Keychain.deleteReference(called: recoveryReference)
+                credentialReplacementSucceeded(peer: peer, tunnel: tunnel)
+            case .failure(let error):
                 showCredentialRecoveryOptions(
                     replacementConfiguration,
                     recoveryReference: recoveryReference,
@@ -1258,10 +1356,7 @@ final class RouterOSManagerViewController: NSViewController {
                         error.alertText.message
                     ].filter { !$0.isEmpty }.joined(separator: "\n\n")
                 )
-                return
             }
-            Keychain.deleteReference(called: recoveryReference)
-            credentialReplacementSucceeded(peer: peer, tunnel: tunnel)
         }
     }
 

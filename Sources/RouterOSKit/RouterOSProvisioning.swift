@@ -80,6 +80,64 @@ public enum RouterOSExistingPeerImportError: Error, Equatable, LocalizedError, S
     }
 }
 
+public enum RouterOSMissingProfileRecoveryError: Error, Equatable, LocalizedError, Sendable {
+    case missingInterface(String)
+    case missingClientAddress
+    case clientAddressMismatch
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingInterface(let interfaceName):
+            return "RouterOS interface \(interfaceName) is not available in the current discovery results."
+        case .missingClientAddress:
+            return "This RouterOS peer does not contain one unambiguous client host address."
+        case .clientAddressMismatch:
+            return "The client address must belong to this RouterOS peer's allowed addresses."
+        }
+    }
+}
+
+public struct RouterOSMissingProfileRecoveryValidator {
+    public static func suggestedClientAddress(for peer: RouterOSWireGuardPeer) -> RoutePrefix? {
+        let hostAddresses = peer.allowedAddresses.compactMap { value -> RoutePrefix? in
+            guard let prefix = try? RoutePrefix(value) else { return nil }
+            let requiredPrefixLength: UInt8 = prefix.family == .ipv4 ? 32 : 128
+            return prefix.prefixLength == requiredPrefixLength ? prefix : nil
+        }
+        let uniqueAddresses = Dictionary(
+            hostAddresses.map { ($0.notation, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        guard uniqueAddresses.count == 1 else { return nil }
+        return uniqueAddresses.values.first
+    }
+
+    @discardableResult
+    public static func validate(
+        peer: RouterOSWireGuardPeer,
+        interface: RouterOSWireGuardInterface,
+        clientAddress: String
+    ) throws -> RoutePrefix {
+        guard interface.name == peer.interfaceName else {
+            throw RouterOSMissingProfileRecoveryError.missingInterface(peer.interfaceName)
+        }
+        guard let clientAddress = try? RoutePrefix(clientAddress) else {
+            throw RouterOSMissingProfileRecoveryError.missingClientAddress
+        }
+        let requiredPrefixLength: UInt8 = clientAddress.family == .ipv4 ? 32 : 128
+        guard clientAddress.prefixLength == requiredPrefixLength else {
+            throw RouterOSMissingProfileRecoveryError.missingClientAddress
+        }
+        let routerAllowedAddresses = peer.allowedAddresses.compactMap { try? RoutePrefix($0) }
+        guard routerAllowedAddresses.contains(where: {
+            RouterOSPeerCreation.overlaps(clientAddress, $0)
+        }) else {
+            throw RouterOSMissingProfileRecoveryError.clientAddressMismatch
+        }
+        return clientAddress
+    }
+}
+
 public struct RouterOSExistingPeerImportValidator {
     public static func validate(
         peer: RouterOSWireGuardPeer,
