@@ -186,6 +186,45 @@ jobs:
             -resolvePackageDependencies \
             -clonedSourcePackagesDirPath "${RUNNER_TEMP}/source-packages-macos"
 
+      - name: Prepare Developer ID provisioning profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          profile_script_path="${RUNNER_TEMP}/prepare-macos-profiles.mjs"
+          if [[ -f .github/scripts/prepare-macos-profiles.mjs ]]; then
+            cp .github/scripts/prepare-macos-profiles.mjs "${profile_script_path}"
+          else
+            git show "${WORKFLOW_SHA}:.github/scripts/prepare-macos-profiles.mjs" \
+              > "${profile_script_path}"
+          fi
+
+          profile_output_directory="${RUNNER_TEMP}/developer-id-profiles"
+          profile_result_path="${RUNNER_TEMP}/developer-id-profiles.json"
+          PROFILE_OUTPUT_DIRECTORY="${profile_output_directory}" \
+          PROFILE_RESULT_PATH="${profile_result_path}" \
+            node "${profile_script_path}"
+
+          main_profile_uuid="$(jq -r '.profiles["com.gnet.wireroute"].uuid' "${profile_result_path}")"
+          extension_profile_uuid="$(jq -r '.profiles["com.gnet.wireroute.network-extension"].uuid' "${profile_result_path}")"
+
+          for profile_directory in \
+            "${HOME}/Library/Developer/Xcode/UserData/Provisioning Profiles" \
+            "${HOME}/Library/MobileDevice/Provisioning Profiles"
+          do
+            mkdir -p "${profile_directory}"
+            cp "${profile_output_directory}"/*.provisionprofile "${profile_directory}/"
+          done
+
+          /usr/libexec/PlistBuddy \
+            -c "Set :signingStyle manual" \
+            -c "Add :signingCertificate string ${SIGNING_IDENTITY_HASH}" \
+            -c "Add :provisioningProfiles dict" \
+            -c "Add :provisioningProfiles:com.gnet.wireroute string ${main_profile_uuid}" \
+            -c "Add :provisioningProfiles:com.gnet.wireroute.network-extension string ${extension_profile_uuid}" \
+            "${EXPORT_OPTIONS_PATH}"
+          plutil -lint "${EXPORT_OPTIONS_PATH}"
+
       - name: Archive signed universal app
         run: |
           xcodebuild \
@@ -212,11 +251,7 @@ jobs:
             -exportArchive \
             -archivePath "${RUNNER_TEMP}/WireRoute.xcarchive" \
             -exportPath "${RUNNER_TEMP}/export" \
-            -exportOptionsPlist "${EXPORT_OPTIONS_PATH}" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "${API_KEY_PATH}" \
-            -authenticationKeyID "${ASC_API_KEY_ID}" \
-            -authenticationKeyIssuerID "${ASC_API_ISSUER_ID}"
+            -exportOptionsPlist "${EXPORT_OPTIONS_PATH}"
 
       - name: Verify and package application
         shell: bash
