@@ -109,8 +109,7 @@ const findBundleID = async identifier => {
 
 const readBundleIDCapabilities = async bundleID => {
   const query = new URLSearchParams({
-    'fields[bundleIdCapabilities]': 'capabilityType,settings',
-    limit: '200'
+    'fields[bundleIdCapabilities]': 'capabilityType,settings'
   })
   const response = await apiRequest(
     `/v1/bundleIds/${bundleID.id}/bundleIdCapabilities?${query}`
