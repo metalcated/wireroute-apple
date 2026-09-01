@@ -1,0 +1,128 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "[0-9]*.[0-9]*.[0-9]*"
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: build-and-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS
+            slug: macos
+            scheme: WireGuardmacOS
+            destination: platform=macOS
+          - platform: iOS
+            slug: ios
+            scheme: WireGuardiOS
+            destination: generic/platform=iOS
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Verify release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "${tag}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must use MAJOR.MINOR.PATCH format; received ${tag}."
+            exit 1
+          fi
+          version="$(sed -n 's/^MARKETING_VERSION = //p' Sources/WireGuardApp/Config/Version.xcconfig)"
+          if [[ "${tag}" != "${version}" ]]; then
+            echo "Release tag ${tag} does not match MARKETING_VERSION ${version}."
+            exit 1
+          fi
+
+      - name: Show tool versions
+        run: |
+          xcodebuild -version
+          swift --version
+          go version
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild \
+            -project WireGuard.xcodeproj \
+            -scheme "${{ matrix.scheme }}" \
+            -resolvePackageDependencies \
+            -clonedSourcePackagesDirPath "${RUNNER_TEMP}/source-packages-${{ matrix.slug }}"
+
+      - name: Build unsigned Release configuration
+        run: |
+          xcodebuild \
+            -project WireGuard.xcodeproj \
+            -scheme "${{ matrix.scheme }}" \
+            -configuration Release \
+            -destination "${{ matrix.destination }}" \
+            -derivedDataPath "${RUNNER_TEMP}/derived-data-${{ matrix.slug }}" \
+            -clonedSourcePackagesDirPath "${RUNNER_TEMP}/source-packages-${{ matrix.slug }}" \
+            -disableAutomaticPackageResolution \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+  release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create release
+        uses: actions/github-script@v7
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag = process.env.TAG_NAME;
+
+            try {
+              const existing = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              core.info(`Release ${existing.data.html_url} already exists.`);
+              return;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            const release = await github.rest.repos.createRelease({
+              owner,
+              repo,
+              tag_name: tag,
+              name: `WireRoute ${tag}`,
+              body: [
+                `WireRoute ${tag} for iOS and macOS.`,
+                '',
+                'GitHub provides the standard source archives for this release. Signed App Store builds are handled through Apple distribution.'
+              ].join('\n'),
+              generate_release_notes: true,
+              draft: false,
+              prerelease: false
+            });
+
+            core.info(`Created ${release.data.html_url}`);

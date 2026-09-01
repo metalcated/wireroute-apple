@@ -74,6 +74,12 @@ Run the Swift 6 package tests with:
 swift test
 ```
 
+## Releases
+
+GitHub Actions builds unsigned Release configurations for both iOS and macOS on every change to `main` and on pull requests targeting `main`. A tag in exact `MAJOR.MINOR.PATCH` form must match `MARKETING_VERSION` in `Sources/WireGuardApp/Config/Version.xcconfig`.
+
+After both platform builds pass for a version tag, GitHub publishes a release with generated notes and the standard source archives. Signed App Store builds remain part of Apple distribution and are not produced by this public workflow.
+
 ## WireGuardKit integration
 
 1. Open your Xcode project and add the Swift package with the following URL:
