@@ -205,6 +205,37 @@ jobs:
           PROFILE_RESULT_PATH="${profile_result_path}" \
             node "${profile_script_path}"
 
+          profile_validation_failed=false
+          while IFS=$'\t' read -r bundle_identifier profile_path
+          do
+            decoded_profile_path="${profile_path}.plist"
+            security cms -D -i "${profile_path}" > "${decoded_profile_path}"
+            profile_network_extensions="$(
+              plutil -convert json -o - "${decoded_profile_path}" | \
+                jq -r '.Entitlements["com.apple.developer.networking.networkextension"] // [] | join(",")'
+            )"
+            capability_summary="$(
+              jq -c --arg identifier "${bundle_identifier}" \
+                '.profiles[$identifier].capabilities' \
+                "${profile_result_path}"
+            )"
+
+            echo "::notice title=Developer ID profile ${bundle_identifier}::networkextension=${profile_network_extensions:-missing}; capabilities=${capability_summary}"
+
+            if [[ "${profile_network_extensions}" != "packet-tunnel-provider" ]]; then
+              echo "::error title=Developer ID entitlement mismatch::${bundle_identifier} requires packet-tunnel-provider, but Apple issued ${profile_network_extensions:-no network extension entitlement}."
+              profile_validation_failed=true
+            fi
+          done < <(
+            jq -r '.profiles | to_entries[] | [.key, .value.path] | @tsv' \
+              "${profile_result_path}"
+          )
+
+          if [[ "${profile_validation_failed}" == true ]]; then
+            echo "The Developer ID profiles do not authorize WireRoute's required Network Extension entitlement."
+            exit 1
+          fi
+
           main_profile_uuid="$(jq -r '.profiles["com.gnet.wireroute"].uuid' "${profile_result_path}")"
           extension_profile_uuid="$(jq -r '.profiles["com.gnet.wireroute.network-extension"].uuid' "${profile_result_path}")"
 

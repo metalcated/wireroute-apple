@@ -107,6 +107,20 @@ const findBundleID = async identifier => {
   return bundleID
 }
 
+const readBundleIDCapabilities = async bundleID => {
+  const query = new URLSearchParams({
+    'fields[bundleIdCapabilities]': 'capabilityType,settings',
+    limit: '200'
+  })
+  const response = await apiRequest(
+    `/v1/bundleIds/${bundleID.id}/bundleIdCapabilities?${query}`
+  )
+  return response.data.map(capability => ({
+    capabilityType: capability.attributes?.capabilityType,
+    settings: capability.attributes?.settings || []
+  }))
+}
+
 const createProfile = async (name, bundleID) => apiRequest('/v1/profiles', {
   method: 'POST',
   body: JSON.stringify({
@@ -130,6 +144,7 @@ const createProfile = async (name, bundleID) => apiRequest('/v1/profiles', {
 
 const prepareProfile = async identifier => {
   const bundleID = await findBundleID(identifier)
+  const capabilities = await readBundleIDCapabilities(bundleID)
   const stableName = `WireRoute GitHub ${identifier} ${certificate.id.slice(0, 8)}`
   const query = new URLSearchParams({
     'filter[name]': stableName,
@@ -163,7 +178,8 @@ const prepareProfile = async identifier => {
     id: profile.id,
     name: profile.attributes.name,
     uuid: profileUUID,
-    path: profilePath
+    path: profilePath,
+    capabilities
   }
 }
 
