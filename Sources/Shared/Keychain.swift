@@ -51,24 +51,61 @@ class Keychain {
     static func makeRecoveryReference(
         containing value: String,
         called name: String,
+        connectionID: UUID,
         peerID: String
     ) -> Data? {
-        guard recoveryConfiguration(for: peerID) == nil else { return nil }
+        let account = recoveryAccount(connectionID: connectionID, peerID: peerID)
+        guard recoveryConfiguration(account: account) == nil else { return nil }
         return makeReference(
             containing: value,
             label: name,
-            account: peerID,
+            account: account,
             serviceSuffix: ".credential-recovery",
             description: "WireRoute pending RouterOS credential replacement"
         )
     }
 
-    static func recoveryConfiguration(for peerID: String) -> KeychainRecoveryConfiguration? {
+    static func recoveryConfiguration(
+        connectionID: UUID,
+        peerID: String
+    ) -> KeychainRecoveryConfiguration? {
+        recoveryConfiguration(account: recoveryAccount(connectionID: connectionID, peerID: peerID))
+    }
+
+    static func legacyRecoveryConfiguration(for peerID: String) -> KeychainRecoveryConfiguration? {
+        recoveryConfiguration(account: peerID)
+    }
+
+    static func migrateLegacyRecoveryConfiguration(
+        _ legacyConfiguration: KeychainRecoveryConfiguration,
+        connectionID: UUID,
+        peerID: String
+    ) -> KeychainRecoveryConfiguration? {
+        if let scopedConfiguration = recoveryConfiguration(connectionID: connectionID, peerID: peerID) {
+            return scopedConfiguration
+        }
+        guard let reference = makeRecoveryReference(
+            containing: legacyConfiguration.configuration,
+            called: legacyConfiguration.name,
+            connectionID: connectionID,
+            peerID: peerID
+        ) else {
+            return nil
+        }
+        deleteReference(called: legacyConfiguration.reference)
+        return KeychainRecoveryConfiguration(
+            reference: reference,
+            name: legacyConfiguration.name,
+            configuration: legacyConfiguration.configuration
+        )
+    }
+
+    private static func recoveryConfiguration(account: String) -> KeychainRecoveryConfiguration? {
         guard let service = serviceIdentifier(suffix: ".credential-recovery") else { return nil }
         let (ret, result) = copyMatching([
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
-            kSecAttrAccount: peerID,
+            kSecAttrAccount: account,
             kSecMatchLimit: kSecMatchLimitOne,
             kSecReturnAttributes: true,
             kSecReturnData: true,
@@ -87,6 +124,10 @@ class Keychain {
             name: name,
             configuration: configuration
         )
+    }
+
+    private static func recoveryAccount(connectionID: UUID, peerID: String) -> String {
+        "v2:\(connectionID.uuidString.lowercased()):\(peerID)"
     }
 
     static func tunnelConfigurations() -> [KeychainTunnelConfiguration] {

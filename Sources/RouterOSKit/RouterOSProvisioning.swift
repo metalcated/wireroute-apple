@@ -92,7 +92,7 @@ public enum RouterOSMissingProfileRecoveryError: Error, Equatable, LocalizedErro
         case .missingClientAddress:
             return "This RouterOS peer does not contain one unambiguous client host address."
         case .clientAddressMismatch:
-            return "The client address must belong to this RouterOS peer's allowed addresses."
+            return "The client address must exactly match an IPv4 /32 or IPv6 /128 host entry on this RouterOS peer."
         }
     }
 }
@@ -129,9 +129,7 @@ public struct RouterOSMissingProfileRecoveryValidator {
             throw RouterOSMissingProfileRecoveryError.missingClientAddress
         }
         let routerAllowedAddresses = peer.allowedAddresses.compactMap { try? RoutePrefix($0) }
-        guard routerAllowedAddresses.contains(where: {
-            RouterOSPeerCreation.overlaps(clientAddress, $0)
-        }) else {
+        guard routerAllowedAddresses.contains(clientAddress) else {
             throw RouterOSMissingProfileRecoveryError.clientAddressMismatch
         }
         return clientAddress

@@ -290,6 +290,58 @@ final class RouterOSProvisioningTests: XCTestCase {
         }
     }
 
+    func testRejectsMissingProfileRecoveryAddressContainedOnlyByBroaderRoute() throws {
+        let peer = try makePeer(
+            interfaceName: "wg-remote",
+            publicKey: clientPublicKey,
+            allowedAddress: "10.255.100.0/24,2001:db8::/64"
+        )
+        let interface = try makeInterface(
+            name: "wg-remote",
+            publicKey: serverPublicKey
+        )
+
+        XCTAssertThrowsError(
+            try RouterOSMissingProfileRecoveryValidator.validate(
+                peer: peer,
+                interface: interface,
+                clientAddress: "10.255.100.10/32"
+            )
+        ) { error in
+            XCTAssertEqual(error as? RouterOSMissingProfileRecoveryError, .clientAddressMismatch)
+        }
+        XCTAssertThrowsError(
+            try RouterOSMissingProfileRecoveryValidator.validate(
+                peer: peer,
+                interface: interface,
+                clientAddress: "2001:db8::10/128"
+            )
+        ) { error in
+            XCTAssertEqual(error as? RouterOSMissingProfileRecoveryError, .clientAddressMismatch)
+        }
+    }
+
+    func testValidatesExactIPv6MissingProfileRecoveryAddress() throws {
+        let peer = try makePeer(
+            interfaceName: "wg-remote",
+            publicKey: clientPublicKey,
+            allowedAddress: "2001:db8::10/128,2001:db8:1::/64"
+        )
+        let interface = try makeInterface(
+            name: "wg-remote",
+            publicKey: serverPublicKey
+        )
+
+        XCTAssertEqual(
+            try RouterOSMissingProfileRecoveryValidator.validate(
+                peer: peer,
+                interface: interface,
+                clientAddress: "2001:0db8:0:0:0:0:0:10/128"
+            ).notation,
+            "2001:db8::10/128"
+        )
+    }
+
     func testSuggestsNextIPv4HostAddressFromSelectedInterface() throws {
         let peers = try [
             makePeer(

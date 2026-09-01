@@ -873,7 +873,7 @@ final class RouterOSManagerViewController: NSViewController {
         contextPeer = peer
         let tunnel = existingTunnel(matching: peer)
         let hasLocalConfiguration = tunnel?.tunnelConfiguration != nil
-        let hasRecovery = Keychain.recoveryConfiguration(for: peer.id) != nil
+        let hasRecovery = pendingRecoveryConfiguration(for: peer) != nil
 
         let menu = NSMenu()
         let openItem = menuItem(
@@ -1032,7 +1032,8 @@ final class RouterOSManagerViewController: NSViewController {
     }
 
     private func beginCredentialReplacement(for peer: RouterOSWireGuardPeer) {
-        if let recovery = Keychain.recoveryConfiguration(for: peer.id) {
+        guard let connectedContext else { return }
+        if let recovery = pendingRecoveryConfiguration(for: peer) {
             resumeCredentialReplacement(for: peer, recovery: recovery)
             return
         }
@@ -1052,6 +1053,7 @@ final class RouterOSManagerViewController: NSViewController {
         guard let recoveryReference = Keychain.makeRecoveryReference(
             containing: replacementConfiguration.asWgQuickConfig(),
             called: tunnel.name,
+            connectionID: connectedContext.connectionID,
             peerID: peer.id
         ) else {
             showError(tr("macRouterOSCredentialRecoveryStoreFailed"))
@@ -1062,6 +1064,41 @@ final class RouterOSManagerViewController: NSViewController {
             tunnel: tunnel,
             replacementConfiguration: replacementConfiguration,
             recoveryReference: recoveryReference
+        )
+    }
+
+    private func pendingRecoveryConfiguration(
+        for peer: RouterOSWireGuardPeer
+    ) -> KeychainRecoveryConfiguration? {
+        guard let connectionID = connectedContext?.connectionID else { return nil }
+        if let scopedConfiguration = Keychain.recoveryConfiguration(
+            connectionID: connectionID,
+            peerID: peer.id
+        ) {
+            return scopedConfiguration
+        }
+
+        guard let legacyConfiguration = Keychain.legacyRecoveryConfiguration(for: peer.id),
+              let replacementConfiguration = try? TunnelConfiguration(
+                  fromWgQuickConfig: legacyConfiguration.configuration,
+                  called: legacyConfiguration.name
+              ),
+              replacementConfiguration.peers.count == 1,
+              let routerInterface = interfaces.first(where: { $0.name == peer.interfaceName }),
+              replacementConfiguration.peers[0].publicKey.base64Key == routerInterface.publicKey,
+              replacementConfiguration.interface.addresses.contains(where: { address in
+                  (try? RouterOSMissingProfileRecoveryValidator.validate(
+                      peer: peer,
+                      interface: routerInterface,
+                      clientAddress: address.stringRepresentation
+                  )) != nil
+              }) else {
+            return nil
+        }
+        return Keychain.migrateLegacyRecoveryConfiguration(
+            legacyConfiguration,
+            connectionID: connectionID,
+            peerID: peer.id
         )
     }
 
@@ -1101,6 +1138,7 @@ final class RouterOSManagerViewController: NSViewController {
     private func recoverMissingProfile(
         _ proposal: RouterOSPeerSetupViewController.RecoveryProposal
     ) {
+        guard let connectedContext else { return }
         let tunnelConfiguration: TunnelConfiguration
         do {
             tunnelConfiguration = try TunnelConfiguration(
@@ -1125,6 +1163,7 @@ final class RouterOSManagerViewController: NSViewController {
         guard let recoveryReference = Keychain.makeRecoveryReference(
             containing: tunnelConfiguration.asWgQuickConfig(),
             called: proposal.clientConfiguration.name,
+            connectionID: connectedContext.connectionID,
             peerID: proposal.peer.id
         ) else {
             showError(tr("macRouterOSCredentialRecoveryStoreFailed"))
