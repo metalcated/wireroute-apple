@@ -384,6 +384,17 @@ jobs:
             exit 1
           fi
 
+          system_extension_identifier="$(
+            /usr/libexec/PlistBuddy \
+              -c 'Print :CFBundleIdentifier' \
+              "${system_extension_path}/Contents/Info.plist"
+          )"
+          expected_system_extension_name="${system_extension_identifier}.systemextension"
+          if [[ "$(basename "${system_extension_path}")" != "${expected_system_extension_name}" ]]; then
+            echo "The archived system extension must be named ${expected_system_extension_name}; found $(basename "${system_extension_path}")."
+            exit 1
+          fi
+
           app_entitlements="${RUNNER_TEMP}/developer-id-app.entitlements"
           extension_entitlements="${RUNNER_TEMP}/developer-id-extension.entitlements"
           helper_entitlements="${RUNNER_TEMP}/developer-id-helper.entitlements"

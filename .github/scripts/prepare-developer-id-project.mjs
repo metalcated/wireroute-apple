@@ -85,6 +85,13 @@ project = replaceExactly(
 
 project = replaceExactly(
   project,
+  `\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "$(APP_ID_MACOS).network-extension";\n\t\t\t\tPRODUCT_NAME = WireRouteNetworkExtension;`,
+  `\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "$(APP_ID_MACOS).network-extension";\n\t\t\t\tPRODUCT_NAME = "$(PRODUCT_BUNDLE_IDENTIFIER)";`,
+  2
+)
+
+project = replaceExactly(
+  project,
   '/* Begin PBXBuildFile section */',
   '/* Begin PBXBuildFile section */\n\t\tC0DE30000000000000000001 /* DeveloperIDSystemExtensionMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000002 /* DeveloperIDSystemExtensionMain.swift */; };'
 )
