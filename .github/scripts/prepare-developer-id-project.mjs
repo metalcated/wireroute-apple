@@ -3,10 +3,20 @@ import { readFile, writeFile } from 'node:fs/promises'
 const projectPath = process.argv[2]
 const infoPlistPath = process.argv[3]
 const entryPointPath = process.argv[4]
+const appDelegatePath = process.argv[5]
+const loginItemHelperPath = process.argv[6]
+const loginItemHelperEntitlementsPath = process.argv[7]
 
-if (!projectPath || !infoPlistPath || !entryPointPath) {
+if (
+  !projectPath ||
+  !infoPlistPath ||
+  !entryPointPath ||
+  !appDelegatePath ||
+  !loginItemHelperPath ||
+  !loginItemHelperEntitlementsPath
+) {
   throw new Error(
-    'Usage: prepare-developer-id-project.mjs <project.pbxproj> <Info.plist> <main.swift>'
+    'Usage: prepare-developer-id-project.mjs <project.pbxproj> <Info.plist> <main.swift> <AppDelegate.swift> <LoginItemHelper/main.m> <LoginItemHelper.entitlements>'
   )
 }
 
@@ -134,3 +144,60 @@ await writeFile(
   entryPointPath,
   `import Dispatch\nimport NetworkExtension\n\n@main\nprivate enum DeveloperIDSystemExtensionMain {\n    static func main() {\n        NEProvider.startSystemExtensionMode()\n        dispatchMain()\n    }\n}\n`
 )
+
+let appDelegate = await readFile(appDelegatePath, 'utf8')
+appDelegate = replaceExactly(
+  appDelegate,
+  `        var isLaunchedAtLogin = false
+        if let appleEvent = NSAppleEventManager.shared().currentAppleEvent {
+            isLaunchedAtLogin = LaunchedAtLoginDetector.isLaunchedAtLogin(openAppleEvent: appleEvent)
+        }`,
+  `        var isLaunchedAtLogin = ProcessInfo.processInfo.arguments.contains("--wireroute-launched-at-login")
+        if !isLaunchedAtLogin, let appleEvent = NSAppleEventManager.shared().currentAppleEvent {
+            isLaunchedAtLogin = LaunchedAtLoginDetector.isLaunchedAtLogin(openAppleEvent: appleEvent)
+        }`
+)
+await writeFile(appDelegatePath, appDelegate)
+
+await writeFile(
+  loginItemHelperPath,
+  `// SPDX-License-Identifier: MIT
+// Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
+
+#import <Cocoa/Cocoa.h>
+
+int main(int argc, char *argv[])
+{
+    NSString *appId = [NSBundle.mainBundle objectForInfoDictionaryKey:@"com.wireguard.macos.app_id"];
+    if (!appId)
+        return 1;
+
+    NSCondition *condition = [[NSCondition alloc] init];
+    NSURL *appURL = [NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:appId];
+    if (!appURL)
+        return 2;
+    NSWorkspaceOpenConfiguration *openConfiguration = [NSWorkspaceOpenConfiguration configuration];
+    openConfiguration.activates = NO;
+    openConfiguration.addsToRecentItems = NO;
+    openConfiguration.hides = YES;
+    openConfiguration.arguments = @[@"--wireroute-launched-at-login"];
+    [NSWorkspace.sharedWorkspace openApplicationAtURL:appURL configuration:openConfiguration completionHandler:^(NSRunningApplication * _Nullable app, NSError * _Nullable error) {
+        [condition signal];
+    }];
+    [condition wait];
+    return 0;
+}
+`
+)
+
+let loginItemHelperEntitlements = await readFile(loginItemHelperEntitlementsPath, 'utf8')
+loginItemHelperEntitlements = replaceExactly(
+  loginItemHelperEntitlements,
+  `\t<key>com.apple.security.application-groups</key>
+\t<array>
+\t\t<string>$(DEVELOPMENT_TEAM).group.$(APP_ID_MACOS)</string>
+\t</array>
+`,
+  ''
+)
+await writeFile(loginItemHelperEntitlementsPath, loginItemHelperEntitlements)

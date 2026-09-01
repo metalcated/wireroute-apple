@@ -198,8 +198,6 @@ const prepareProfile = async identifier => {
   let capabilities
   if (identifier === 'com.gnet.wireroute') {
     capabilities = await ensureCapability(bundleID, 'SYSTEM_EXTENSION_INSTALL')
-  } else if (isLoginItemHelper) {
-    capabilities = await ensureCapability(bundleID, 'APP_GROUPS')
   } else {
     capabilities = await readBundleIDCapabilities(bundleID)
   }
