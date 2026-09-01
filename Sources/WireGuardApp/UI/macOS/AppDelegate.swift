@@ -3,6 +3,7 @@
 
 import Cocoa
 import ServiceManagement
+@preconcurrency import SystemExtensions
 
 @main
 @MainActor
@@ -16,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var manageTunnelsWindowObject: NSWindow?
     var onAppDeactivation: (() -> Void)?
     private var aboutWindowController: NSWindowController?
+    private var systemExtensionActivationCoordinator: SystemExtensionActivationCoordinator?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         WireRouteTheme.applyStoredPreference()
@@ -52,6 +54,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = MainMenu(application: NSApp, applicationDelegate: NSApp.delegate)
         setDockIconAndMainMenuVisibility(isVisible: !isLaunchedAtLogin)
 
+        activateSystemExtensionIfPresent { [weak self] in
+            self?.finishApplicationLaunch(isLaunchedAtLogin: isLaunchedAtLogin)
+        }
+    }
+
+    private func finishApplicationLaunch(isLaunchedAtLogin: Bool) {
         TunnelsManager.create { [weak self] result in
             guard let self = self else { return }
 
@@ -83,6 +91,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 #endif
                 }
             }
+        }
+    }
+
+    private func activateSystemExtensionIfPresent(completion: @escaping @MainActor () -> Void) {
+        guard let extensionIdentifier = SystemExtensionActivationCoordinator.embeddedSystemExtensionIdentifier else {
+            completion()
+            return
+        }
+
+        let coordinator = SystemExtensionActivationCoordinator(extensionIdentifier: extensionIdentifier)
+        systemExtensionActivationCoordinator = coordinator
+        coordinator.activate { [weak self] result in
+            self?.systemExtensionActivationCoordinator = nil
+            if case .failure(let error) = result {
+                let alert = NSAlert()
+                alert.alertStyle = .critical
+                alert.messageText = "WireRoute system extension could not be activated"
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: tr("actionOK"))
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+            completion()
         }
     }
 
@@ -240,6 +271,90 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidResignActive(_ notification: Notification) {
         onAppDeactivation?()
         onAppDeactivation = nil
+    }
+}
+
+@MainActor
+private final class SystemExtensionActivationCoordinator: NSObject, @preconcurrency OSSystemExtensionRequestDelegate {
+
+    private enum ActivationError: LocalizedError {
+        case restartRequired
+
+        var errorDescription: String? {
+            switch self {
+            case .restartRequired:
+                return "macOS must be restarted before WireRoute can use its VPN system extension."
+            }
+        }
+    }
+
+    static var embeddedSystemExtensionIdentifier: String? {
+        guard let appIdentifier = Bundle.main.bundleIdentifier else { return nil }
+        let identifier = "\(appIdentifier).network-extension"
+        let systemExtensionsURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Library/SystemExtensions", isDirectory: true)
+        let embeddedExtensions = try? FileManager.default.contentsOfDirectory(
+            at: systemExtensionsURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        let containsMatchingExtension = embeddedExtensions?.contains { url in
+            url.pathExtension == "systemextension" && Bundle(url: url)?.bundleIdentifier == identifier
+        } ?? false
+        return containsMatchingExtension ? identifier : nil
+    }
+
+    private let extensionIdentifier: String
+    private var completion: ((Result<Void, Error>) -> Void)?
+
+    init(extensionIdentifier: String) {
+        self.extensionIdentifier = extensionIdentifier
+    }
+
+    func activate(completion: @escaping (Result<Void, Error>) -> Void) {
+        self.completion = completion
+        let request = OSSystemExtensionRequest.activationRequest(
+            forExtensionWithIdentifier: extensionIdentifier,
+            queue: .main
+        )
+        request.delegate = self
+        OSSystemExtensionManager.shared.submitRequest(request)
+    }
+
+    func request(
+        _ request: OSSystemExtensionRequest,
+        actionForReplacingExtension existing: OSSystemExtensionProperties,
+        withExtension ext: OSSystemExtensionProperties
+    ) -> OSSystemExtensionRequest.ReplacementAction {
+        .replace
+    }
+
+    func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {
+        wg_log(.info, message: "WireRoute's VPN system extension is waiting for user approval")
+    }
+
+    func request(
+        _ request: OSSystemExtensionRequest,
+        didFinishWithResult result: OSSystemExtensionRequest.Result
+    ) {
+        switch result {
+        case .completed:
+            finish(with: .success(()))
+        case .willCompleteAfterReboot:
+            finish(with: .failure(ActivationError.restartRequired))
+        @unknown default:
+            finish(with: .failure(ActivationError.restartRequired))
+        }
+    }
+
+    func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
+        finish(with: .failure(error))
+    }
+
+    private func finish(with result: Result<Void, Error>) {
+        let completion = completion
+        self.completion = nil
+        completion?(result)
     }
 }
 

@@ -19,7 +19,8 @@ for (const name of requiredEnvironment) {
 
 const bundleIdentifiers = [
   'com.gnet.wireroute',
-  'com.gnet.wireroute.network-extension'
+  'com.gnet.wireroute.network-extension',
+  'com.gnet.wireroute.login-item-helper'
 ]
 
 const base64URL = value => Buffer.from(value)
@@ -120,6 +121,34 @@ const readBundleIDCapabilities = async bundleID => {
   }))
 }
 
+const ensureCapability = async (bundleID, capabilityType) => {
+  let capabilities = await readBundleIDCapabilities(bundleID)
+  if (capabilities.some(capability => capability.capabilityType === capabilityType)) {
+    return capabilities
+  }
+
+  await apiRequest('/v1/bundleIdCapabilities', {
+    method: 'POST',
+    body: JSON.stringify({
+      data: {
+        type: 'bundleIdCapabilities',
+        attributes: { capabilityType },
+        relationships: {
+          bundleId: {
+            data: { type: 'bundleIds', id: bundleID.id }
+          }
+        }
+      }
+    })
+  })
+  console.log(`Enabled ${capabilityType} for ${bundleID.attributes.identifier}.`)
+  capabilities = await readBundleIDCapabilities(bundleID)
+  if (!capabilities.some(capability => capability.capabilityType === capabilityType)) {
+    throw new Error(`Capability ${capabilityType} was not enabled for ${bundleID.attributes.identifier}.`)
+  }
+  return capabilities
+}
+
 const createProfile = async (name, bundleID) => apiRequest('/v1/profiles', {
   method: 'POST',
   body: JSON.stringify({
@@ -143,8 +172,10 @@ const createProfile = async (name, bundleID) => apiRequest('/v1/profiles', {
 
 const prepareProfile = async identifier => {
   const bundleID = await findBundleID(identifier)
-  const capabilities = await readBundleIDCapabilities(bundleID)
-  const stableName = `WireRoute GitHub ${identifier} ${certificate.id.slice(0, 8)}`
+  const capabilities = identifier === 'com.gnet.wireroute'
+    ? await ensureCapability(bundleID, 'SYSTEM_EXTENSION_INSTALL')
+    : await readBundleIDCapabilities(bundleID)
+  const stableName = `WireRoute GitHub system extension ${identifier} ${certificate.id.slice(0, 8)}`
   const query = new URLSearchParams({
     'filter[name]': stableName,
     'filter[profileType]': 'MAC_APP_DIRECT',
