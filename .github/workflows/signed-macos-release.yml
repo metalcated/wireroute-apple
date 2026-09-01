@@ -213,6 +213,7 @@ jobs:
             node "${profile_script_path}"
 
           profile_validation_failed=false
+          direct_app_group_id=""
           while IFS=$'\t' read -r bundle_identifier profile_path
           do
             decoded_profile_path="${profile_path}.plist"
@@ -228,10 +229,19 @@ jobs:
               profile_network_extension_values+=("${profile_network_extension_value}")
               profile_network_extension_index=$((profile_network_extension_index + 1))
             done
-            profile_network_extensions="$(
-              IFS=,
-              echo "${profile_network_extension_values[*]}"
-            )"
+            profile_network_extensions=""
+            profile_has_system_extension=false
+            for ((index = 0; index < ${#profile_network_extension_values[@]}; index++))
+            do
+              profile_network_extension_value="${profile_network_extension_values[index]}"
+              if [[ -n "${profile_network_extensions}" ]]; then
+                profile_network_extensions+=","
+              fi
+              profile_network_extensions+="${profile_network_extension_value}"
+              if [[ "${profile_network_extension_value}" == "packet-tunnel-provider-systemextension" ]]; then
+                profile_has_system_extension=true
+              fi
+            done
             profile_app_group_values=()
             profile_app_group_index=0
             while profile_app_group_value="$(
@@ -243,21 +253,39 @@ jobs:
               profile_app_group_values+=("${profile_app_group_value}")
               profile_app_group_index=$((profile_app_group_index + 1))
             done
+            profile_app_groups=""
+            profile_wire_route_app_group=""
+            for ((index = 0; index < ${#profile_app_group_values[@]}; index++))
+            do
+              profile_app_group_value="${profile_app_group_values[index]}"
+              if [[ -n "${profile_app_groups}" ]]; then
+                profile_app_groups+=","
+              fi
+              profile_app_groups+="${profile_app_group_value}"
+              if [[ "${profile_app_group_value}" == *"group.com.gnet.wireroute" ]]; then
+                profile_wire_route_app_group="${profile_app_group_value}"
+              fi
+            done
             capability_summary="$(
               jq -c --arg identifier "${bundle_identifier}" \
                 '.profiles[$identifier].capabilities' \
                 "${profile_result_path}"
             )"
 
-            echo "::notice title=Developer ID profile ${bundle_identifier}::networkextension=${profile_network_extensions:-missing}; capabilities=${capability_summary}"
+            echo "::notice title=Developer ID profile ${bundle_identifier}::appgroups=${profile_app_groups:-missing}; networkextension=${profile_network_extensions:-missing}; capabilities=${capability_summary}"
 
-            if [[ " ${profile_app_group_values[*]} " != *" ${APPLE_TEAM_ID}.group.com.gnet.wireroute "* ]]; then
+            if [[ -z "${profile_wire_route_app_group}" ]]; then
               echo "::error title=Developer ID entitlement mismatch::${bundle_identifier} is missing the WireRoute App Group."
+              profile_validation_failed=true
+            elif [[ -z "${direct_app_group_id}" ]]; then
+              direct_app_group_id="${profile_wire_route_app_group}"
+            elif [[ "${profile_wire_route_app_group}" != "${direct_app_group_id}" ]]; then
+              echo "::error title=Developer ID entitlement mismatch::${bundle_identifier} authorizes ${profile_wire_route_app_group}, but the other WireRoute components authorize ${direct_app_group_id}."
               profile_validation_failed=true
             fi
 
             if [[ "${bundle_identifier}" != "com.gnet.wireroute.login-item-helper" ]] && \
-              [[ " ${profile_network_extension_values[*]} " != *" packet-tunnel-provider-systemextension "* ]]
+              [[ "${profile_has_system_extension}" != true ]]
             then
               echo "::error title=Developer ID entitlement mismatch::${bundle_identifier} requires packet-tunnel-provider-systemextension, but Apple issued ${profile_network_extensions:-no network extension entitlement}."
               profile_validation_failed=true
@@ -288,6 +316,7 @@ jobs:
             echo "MAIN_PROFILE_PATH=$(jq -r '.profiles[\"com.gnet.wireroute\"].path' "${profile_result_path}")"
             echo "EXTENSION_PROFILE_PATH=$(jq -r '.profiles[\"com.gnet.wireroute.network-extension\"].path' "${profile_result_path}")"
             echo "HELPER_PROFILE_PATH=$(jq -r '.profiles[\"com.gnet.wireroute.login-item-helper\"].path' "${profile_result_path}")"
+            echo "DIRECT_APP_GROUP_ID=${direct_app_group_id}"
           } >> "${GITHUB_ENV}"
 
       - name: Archive signed universal app
@@ -342,15 +371,25 @@ jobs:
 
           /usr/libexec/PlistBuddy \
             -c 'Set :com.apple.developer.networking.networkextension:0 packet-tunnel-provider-systemextension' \
-            -c "Set :com.apple.security.application-groups:0 ${APPLE_TEAM_ID}.group.com.gnet.wireroute" \
+            -c "Set :com.apple.security.application-groups:0 ${DIRECT_APP_GROUP_ID}" \
             "${app_entitlements}"
           /usr/libexec/PlistBuddy \
             -c 'Set :com.apple.developer.networking.networkextension:0 packet-tunnel-provider-systemextension' \
-            -c "Set :com.apple.security.application-groups:0 ${APPLE_TEAM_ID}.group.com.gnet.wireroute" \
+            -c "Set :com.apple.security.application-groups:0 ${DIRECT_APP_GROUP_ID}" \
             "${extension_entitlements}"
           /usr/libexec/PlistBuddy \
-            -c "Set :com.apple.security.application-groups:0 ${APPLE_TEAM_ID}.group.com.gnet.wireroute" \
+            -c "Set :com.apple.security.application-groups:0 ${DIRECT_APP_GROUP_ID}" \
             "${helper_entitlements}"
+
+          /usr/libexec/PlistBuddy \
+            -c "Set :com.wireguard.macos.app_group_id ${DIRECT_APP_GROUP_ID}" \
+            "${app_path}/Contents/Info.plist"
+          /usr/libexec/PlistBuddy \
+            -c "Set :com.wireguard.macos.app_group_id ${DIRECT_APP_GROUP_ID}" \
+            "${system_extension_path}/Contents/Info.plist"
+          /usr/libexec/PlistBuddy \
+            -c "Set :com.wireguard.macos.app_group_id ${DIRECT_APP_GROUP_ID}" \
+            "${helper_path}/Contents/Info.plist"
 
           /usr/libexec/PlistBuddy \
             -c "Add :com.apple.application-identifier string ${APPLE_TEAM_ID}.com.gnet.wireroute" \
