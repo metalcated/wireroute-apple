@@ -565,7 +565,10 @@ jobs:
         run: |
           set -euo pipefail
           checksum_path="${DMG_PATH}.sha256"
-          shasum -a 256 "${DMG_PATH}" > "${checksum_path}"
+          (
+            cd "$(dirname "${DMG_PATH}")"
+            shasum -a 256 "$(basename "${DMG_PATH}")" > "${checksum_path}"
+          )
           echo "CHECKSUM_PATH=${checksum_path}" >> "${GITHUB_ENV}"
 
       - name: Attach installer to GitHub release
