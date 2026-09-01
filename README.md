@@ -78,7 +78,7 @@ swift test
 
 GitHub Actions builds unsigned Release configurations for both iOS and macOS on every change to `main` and on pull requests targeting `main`. A tag in exact `MAJOR.MINOR.PATCH` form must match `MARKETING_VERSION` in `Sources/WireGuardApp/Config/Version.xcconfig`.
 
-After both platform builds pass for a version tag, GitHub publishes a release with generated notes and the standard source archives. Signed App Store builds remain part of Apple distribution and are not produced by this public workflow.
+After both platform builds pass for a version tag, GitHub publishes a release with generated notes and the standard source archives. A separate protected `release` environment signs, notarizes, verifies, and attaches a universal macOS disk image. iOS binaries remain part of Apple distribution.
 
 ## WireGuardKit integration
 
