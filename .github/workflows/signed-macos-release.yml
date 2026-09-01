@@ -329,10 +329,17 @@ jobs:
             exit 1
           fi
 
+          main_profile_path="$(jq -er '.profiles["com.gnet.wireroute"].path' "${profile_result_path}")"
+          extension_profile_path="$(jq -er '.profiles["com.gnet.wireroute.network-extension"].path' "${profile_result_path}")"
+          helper_profile_path="$(jq -er '.profiles["com.gnet.wireroute.login-item-helper"].path' "${profile_result_path}")"
+          test -f "${main_profile_path}"
+          test -f "${extension_profile_path}"
+          test -f "${helper_profile_path}"
+
           {
-            echo "MAIN_PROFILE_PATH=$(jq -r '.profiles[\"com.gnet.wireroute\"].path' "${profile_result_path}")"
-            echo "EXTENSION_PROFILE_PATH=$(jq -r '.profiles[\"com.gnet.wireroute.network-extension\"].path' "${profile_result_path}")"
-            echo "HELPER_PROFILE_PATH=$(jq -r '.profiles[\"com.gnet.wireroute.login-item-helper\"].path' "${profile_result_path}")"
+            echo "MAIN_PROFILE_PATH=${main_profile_path}"
+            echo "EXTENSION_PROFILE_PATH=${extension_profile_path}"
+            echo "HELPER_PROFILE_PATH=${helper_profile_path}"
             echo "DIRECT_APP_GROUP_ID=${direct_app_group_id}"
           } >> "${GITHUB_ENV}"
 
@@ -394,10 +401,6 @@ jobs:
             -c 'Set :com.apple.developer.networking.networkextension:0 packet-tunnel-provider-systemextension' \
             -c "Set :com.apple.security.application-groups:0 ${DIRECT_APP_GROUP_ID}" \
             "${extension_entitlements}"
-          /usr/libexec/PlistBuddy \
-            -c 'Delete :com.apple.security.application-groups' \
-            "${helper_entitlements}"
-
           /usr/libexec/PlistBuddy \
             -c "Set :com.wireguard.macos.app_group_id ${DIRECT_APP_GROUP_ID}" \
             "${app_path}/Contents/Info.plist"
