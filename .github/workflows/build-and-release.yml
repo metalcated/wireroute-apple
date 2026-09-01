@@ -40,6 +40,12 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v5
 
+      - name: Prepare unsigned build settings
+        run: |
+          cp Sources/WireGuardApp/Config/Developer.xcconfig.template \
+            Sources/WireGuardApp/Config/Developer.xcconfig
+          sed -i '' 's/<team_id>//' Sources/WireGuardApp/Config/Developer.xcconfig
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
