@@ -82,6 +82,7 @@ class TunnelEditViewController: NSViewController {
 
     let tunnelsManager: TunnelsManager
     let tunnel: TunnelContainer?
+    let originalTunnelConfiguration: TunnelConfiguration?
     var onDemandViewModel: ActivateOnDemandViewModel
 
     weak var delegate: TunnelEditViewControllerDelegate?
@@ -92,10 +93,20 @@ class TunnelEditViewController: NSViewController {
 
     var dnsServersAddedToAllowedIPs: String?
 
-    init(tunnelsManager: TunnelsManager, tunnel: TunnelContainer?) {
+    init(tunnelsManager: TunnelsManager) {
+        self.tunnelsManager = tunnelsManager
+        tunnel = nil
+        originalTunnelConfiguration = nil
+        onDemandViewModel = ActivateOnDemandViewModel()
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    init?(tunnelsManager: TunnelsManager, tunnel: TunnelContainer) {
+        guard let tunnelConfiguration = tunnel.tunnelConfiguration else { return nil }
         self.tunnelsManager = tunnelsManager
         self.tunnel = tunnel
-        self.onDemandViewModel = tunnel != nil ? ActivateOnDemandViewModel(tunnel: tunnel!) : ActivateOnDemandViewModel()
+        originalTunnelConfiguration = tunnelConfiguration
+        onDemandViewModel = ActivateOnDemandViewModel(tunnel: tunnel)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -106,7 +117,10 @@ class TunnelEditViewController: NSViewController {
     func populateFields() {
         if let tunnel = tunnel {
             // Editing an existing tunnel
-            let tunnelConfiguration = tunnel.tunnelConfiguration!
+            guard let tunnelConfiguration = originalTunnelConfiguration else {
+                assertionFailure("Existing tunnel editor requires an available configuration")
+                return
+            }
             nameRow.value = tunnel.name
             textView.string = tunnelConfiguration.asWgQuickConfig()
             publicKeyRow.value = tunnelConfiguration.interface.privateKey.publicKey.base64Key

@@ -943,7 +943,16 @@ extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegat
 
     private func configureOnDemandForRelevantTunnel() {
         guard let tunnel = relevantTunnelForOnDemand() else { return }
-        let tunnelEditVC = TunnelEditViewController(tunnelsManager: tunnelsManager, tunnel: tunnel)
+        guard let tunnelEditVC = TunnelEditViewController(
+            tunnelsManager: tunnelsManager,
+            tunnel: tunnel
+        ) else {
+            ErrorPresenter.showErrorAlert(
+                error: TunnelsManagerError.tunnelConfigurationUnavailable,
+                from: self
+            )
+            return
+        }
         tunnelEditVC.delegate = tunnelsListVC
         presentAsSheet(tunnelEditVC)
     }

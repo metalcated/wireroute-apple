@@ -1237,9 +1237,25 @@ class TunnelDetailTableViewController: NSViewController {
     }
 
     @objc func handleEditTunnelAction() {
+        guard tunnel.tunnelConfiguration != nil else {
+            ErrorPresenter.showErrorAlert(
+                error: TunnelsManagerError.tunnelConfigurationUnavailable,
+                from: self
+            )
+            return
+        }
         PrivateDataConfirmation.confirmAccess(to: tr("macViewPrivateData")) { [weak self] in
             guard let self = self else { return }
-            let tunnelEditVC = TunnelEditViewController(tunnelsManager: self.tunnelsManager, tunnel: self.tunnel)
+            guard let tunnelEditVC = TunnelEditViewController(
+                tunnelsManager: self.tunnelsManager,
+                tunnel: self.tunnel
+            ) else {
+                ErrorPresenter.showErrorAlert(
+                    error: TunnelsManagerError.tunnelConfigurationUnavailable,
+                    from: self
+                )
+                return
+            }
             tunnelEditVC.delegate = self
             self.presentAsSheet(tunnelEditVC)
             self.tunnelEditVC = tunnelEditVC

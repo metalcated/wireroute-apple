@@ -265,7 +265,8 @@
 
 "alertTunnelActivationFailureTitle" = "Activation failure";
 "alertTunnelActivationFailureMessage" = "The tunnel could not be activated. Please ensure that you are connected to the Internet.";
-"alertTunnelActivationConfigurationUnavailableMessage" = "WireRoute cannot read this profile's private configuration from Keychain. Import the saved configuration again. On macOS, a RouterOS-managed profile can instead be restored with RouterOS Peers > Recover Missing Profile.";
+"alertTunnelConfigurationUnavailableTitle" = "Profile Configuration Unavailable";
+"alertTunnelConfigurationUnavailableMessage" = "WireRoute cannot read this profile's private configuration from Keychain. Import the saved configuration again. On macOS, a RouterOS-managed profile can instead be restored with RouterOS Peers > Recover Missing Profile.";
 "alertTunnelActivationSavedConfigFailureMessage" = "Unable to retrieve tunnel information from the saved configuration.";
 "alertTunnelActivationBackendFailureMessage" = "Unable to turn on Go backend library.";
 "alertTunnelActivationFileDescriptorFailureMessage" = "Unable to determine TUN device file descriptor.";

@@ -512,7 +512,7 @@ class TunnelsListTableViewController: NSViewController {
     }
 
     @objc func handleAddEmptyTunnelAction() {
-        let tunnelEditVC = TunnelEditViewController(tunnelsManager: tunnelsManager, tunnel: nil)
+        let tunnelEditVC = TunnelEditViewController(tunnelsManager: tunnelsManager)
         tunnelEditVC.delegate = self
         presentAsSheet(tunnelEditVC)
     }
