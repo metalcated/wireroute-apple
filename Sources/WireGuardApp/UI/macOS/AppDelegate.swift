@@ -46,11 +46,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 #if DEBUG
         let isAppStoreScreenshotMode = ProcessInfo.processInfo.arguments.contains("--app-store-screenshots")
 #else
-        let isAppStoreScreenshotMode = false
+        registerLoginItem(shouldLaunchAtLogin: true)
 #endif
-        if !isAppStoreScreenshotMode {
-            registerLoginItem(shouldLaunchAtLogin: true)
-        }
 
         var isLaunchedAtLogin = false
         if let appleEvent = NSAppleEventManager.shared().currentAppleEvent {

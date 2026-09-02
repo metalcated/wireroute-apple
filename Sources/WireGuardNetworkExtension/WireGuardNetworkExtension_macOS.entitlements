@@ -15,5 +15,9 @@
 	</array>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(DEVELOPMENT_TEAM).group.$(APP_ID_MACOS)</string>
+	</array>
 </dict>
 </plist>

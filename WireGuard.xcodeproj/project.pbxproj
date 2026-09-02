@@ -1736,6 +1736,7 @@
 		6F70E23422106A31008BDFB4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_ID_MACOS = com.gnet.wireroute.dev;
 				CODE_SIGN_ENTITLEMENTS = Sources/WireGuardApp/UI/macOS/LoginItemHelper/LoginItemHelper.entitlements;
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				DEAD_CODE_STRIPPING = YES;
@@ -1768,6 +1769,7 @@
 		6FB1BD6821D2607E00A991BF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_ID_MACOS = com.gnet.wireroute.dev;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Sources/WireGuardApp/UI/macOS/WireGuard.entitlements;
 				CODE_SIGN_IDENTITY = "Mac Developer";
@@ -1776,7 +1778,7 @@
 				DEVELOPMENT_TEAM = 77Y6MT9465;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Sources/WireGuardApp/UI/macOS/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = WireRoute;
+				INFOPLIST_KEY_CFBundleDisplayName = "WireRoute Dev";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1784,7 +1786,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_ID_MACOS)";
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.gnet.wireroute;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.gnet.wireroute.dev;
 				PRODUCT_NAME = WireRoute;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
@@ -1820,6 +1822,7 @@
 		6FB1BD9A21D4BFE700A991BF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_ID_MACOS = com.gnet.wireroute.dev;
 				CODE_SIGN_ENTITLEMENTS = Sources/WireGuardNetworkExtension/WireGuardNetworkExtension_macOS.entitlements;
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				DEAD_CODE_STRIPPING = YES;
