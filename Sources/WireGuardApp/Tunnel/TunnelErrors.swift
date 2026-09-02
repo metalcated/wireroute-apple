@@ -62,6 +62,7 @@ enum TunnelsManagerActivationAttemptError: WireGuardAppError {
 enum TunnelsManagerActivationError: WireGuardAppError {
     case activationFailed(wasOnDemandEnabled: Bool)
     case activationFailedWithExtensionError(title: String, message: String, wasOnDemandEnabled: Bool)
+    case activationFailedWithSystemError(systemError: Error, wasOnDemandEnabled: Bool)
 
     var alertText: AlertText {
         switch self {
@@ -69,6 +70,11 @@ enum TunnelsManagerActivationError: WireGuardAppError {
             return (tr("alertTunnelActivationFailureTitle"), tr("alertTunnelActivationFailureMessage"))
         case .activationFailedWithExtensionError(let title, let message, _):
             return (title, message)
+        case .activationFailedWithSystemError(let systemError, _):
+            return (
+                tr("alertTunnelActivationSystemErrorTitle"),
+                tr(format: "alertTunnelActivationSystemErrorMessage (%@)", systemError.localizedUIString)
+            )
         }
     }
 }
@@ -162,6 +168,7 @@ extension PacketTunnelProviderError: WireGuardAppError {
 
 extension Error {
     var localizedUIString: String {
+        let bridgedError = self as NSError
         if let systemError = self as? NEVPNError {
             switch systemError {
             case NEVPNError.configurationInvalid:
@@ -179,6 +186,14 @@ extension Error {
             default:
                 return ""
             }
+        } else if #available(macOS 13.0, iOS 16.0, *),
+                  bridgedError.domain == NEVPNConnectionErrorDomain,
+                  bridgedError.code == NEVPNConnectionError.pluginDisabled.rawValue {
+#if DEBUG && os(macOS)
+            return tr("alertSystemErrorMessageVPNPluginDisabledDevelopment")
+#else
+            return tr("alertSystemErrorMessageVPNPluginDisabled")
+#endif
         } else {
             return localizedDescription
         }

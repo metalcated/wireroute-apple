@@ -232,7 +232,8 @@ jobs:
             node "${profile_script_path}"
 
           profile_validation_failed=false
-          direct_app_group_id=""
+          direct_app_group_id="${APPLE_TEAM_ID}.group.com.gnet.wireroute"
+          legacy_direct_app_group_id="group.com.gnet.wireroute"
           while IFS=$'\t' read -r bundle_identifier profile_path
           do
             decoded_profile_path="${profile_path}.plist"
@@ -273,7 +274,8 @@ jobs:
               profile_app_group_index=$((profile_app_group_index + 1))
             done
             profile_app_groups=""
-            profile_wire_route_app_group=""
+            profile_authorizes_direct_app_group=false
+            profile_authorizes_legacy_app_group=false
             for ((index = 0; index < ${#profile_app_group_values[@]}; index++))
             do
               profile_app_group_value="${profile_app_group_values[index]}"
@@ -281,8 +283,13 @@ jobs:
                 profile_app_groups+=","
               fi
               profile_app_groups+="${profile_app_group_value}"
-              if [[ "${profile_app_group_value}" == *"group.com.gnet.wireroute" ]]; then
-                profile_wire_route_app_group="${profile_app_group_value}"
+              if [[ "${profile_app_group_value}" == "${direct_app_group_id}" ]] || \
+                [[ "${profile_app_group_value}" == "${APPLE_TEAM_ID}.*" ]]
+              then
+                profile_authorizes_direct_app_group=true
+              fi
+              if [[ "${profile_app_group_value}" == "${legacy_direct_app_group_id}" ]]; then
+                profile_authorizes_legacy_app_group=true
               fi
             done
             capability_summary="$(
@@ -295,13 +302,11 @@ jobs:
 
             if [[ "${bundle_identifier}" == "com.gnet.wireroute.login-item-helper" ]]; then
               :
-            elif [[ -z "${profile_wire_route_app_group}" ]]; then
-              echo "::error title=Developer ID entitlement mismatch::${bundle_identifier} is missing the WireRoute App Group."
+            elif [[ "${profile_authorizes_direct_app_group}" != true ]]; then
+              echo "::error title=Developer ID entitlement mismatch::${bundle_identifier} does not authorize ${direct_app_group_id}."
               profile_validation_failed=true
-            elif [[ -z "${direct_app_group_id}" ]]; then
-              direct_app_group_id="${profile_wire_route_app_group}"
-            elif [[ "${profile_wire_route_app_group}" != "${direct_app_group_id}" ]]; then
-              echo "::error title=Developer ID entitlement mismatch::${bundle_identifier} authorizes ${profile_wire_route_app_group}, but the other WireRoute components authorize ${direct_app_group_id}."
+            elif [[ "${profile_authorizes_legacy_app_group}" != true ]]; then
+              echo "::error title=Developer ID entitlement mismatch::${bundle_identifier} does not authorize legacy migration group ${legacy_direct_app_group_id}."
               profile_validation_failed=true
             fi
 
@@ -498,9 +503,16 @@ jobs:
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${app_path}/Contents/Info.plist")" == 'com.gnet.wireroute' ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${system_extension_path}/Contents/Info.plist")" == 'com.gnet.wireroute.network-extension' ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "${system_extension_path}/Contents/Info.plist")" == 'SYSX' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.wireguard.macos.app_group_id' "${app_path}/Contents/Info.plist")" == "${DIRECT_APP_GROUP_ID}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.wireguard.macos.app_group_id' "${system_extension_path}/Contents/Info.plist")" == "${DIRECT_APP_GROUP_ID}" ]]
           grep -q 'com.apple.developer.system-extension.install' <<< "${final_app_entitlements}"
           grep -q 'packet-tunnel-provider-systemextension' <<< "${final_app_entitlements}"
           grep -q 'packet-tunnel-provider-systemextension' <<< "${final_extension_entitlements}"
+          for final_entitlements in "${final_app_entitlements}" "${final_extension_entitlements}"
+          do
+            grep -q "<string>${DIRECT_APP_GROUP_ID}</string>" <<< "${final_entitlements}"
+            grep -q '<string>group.com.gnet.wireroute</string>' <<< "${final_entitlements}"
+          done
 
       - name: Verify and package application
         shell: bash

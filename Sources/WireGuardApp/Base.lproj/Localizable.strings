@@ -298,6 +298,8 @@
  one of the alertSystemErrorMessage* listed further down */
 "alertTunnelActivationSystemErrorTitle" = "Activation failure";
 "alertTunnelActivationSystemErrorMessage (%@)" = "The tunnel could not be activated. %@";
+"alertSystemErrorMessageVPNPluginDisabled" = "WireRoute's VPN extension is unavailable or does not match this copy of WireRoute. Quit WireRoute, reinstall it from the same signed installer, confirm that its Network Extension is enabled in System Settings, and try again.";
+"alertSystemErrorMessageVPNPluginDisabledDevelopment" = "The installed WireRoute VPN extension belongs to a signed release and cannot be used by this Xcode development build. Quit this build and launch the signed WireRoute app, or fully uninstall the release extension before debugging.";
 
 /* alertSystemErrorMessage* messages */
 "alertSystemErrorMessageTunnelConfigurationInvalid" = "The configuration is invalid.";

@@ -1130,11 +1130,11 @@ class TunnelsManager {
                         self.activationDelegate?.tunnelActivationSucceeded(tunnel: tunnel)
                     } else if session.status == .disconnected {
                         tunnel.isAttemptingActivation = false
-                        if let (title, message) = lastErrorTextFromNetworkExtension(for: tunnel) {
-                            self.activationDelegate?.tunnelActivationFailed(tunnel: tunnel, error: .activationFailedWithExtensionError(title: title, message: message, wasOnDemandEnabled: tunnelProvider.isOnDemandEnabled))
-                        } else {
-                            self.activationDelegate?.tunnelActivationFailed(tunnel: tunnel, error: .activationFailed(wasOnDemandEnabled: tunnelProvider.isOnDemandEnabled))
-                        }
+                        self.reportActivationFailure(
+                            for: tunnel,
+                            session: session,
+                            wasOnDemandEnabled: tunnelProvider.isOnDemandEnabled
+                        )
                     }
                 }
 
@@ -1149,6 +1149,70 @@ class TunnelsManager {
                 }
 
                 tunnel.refreshStatus()
+            }
+        }
+    }
+
+    private func reportActivationFailure(
+        for tunnel: TunnelContainer,
+        session: NETunnelProviderSession,
+        wasOnDemandEnabled: Bool
+    ) {
+        if let (title, message) = lastErrorTextFromNetworkExtension(for: tunnel) {
+            activationDelegate?.tunnelActivationFailed(
+                tunnel: tunnel,
+                error: .activationFailedWithExtensionError(
+                    title: title,
+                    message: message,
+                    wasOnDemandEnabled: wasOnDemandEnabled
+                )
+            )
+            return
+        }
+
+        guard #available(macOS 13.0, iOS 16.0, *) else {
+            activationDelegate?.tunnelActivationFailed(
+                tunnel: tunnel,
+                error: .activationFailed(wasOnDemandEnabled: wasOnDemandEnabled)
+            )
+            return
+        }
+
+        let activationAttemptId = tunnel.activationAttemptId
+        session.fetchLastDisconnectError { [weak self, weak tunnel] systemError in
+            let transferredError = UncheckedTransfer(value: systemError)
+            Task { @MainActor [weak self, weak tunnel] in
+                guard let self, let tunnel,
+                      tunnel.activationAttemptId == activationAttemptId else { return }
+
+                if let (title, message) = lastErrorTextFromNetworkExtension(for: tunnel) {
+                    self.activationDelegate?.tunnelActivationFailed(
+                        tunnel: tunnel,
+                        error: .activationFailedWithExtensionError(
+                            title: title,
+                            message: message,
+                            wasOnDemandEnabled: wasOnDemandEnabled
+                        )
+                    )
+                } else if let systemError = transferredError.value {
+                    let error = systemError as NSError
+                    wg_log(
+                        .error,
+                        message: "Tunnel '\(tunnel.name)' activation failed with VPN disconnect error \(error.domain) (\(error.code)): \(error.localizedDescription)"
+                    )
+                    self.activationDelegate?.tunnelActivationFailed(
+                        tunnel: tunnel,
+                        error: .activationFailedWithSystemError(
+                            systemError: systemError,
+                            wasOnDemandEnabled: wasOnDemandEnabled
+                        )
+                    )
+                } else {
+                    self.activationDelegate?.tunnelActivationFailed(
+                        tunnel: tunnel,
+                        error: .activationFailed(wasOnDemandEnabled: wasOnDemandEnabled)
+                    )
+                }
             }
         }
     }
