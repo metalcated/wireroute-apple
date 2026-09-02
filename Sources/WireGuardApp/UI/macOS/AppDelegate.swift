@@ -75,11 +75,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             case .failure(let error):
                 ErrorPresenter.showErrorAlert(error: error, from: nil)
             case .success(let tunnelsManager):
-                if !tunnelsManager.recoveredTunnelNames.isEmpty {
+                if !tunnelsManager.profileRecoveryNamesRequiringApproval.isEmpty {
                     self.markNetworkExtensionApprovalRequired()
                 }
-                tunnelsManager.profilesRecoveryHandler = { [weak self] names in
-                    self?.handleRecoveredProfiles(names)
+                tunnelsManager.profileRecoveryAttentionHandler = { [weak self] names in
+                    self?.handleProfilesRequiringRecovery(names)
                 }
                 let statusMenu = StatusMenu(tunnelsManager: tunnelsManager)
                 statusMenu.windowDelegate = self
@@ -135,7 +135,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             },
             completion: { [weak self] result in
                 self?.systemExtensionActivationCoordinator = nil
-                if case .failure(let error) = result {
+                switch result {
+                case .success:
+                    Self.clearNetworkExtensionApprovalReminder()
+                    self?.shouldPresentSystemExtensionApprovalGuide = false
+                case .failure(let error):
                     let alert = NSAlert()
                     alert.alertStyle = .critical
                     alert.messageText = "WireRoute system extension could not be activated"
@@ -175,7 +179,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         shouldPresentSystemExtensionApprovalGuide = true
     }
 
-    private func handleRecoveredProfiles(_ names: [String]) {
+    private func handleProfilesRequiringRecovery(_ names: [String]) {
         guard !names.isEmpty else { return }
         markNetworkExtensionApprovalRequired()
         showManageTunnelsWindow { [weak self] window in

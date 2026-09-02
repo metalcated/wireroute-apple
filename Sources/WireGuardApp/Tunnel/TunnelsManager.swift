@@ -140,17 +140,21 @@ class TunnelsManager {
     private var configurationsObservationToken: NotificationToken?
 
     #if os(macOS)
-    private(set) var recoveredTunnelNames: [String]
-    var profilesRecoveryHandler: (([String]) -> Void)?
+    private(set) var profileRecoveryNamesRequiringApproval: [String]
+    var profileRecoveryAttentionHandler: (([String]) -> Void)?
     private var isReloadingTunnelConfigurations = false
     private var didAttemptProfileRecovery: Bool
     #endif
 
-    init(tunnelProviders: [NETunnelProviderManager], recoveredTunnelNames: [String] = []) {
+    init(
+        tunnelProviders: [NETunnelProviderManager],
+        profileRecoveryNamesRequiringApproval: [String] = [],
+        didAttemptProfileRecovery: Bool = false
+    ) {
         tunnels = tunnelProviders.map { TunnelContainer(tunnel: $0) }.sorted { TunnelsManager.tunnelNameIsLessThan($0.name, $1.name) }
         #if os(macOS)
-        self.recoveredTunnelNames = recoveredTunnelNames
-        didAttemptProfileRecovery = !recoveredTunnelNames.isEmpty
+        self.profileRecoveryNamesRequiringApproval = profileRecoveryNamesRequiringApproval
+        self.didAttemptProfileRecovery = didAttemptProfileRecovery
         #endif
         startObservingTunnelStatuses()
         startObservingTunnelConfigurations()
@@ -180,14 +184,13 @@ class TunnelsManager {
 
                 #if os(macOS)
                 let prepared = await prepareMacOSTunnelManagers(managers ?? [])
-                let recoveryNames = Array(
-                    Set(prepared.recoveredNames + prepared.failedRecoveryNames)
-                ).sorted(by: tunnelNameIsLessThan)
                 completionHandler(
                     .success(
                         TunnelsManager(
                             tunnelProviders: prepared.managers,
-                            recoveredTunnelNames: recoveryNames
+                            profileRecoveryNamesRequiringApproval: prepared.failedRecoveryNames,
+                            didAttemptProfileRecovery: !prepared.recoveredNames.isEmpty
+                                || !prepared.failedRecoveryNames.isEmpty
                         )
                     )
                 )
@@ -256,20 +259,25 @@ class TunnelsManager {
                 let missingCurrentNames = Set(self.tunnels.map(\.name)).subtracting(loadedNames)
                 if self.didAttemptProfileRecovery && !missingCurrentNames.isEmpty {
                     let names = missingCurrentNames.sorted(by: Self.tunnelNameIsLessThan)
-                    self.profilesRecoveryHandler?(names)
+                    self.profileRecoveryAttentionHandler?(names)
                     wg_log(.error, staticMessage: "A recovered VPN preference disappeared again; preserving the current profile list until the extension is enabled and recovery is retried")
                     return
                 }
                 let prepared = await Self.prepareMacOSTunnelManagers(managers)
-                let recoveryNames = Array(
+                let attemptedRecoveryNames = Array(
                     Set(prepared.recoveredNames + prepared.failedRecoveryNames)
                 ).sorted(by: Self.tunnelNameIsLessThan)
-                if !recoveryNames.isEmpty {
+                if !attemptedRecoveryNames.isEmpty {
                     self.didAttemptProfileRecovery = true
-                    self.recoveredTunnelNames = Array(
-                        Set(self.recoveredTunnelNames + recoveryNames)
+                }
+                if !prepared.failedRecoveryNames.isEmpty {
+                    self.profileRecoveryNamesRequiringApproval = Array(
+                        Set(
+                            self.profileRecoveryNamesRequiringApproval
+                                + prepared.failedRecoveryNames
+                        )
                     ).sorted(by: Self.tunnelNameIsLessThan)
-                    self.profilesRecoveryHandler?(recoveryNames)
+                    self.profileRecoveryAttentionHandler?(prepared.failedRecoveryNames)
                 }
                 if prepared.managers.isEmpty,
                    !self.tunnels.isEmpty,

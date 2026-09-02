@@ -545,7 +545,7 @@
 "macSettingsSave" = "Save Changes";
 "macSettingsSaved" = "Settings saved.";
 "macSystemExtensionApprovalTitle" = "Approve WireRoute Network Extension";
-"macSystemExtensionApprovalMessage" = "WireRoute needs its macOS Network Extension enabled before it can create or reconnect VPN tunnels. If macOS removed a profile while the extension was disabled, WireRoute keeps its private configuration protected in Keychain and restores the profile.\n\n1. Open System Settings.\n2. Go to General → Login Items & Extensions.\n3. Under Extensions, open Network Extensions and enable WireRoute Network Extension.\n\nReturn to WireRoute when finished. This reminder will stop after WireRoute connects successfully.";
+"macSystemExtensionApprovalMessage" = "WireRoute needs its macOS Network Extension enabled before it can create or reconnect VPN tunnels. If macOS removed a profile while the extension was disabled, WireRoute keeps its private configuration protected in Keychain and restores the profile.\n\n1. Open System Settings.\n2. Go to General → Login Items & Extensions.\n3. Under Extensions, open Network Extensions and enable WireRoute Network Extension.\n\nReturn to WireRoute when finished. This reminder will stop after macOS confirms the extension is enabled.";
 "macSystemExtensionApprovalOpenSettings" = "Open System Settings";
 "macSystemExtensionApprovalLater" = "Not Now";
 "macStatusIconLabel" = "Icon";
