@@ -1039,6 +1039,16 @@ class TunnelsManager {
             activationDelegate?.tunnelActivationAttemptFailed(tunnel: tunnel, error: .tunnelIsNotInactive)
             return
         }
+        guard let tunnelProtocol = tunnel.tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol,
+              tunnelProtocol.verifyConfigurationReference(),
+              tunnel.tunnelConfiguration != nil else {
+            wg_log(.error, message: "Tunnel '\(tunnel.name)' cannot be activated because its Keychain configuration is unavailable")
+            activationDelegate?.tunnelActivationAttemptFailed(
+                tunnel: tunnel,
+                error: .configurationUnavailable
+            )
+            return
+        }
 
         if let alreadyWaitingTunnel = tunnels.first(where: { $0.status == .waiting }) {
             alreadyWaitingTunnel.status = .inactive
