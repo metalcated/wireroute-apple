@@ -39,6 +39,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         shouldPresentSystemExtensionApprovalGuide = UserDefaults.standard.bool(
             forKey: Self.networkExtensionApprovalReminderDefaultsKey
         )
+        if SystemExtensionActivationCoordinator.embeddedSystemExtensionIdentifier == nil {
+            Self.clearNetworkExtensionApprovalReminder()
+            shouldPresentSystemExtensionApprovalGuide = false
+        }
 #if DEBUG
         let isAppStoreScreenshotMode = ProcessInfo.processInfo.arguments.contains("--app-store-screenshots")
 #else
@@ -155,6 +159,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentSystemExtensionApprovalGuideIfNeeded(window: NSWindow?) {
         guard shouldPresentSystemExtensionApprovalGuide, let window else { return }
+        guard SystemExtensionActivationCoordinator.embeddedSystemExtensionIdentifier != nil else {
+            Self.clearNetworkExtensionApprovalReminder()
+            shouldPresentSystemExtensionApprovalGuide = false
+            return
+        }
         shouldPresentSystemExtensionApprovalGuide = false
 
         let alert = NSAlert()
@@ -175,6 +184,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func markNetworkExtensionApprovalRequired() {
+        guard SystemExtensionActivationCoordinator.embeddedSystemExtensionIdentifier != nil else {
+            Self.clearNetworkExtensionApprovalReminder()
+            shouldPresentSystemExtensionApprovalGuide = false
+            return
+        }
         UserDefaults.standard.set(true, forKey: Self.networkExtensionApprovalReminderDefaultsKey)
         shouldPresentSystemExtensionApprovalGuide = true
     }
