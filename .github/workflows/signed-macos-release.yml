@@ -526,8 +526,8 @@ jobs:
             "${app_path}"
 
           codesign --verify --deep --strict --verbose=4 "${app_path}"
-          final_app_entitlements="$(codesign -d --entitlements - "${app_path}" 2>/dev/null)"
-          final_extension_entitlements="$(codesign -d --entitlements - "${system_extension_path}" 2>/dev/null)"
+          final_app_entitlements="$(codesign -d --entitlements - --xml "${app_path}" 2>/dev/null)"
+          final_extension_entitlements="$(codesign -d --entitlements - --xml "${system_extension_path}" 2>/dev/null)"
 
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${app_path}/Contents/Info.plist")" == 'com.gnet.wireroute' ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${system_extension_path}/Contents/Info.plist")" == 'com.gnet.wireroute.network-extension' ]]
