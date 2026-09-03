@@ -4,6 +4,9 @@
 import Foundation
 @preconcurrency import NetworkExtension
 import os.log
+#if os(macOS)
+import Security
+#endif
 
 private struct UncheckedTransfer<Value>: @unchecked Sendable {
     let value: Value
@@ -21,6 +24,52 @@ private enum TunnelConfigurationStorageError: LocalizedError {
 }
 
 #if os(macOS)
+private enum MacOSProviderBindingMigration {
+    static let designatedRequirementDefaultsKey = "WireRouteProviderBindingDesignatedRequirement"
+
+    static var currentDesignatedRequirement: String? {
+        guard let appIdentifier = Bundle.main.bundleIdentifier else { return nil }
+        let providerIdentifier = "\(appIdentifier).network-extension"
+        let systemExtensionsURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Library/SystemExtensions", isDirectory: true)
+        guard let embeddedExtensions = try? FileManager.default.contentsOfDirectory(
+            at: systemExtensionsURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ), let providerURL = embeddedExtensions.first(where: { url in
+            url.pathExtension == "systemextension"
+                && Bundle(url: url)?.bundleIdentifier == providerIdentifier
+        }) else {
+            return nil
+        }
+
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(providerURL as CFURL, [], &staticCode) == errSecSuccess,
+              let staticCode else {
+            return nil
+        }
+        var requirement: SecRequirement?
+        guard SecCodeCopyDesignatedRequirement(staticCode, [], &requirement) == errSecSuccess,
+              let requirement else {
+            return nil
+        }
+        var requirementText: CFString?
+        guard SecRequirementCopyString(requirement, [], &requirementText) == errSecSuccess,
+              let requirementText else {
+            return nil
+        }
+        return requirementText as String
+    }
+
+    static func needsRefresh(for designatedRequirement: String) -> Bool {
+        UserDefaults.standard.string(forKey: designatedRequirementDefaultsKey) != designatedRequirement
+    }
+
+    static func markComplete(for designatedRequirement: String) {
+        UserDefaults.standard.set(designatedRequirement, forKey: designatedRequirementDefaultsKey)
+    }
+}
+
 private struct TunnelProfileRecoveryRecord: Codable {
     static let currentVersion = 1
 
@@ -597,14 +646,18 @@ class TunnelsManager {
             #if os(macOS)
             Keychain.deleteProfileRecoveryConfiguration(profileID: activityProfileIdentifier.uuidString)
             Keychain.deleteProfileRecoveryConfigurations(named: tunnel.name)
-            #endif
             do {
-                try WireRouteActivityStore().clearAllHistory(
-                    profileIdentifier: activityProfileIdentifier
-                )
+                try await WireRouteActivityHistoryAccess().clearAll(profileIdentifier: activityProfileIdentifier)
             } catch {
                 wg_log(.error, message: "Remove: Clearing activity history failed: \(error.localizedDescription)")
             }
+            #else
+            do {
+                try WireRouteActivityStore().clearAllHistory(profileIdentifier: activityProfileIdentifier)
+            } catch {
+                wg_log(.error, message: "Remove: Clearing activity history failed: \(error.localizedDescription)")
+            }
+            #endif
             if let self, let index = self.tunnels.firstIndex(of: tunnel) {
                 self.tunnels.remove(at: index)
                 self.tunnelsListDelegate?.tunnelRemoved(at: index, tunnel: tunnel)
@@ -781,6 +834,10 @@ class TunnelsManager {
         var managers = loadedManagers
         var recoveredNames = [String]()
         var failedRecoveryNames = [String]()
+        let providerDesignatedRequirement = MacOSProviderBindingMigration.currentDesignatedRequirement
+        let shouldRefreshProviderBindings = providerDesignatedRequirement
+            .map(MacOSProviderBindingMigration.needsRefresh) ?? false
+        var didFailProviderBindingRefresh = false
         let recoveryRecords = loadMacOSRecoveryConfigurations()
         let recordsByName = Dictionary(
             recoveryRecords.map { ($0.name, $0) },
@@ -807,8 +864,31 @@ class TunnelsManager {
                 }
             }
 
-            if configuration != nil && proto.verifyConfigurationReference() {
+            if let configuration,
+               let passwordReference = proto.passwordReference,
+               proto.verifyConfigurationReference() {
                 saveMacOSRecoveryConfiguration(for: manager)
+                if Keychain.requiresSystemExtensionMigration(called: passwordReference) {
+                    if await migrateMacOSSystemKeychainStorage(
+                        manager: manager,
+                        configuration: configuration,
+                        oldPasswordReference: passwordReference
+                    ) {
+                        saveMacOSRecoveryConfiguration(for: manager)
+                    } else {
+                        didFailProviderBindingRefresh = true
+                    }
+                } else if shouldRefreshProviderBindings {
+                    if await refreshMacOSProviderBinding(
+                        manager: manager,
+                        configuration: configuration,
+                        passwordReference: passwordReference
+                    ) {
+                        saveMacOSRecoveryConfiguration(for: manager)
+                    } else {
+                        didFailProviderBindingRefresh = true
+                    }
+                }
                 continue
             }
 
@@ -851,10 +931,16 @@ class TunnelsManager {
             }
 
             let manager = NETunnelProviderManager()
-            guard manager.setRecoveredTunnelConfiguration(
-                configuration,
-                passwordReference: storedConfiguration.reference
-            ) != nil else {
+            let requiresSystemKeychainMigration = Keychain.requiresSystemExtensionMigration(
+                called: storedConfiguration.reference
+            )
+            let replacementProtocol = requiresSystemKeychainMigration
+                ? manager.setTunnelConfiguration(configuration)
+                : manager.setRecoveredTunnelConfiguration(
+                    configuration,
+                    passwordReference: storedConfiguration.reference
+                )
+            guard let replacementProtocol else {
                 failedRecoveryNames.append(storedConfiguration.name)
                 continue
             }
@@ -863,14 +949,29 @@ class TunnelsManager {
                 try await manager.saveToPreferences()
                 managers.append(manager)
                 usedNames.insert(storedConfiguration.name)
-                referencedConfigurations.insert(storedConfiguration.reference)
+                if requiresSystemKeychainMigration,
+                   let newReference = replacementProtocol.passwordReference {
+                    Keychain.deleteReference(called: storedConfiguration.reference)
+                    referencedConfigurations.insert(newReference)
+                } else {
+                    referencedConfigurations.insert(storedConfiguration.reference)
+                }
                 recoveredNames.append(storedConfiguration.name)
                 saveMacOSRecoveryConfiguration(for: manager)
                 wg_log(.info, message: "Restored profile '\(storedConfiguration.name)' from its protected Keychain configuration")
             } catch {
+                if requiresSystemKeychainMigration {
+                    replacementProtocol.destroyConfigurationReference()
+                }
                 wg_log(.error, message: "Unable to restore profile '\(storedConfiguration.name)' from Keychain: \(error)")
                 failedRecoveryNames.append(storedConfiguration.name)
             }
+        }
+
+        if let providerDesignatedRequirement,
+           shouldRefreshProviderBindings,
+           !didFailProviderBindingRefresh {
+            MacOSProviderBindingMigration.markComplete(for: providerDesignatedRequirement)
         }
 
         return PreparedMacOSTunnelManagers(
@@ -957,6 +1058,7 @@ class TunnelsManager {
         let previousIsOnDemandEnabled = manager.isOnDemandEnabled
 
         let canReuseReference = Keychain.openReference(called: record.passwordReference) != nil
+            && !Keychain.requiresSystemExtensionMigration(called: record.passwordReference)
         let replacementProtocol: NETunnelProviderProtocol?
         if canReuseReference {
             replacementProtocol = manager.setRecoveredTunnelConfiguration(
@@ -983,6 +1085,10 @@ class TunnelsManager {
 
         do {
             try await manager.saveToPreferences()
+            if !canReuseReference,
+               replacementProtocol.passwordReference != record.passwordReference {
+                Keychain.deleteReference(called: record.passwordReference)
+            }
             saveMacOSRecoveryConfiguration(for: manager)
             wg_log(.info, message: "Restored profile '\(record.name)' from its protected recovery record")
             return true
@@ -997,6 +1103,90 @@ class TunnelsManager {
             manager.onDemandRules = previousOnDemandRules
             manager.isOnDemandEnabled = previousIsOnDemandEnabled
             wg_log(.error, message: "Unable to restore profile '\(record.name)': \(error)")
+            return false
+        }
+    }
+
+    private static func refreshMacOSProviderBinding(
+        manager: NETunnelProviderManager,
+        configuration: TunnelConfiguration,
+        passwordReference: Data
+    ) async -> Bool {
+        switch manager.connection.status {
+        case .connected, .connecting, .disconnecting, .reasserting:
+            wg_log(.info, message: "Deferring provider signing migration for active profile '\(configuration.name ?? "unknown")'")
+            return false
+        case .disconnected, .invalid:
+            break
+        @unknown default:
+            return false
+        }
+
+        let previousProtocolConfiguration = manager.protocolConfiguration
+        let previousLocalizedDescription = manager.localizedDescription
+        let previousConfiguration = manager.tunnelConfiguration
+
+        guard manager.setRecoveredTunnelConfiguration(
+            configuration,
+            passwordReference: passwordReference
+        ) != nil else {
+            wg_log(.error, message: "Unable to prepare provider signing migration for profile '\(configuration.name ?? "unknown")'")
+            return false
+        }
+
+        do {
+            try await manager.saveToPreferences()
+            wg_log(.info, message: "Refreshed provider signing requirement for profile '\(configuration.name ?? "unknown")'")
+            return true
+        } catch {
+            manager.protocolConfiguration = previousProtocolConfiguration
+            manager.localizedDescription = previousLocalizedDescription
+            manager.cacheTunnelConfiguration(previousConfiguration)
+            wg_log(.error, message: "Unable to refresh provider signing requirement for profile '\(configuration.name ?? "unknown")': \(error)")
+            return false
+        }
+    }
+
+    private static func migrateMacOSSystemKeychainStorage(
+        manager: NETunnelProviderManager,
+        configuration: TunnelConfiguration,
+        oldPasswordReference: Data
+    ) async -> Bool {
+        switch manager.connection.status {
+        case .connected, .connecting, .disconnecting, .reasserting:
+            wg_log(.info, message: "Deferring system Keychain migration for active profile '\(configuration.name ?? "unknown")'")
+            return false
+        case .disconnected, .invalid:
+            break
+        @unknown default:
+            return false
+        }
+
+        let previousProtocolConfiguration = manager.protocolConfiguration
+        let previousLocalizedDescription = manager.localizedDescription
+        let previousConfiguration = manager.tunnelConfiguration
+
+        guard let replacementProtocol = manager.setTunnelConfiguration(configuration),
+              let newPasswordReference = replacementProtocol.passwordReference,
+              newPasswordReference != oldPasswordReference else {
+            manager.protocolConfiguration = previousProtocolConfiguration
+            manager.localizedDescription = previousLocalizedDescription
+            manager.cacheTunnelConfiguration(previousConfiguration)
+            wg_log(.error, message: "Unable to prepare system Keychain migration for profile '\(configuration.name ?? "unknown")'")
+            return false
+        }
+
+        do {
+            try await manager.saveToPreferences()
+            Keychain.deleteReference(called: oldPasswordReference)
+            wg_log(.info, message: "Migrated profile '\(configuration.name ?? "unknown")' to system-extension-owned Keychain storage")
+            return true
+        } catch {
+            replacementProtocol.destroyConfigurationReference()
+            manager.protocolConfiguration = previousProtocolConfiguration
+            manager.localizedDescription = previousLocalizedDescription
+            manager.cacheTunnelConfiguration(previousConfiguration)
+            wg_log(.error, message: "Unable to migrate profile '\(configuration.name ?? "unknown")' to system Keychain: \(error)")
             return false
         }
     }

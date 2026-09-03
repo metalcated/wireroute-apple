@@ -27,14 +27,18 @@ private final class ActivitySamplingCoordinator: @unchecked Sendable {
     func start(
         adapter: WireGuardAdapter,
         profileIdentifier: UUID,
-        profileName: String
+        profileName: String,
+        ownerUID: uid_t? = nil
     ) {
         stop()
         do {
-            let store = try WireRouteActivityStore()
+            let store = try WireRouteActivityStore(
+                databaseURL: FileManager.activityDatabaseURL(ownerUID: ownerUID)
+            )
             let recorder = WireRouteActivityRecorder(
                 store: store,
-                profileIdentifier: profileIdentifier
+                profileIdentifier: profileIdentifier,
+                ownerUID: ownerUID
             )
             try recorder.start(profileName: profileName)
             let timer = DispatchSource.makeTimerSource(
@@ -123,6 +127,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let activitySamplingCoordinator = self.activitySamplingCoordinator
         let activityProfileIdentifier = tunnelProviderProtocol.wireRouteActivityProfileIdentifier
         let activityProfileName = tunnelProviderProtocol.wireRouteActivityProfileName
+        #if os(macOS)
+        let activityOwnerUID = (tunnelProviderProtocol.providerConfiguration?["UID"] as? NSNumber)
+            .map { uid_t($0.uint32Value) }
+        #else
+        let activityOwnerUID: uid_t? = nil
+        #endif
         let blockedAddressFamilies = tunnelProviderProtocol.wireRouteEffectiveBlockedAddressFamilies(
             for: tunnelConfiguration
         )
@@ -139,7 +149,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 activitySamplingCoordinator.start(
                     adapter: adapter,
                     profileIdentifier: activityProfileIdentifier,
-                    profileName: activityProfileName
+                    profileName: activityProfileName,
+                    ownerUID: activityOwnerUID
                 )
 
                 completion(nil)

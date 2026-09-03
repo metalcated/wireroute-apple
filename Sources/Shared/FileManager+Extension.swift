@@ -36,6 +36,21 @@ extension FileManager {
     }
 
     static var activityDatabaseURL: URL? {
+        return activityDatabaseURL(ownerUID: nil)
+    }
+
+    static func activityDatabaseURL(ownerUID: uid_t?) -> URL? {
+        #if os(macOS)
+        let isSystemExtension = Bundle.main.bundleURL.pathExtension == "systemextension"
+            || Bundle.main.object(forInfoDictionaryKey: "CFBundlePackageType") as? String == "SYSX"
+        if isSystemExtension {
+            guard let ownerUID else {
+                wg_log(.error, staticMessage: "Cannot obtain the owning user for system extension activity storage")
+                return nil
+            }
+            return sharedFolderURL?.appendingPathComponent("activity-\(ownerUID).sqlite3")
+        }
+        #endif
         return sharedFolderURL?.appendingPathComponent("activity.sqlite3")
     }
 

@@ -87,9 +87,13 @@ final class WireRouteActivityDashboardView: NSView {
     var onOpenHistory: (() -> Void)?
 
     private let tunnel: TunnelContainer
-    private let store: WireRouteActivityStore?
+    private let historyAccess = WireRouteActivityHistoryAccess()
     private var accumulator = WireRouteActivityAccumulator()
+    private var storedPoints = [WireRouteActivityPoint]()
     private var livePoints = [WireRouteActivityPoint]()
+    private var wasActive = false
+    private var historyRefreshTask: Task<Void, Never>?
+    private var lastHistoryRefresh = Date.distantPast
     private let chart = WireRouteActivityChartView()
     private let downloadValue = NSTextField(labelWithString: "—")
     private let uploadValue = NSTextField(labelWithString: "—")
@@ -110,10 +114,16 @@ final class WireRouteActivityDashboardView: NSView {
 
     init(tunnel: TunnelContainer, showsHistoryButton: Bool = true) {
         self.tunnel = tunnel
-        store = try? WireRouteActivityStore()
         super.init(frame: .zero)
         configureView(showsHistoryButton: showsHistoryButton)
         refreshStoredHistory()
+        if historyAccess.usesSystemExtensionStore {
+            let historyAccess = self.historyAccess
+            let retention = WireRouteActivityPreference.loadRetention()
+            Task {
+                try? await historyAccess.applyRetention(retention)
+            }
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -123,11 +133,22 @@ final class WireRouteActivityDashboardView: NSView {
     func update(configuration: TunnelConfiguration?, isActive: Bool) {
         refreshStoredHistory()
         guard isActive, let configuration else {
+            if wasActive {
+                accumulator = WireRouteActivityAccumulator()
+                livePoints.removeAll()
+            }
+            wasActive = false
             downloadValue.stringValue = formatRate(0)
             uploadValue.stringValue = formatRate(0)
             stateLabel.stringValue = tr("activityInactiveShort")
+            updateChart()
             return
         }
+        if !wasActive {
+            accumulator = WireRouteActivityAccumulator()
+            livePoints.removeAll()
+        }
+        wasActive = true
         let peers = configuration.peers.map {
             WireRouteActivityPeerCounters(
                 peerIdentifier: $0.publicKey.base64Key,
@@ -140,6 +161,8 @@ final class WireRouteActivityDashboardView: NSView {
         let delta = accumulator.sample(peers: peers, at: now)
         downloadValue.stringValue = formatRate(delta.receivedBytesPerSecond)
         uploadValue.stringValue = formatRate(delta.sentBytesPerSecond)
+        let (sessionTotal, overflow) = delta.totalReceivedBytes.addingReportingOverflow(delta.totalSentBytes)
+        totalValue.stringValue = formatBytes(overflow ? .max : sessionTotal)
         handshakeValue.stringValue = formatHandshake(delta.lastHandshake)
         stateLabel.stringValue = tr("activityRecordingShort")
         livePoints.append(
@@ -153,9 +176,7 @@ final class WireRouteActivityDashboardView: NSView {
             )
         )
         livePoints = Array(livePoints.suffix(120))
-        if chart.points.isEmpty {
-            chart.points = livePoints
-        }
+        updateChart()
     }
 
     @objc private func openHistory() {
@@ -273,25 +294,45 @@ final class WireRouteActivityDashboardView: NSView {
     }
 
     private func refreshStoredHistory() {
-        guard let store else { return }
-        do {
-            let profileIdentifier = tunnel.activityProfileIdentifier
-            let points = try store.points(
-                profileIdentifier: profileIdentifier,
-                since: Date().addingTimeInterval(-60 * 60),
-                limit: 720
-            )
-            if !points.isEmpty {
-                chart.points = points
-            }
-            if let session = try store.sessions(profileIdentifier: profileIdentifier, limit: 1).first {
-                let (combined, overflow) = session.receivedBytes.addingReportingOverflow(session.sentBytes)
-                totalValue.stringValue = formatBytes(overflow ? .max : combined)
-                handshakeValue.stringValue = formatHandshake(session.lastHandshake)
-            }
-        } catch {
-            stateLabel.stringValue = tr("activityUnavailableShort")
+        let now = Date()
+        guard historyRefreshTask == nil,
+              now.timeIntervalSince(lastHistoryRefresh) >= 4 else {
+            return
         }
+        lastHistoryRefresh = now
+        let historyAccess = self.historyAccess
+        let profileIdentifier = tunnel.activityProfileIdentifier
+        historyRefreshTask = Task { [weak self] in
+            defer { self?.historyRefreshTask = nil }
+            do {
+                let snapshot = try await historyAccess.snapshot(
+                    profileIdentifier: profileIdentifier,
+                    since: now.addingTimeInterval(-60 * 60),
+                    pointLimit: 720,
+                    sessionLimit: 1
+                )
+                guard let self else { return }
+                self.storedPoints = snapshot.points
+                self.updateChart()
+                guard !self.wasActive else { return }
+                if let session = snapshot.sessions.first {
+                    let (combined, overflow) = session.receivedBytes.addingReportingOverflow(session.sentBytes)
+                    self.totalValue.stringValue = self.formatBytes(overflow ? .max : combined)
+                    self.handshakeValue.stringValue = self.formatHandshake(session.lastHandshake)
+                } else {
+                    self.totalValue.stringValue = "—"
+                    self.handshakeValue.stringValue = "—"
+                }
+            } catch {
+                self?.stateLabel.stringValue = tr("activityUnavailableShort")
+            }
+        }
+    }
+
+    private func updateChart() {
+        let lastStoredDate = storedPoints.last?.date ?? .distantPast
+        let currentLivePoints = livePoints.filter { $0.date > lastStoredDate }
+        chart.points = Array((storedPoints + currentLivePoints).suffix(720))
     }
 
     private func formatRate(_ value: Double) -> String {
@@ -311,15 +352,16 @@ final class WireRouteActivityDashboardView: NSView {
 @MainActor
 final class ActivityMonitorViewController: NSViewController {
     private let tunnel: TunnelContainer
-    private let store: WireRouteActivityStore?
+    private let historyAccess = WireRouteActivityHistoryAccess()
     private let dashboard: WireRouteActivityDashboardView
     private let historyStack = NSStackView()
     private let retentionPopUp = WireRoutePopUpButton()
     private var refreshTimer: Timer?
+    private var historyRefreshTask: Task<Void, Never>?
+    private var lastHistoryRefresh = Date.distantPast
 
     init(tunnel: TunnelContainer) {
         self.tunnel = tunnel
-        store = try? WireRouteActivityStore()
         dashboard = WireRouteActivityDashboardView(tunnel: tunnel, showsHistoryButton: false)
         super.init(nibName: nil, bundle: nil)
     }
@@ -440,8 +482,15 @@ final class ActivityMonitorViewController: NSViewController {
         }
         let retention = WireRouteActivityRetention.allCases[retentionPopUp.indexOfSelectedItem]
         WireRouteActivityPreference.saveRetention(retention)
-        try? store?.purge(before: Date().addingTimeInterval(-retention.interval))
-        refreshHistory()
+        let historyAccess = self.historyAccess
+        Task { [weak self] in
+            do {
+                try await historyAccess.applyRetention(retention)
+            } catch {
+                self?.presentActivityError(error)
+            }
+            self?.refreshHistory(force: true)
+        }
     }
 
     @objc private func clearHistory() {
@@ -454,9 +503,17 @@ final class ActivityMonitorViewController: NSViewController {
         clearButton.hasDestructiveAction = true
         alert.addButton(withTitle: tr("activityCancel"))
         alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn, let self, let store = self.store else { return }
-            try? store.clearCompletedHistory(profileIdentifier: self.tunnel.activityProfileIdentifier)
-            self.refreshHistory()
+            guard response == .alertFirstButtonReturn, let self else { return }
+            let historyAccess = self.historyAccess
+            let profileIdentifier = self.tunnel.activityProfileIdentifier
+            Task { [weak self] in
+                do {
+                    try await historyAccess.clearCompleted(profileIdentifier: profileIdentifier)
+                } catch {
+                    self?.presentActivityError(error)
+                }
+                self?.refreshHistory(force: true)
+            }
         }
     }
 
@@ -468,10 +525,32 @@ final class ActivityMonitorViewController: NSViewController {
         refreshHistory()
     }
 
-    private func refreshHistory() {
-        guard let sessions = try? store?.sessions(profileIdentifier: tunnel.activityProfileIdentifier) else {
+    private func refreshHistory(force: Bool = false) {
+        let now = Date()
+        guard historyRefreshTask == nil,
+              force || now.timeIntervalSince(lastHistoryRefresh) >= 4 else {
             return
         }
+        lastHistoryRefresh = now
+        let historyAccess = self.historyAccess
+        let profileIdentifier = tunnel.activityProfileIdentifier
+        historyRefreshTask = Task { [weak self] in
+            defer { self?.historyRefreshTask = nil }
+            do {
+                let snapshot = try await historyAccess.snapshot(
+                    profileIdentifier: profileIdentifier,
+                    since: now.addingTimeInterval(-60 * 60),
+                    pointLimit: 1,
+                    sessionLimit: 24
+                )
+                self?.updateHistory(snapshot.sessions)
+            } catch {
+                self?.presentActivityError(error)
+            }
+        }
+    }
+
+    private func updateHistory(_ sessions: [WireRouteActivitySession]) {
         historyStack.arrangedSubviews.forEach {
             historyStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -508,6 +587,10 @@ final class ActivityMonitorViewController: NSViewController {
             historyStack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: historyStack.widthAnchor).isActive = true
         }
+    }
+
+    private func presentActivityError(_ error: Error) {
+        wg_log(.error, message: "Activity history request failed: \(error.localizedDescription)")
     }
 
     private func configureRetentionPopUp() {

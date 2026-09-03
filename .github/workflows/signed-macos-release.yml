@@ -11,6 +11,11 @@ on:
         required: true
         default: "1.0.17"
         type: string
+      candidate:
+        description: Build a signed test artifact from this workflow branch without publishing the GitHub release
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: signed-macos-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -29,6 +34,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      CANDIDATE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate || false }}
       WORKFLOW_SHA: ${{ github.workflow_sha }}
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       ASC_API_KEY_ID: ${{ vars.ASC_API_KEY_ID }}
@@ -44,7 +50,7 @@ jobs:
       - name: Check out tagged source
         uses: actions/checkout@v5
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate && github.workflow_sha || env.RELEASE_TAG }}
           fetch-depth: 0
 
       - name: Validate release metadata and secrets
@@ -60,6 +66,12 @@ jobs:
           version="$(sed -n 's/^MARKETING_VERSION = //p' Sources/WireGuardApp/Config/Version.xcconfig)"
           if [[ "${RELEASE_TAG}" != "${version}" ]]; then
             echo "Release tag ${RELEASE_TAG} does not match MARKETING_VERSION ${version}."
+            exit 1
+          fi
+
+          build_number="$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' Sources/WireGuardApp/Config/Version.xcconfig)"
+          if [[ ! "${build_number}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "CURRENT_PROJECT_VERSION must be a positive integer; received ${build_number}."
             exit 1
           fi
 
@@ -192,9 +204,21 @@ jobs:
             Sources/WireGuardNetworkExtension/Info.plist \
             Sources/WireGuardApp/Base.lproj/Localizable.strings \
             Sources/WireGuardApp/UI/macOS/LoginItemHelper/LoginItemHelper.entitlements
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.server' Sources/WireGuardNetworkExtension/WireGuardNetworkExtension_macOS.entitlements)" == 'true' ]]
+          if /usr/libexec/PlistBuddy \
+            -c 'Print :com.apple.security.network.server' \
+            Sources/WireGuardNetworkExtension/WireGuardNetworkExtension_iOS.entitlements \
+            >/dev/null 2>&1
+          then
+            echo 'The iOS network extension must not request the macOS UDP listener entitlement.'
+            exit 1
+          fi
           grep -q 'com.apple.product-type.system-extension' WireGuard.xcodeproj/project.pbxproj
           grep -q 'dstSubfolderSpec = 16' WireGuard.xcodeproj/project.pbxproj
           grep -q '<string>SYSX</string>' Sources/WireGuardNetworkExtension/Info.plist
+          grep -q '<key>NEMachServiceName</key>' Sources/WireGuardNetworkExtension/Info.plist
+          grep -q 'performActivityRequest' Sources/Shared/Keychain.swift
+          grep -q 'activityDatabaseURL(ownerUID:' Sources/Shared/FileManager+Extension.swift
           grep -q -- '--wireroute-launched-at-login' Sources/WireGuardApp/UI/macOS/AppDelegate.swift
           grep -q 'macSystemExtensionApprovalTitle' Sources/WireGuardApp/Base.lproj/Localizable.strings
           grep -q -- '--wireroute-launched-at-login' Sources/WireGuardApp/UI/macOS/LoginItemHelper/main.m
@@ -416,10 +440,14 @@ jobs:
           /usr/libexec/PlistBuddy \
             -c 'Set :com.apple.developer.networking.networkextension:0 packet-tunnel-provider-systemextension' \
             -c "Set :com.apple.security.application-groups:0 ${DIRECT_APP_GROUP_ID}" \
+            -c 'Set :com.apple.security.application-groups:1 group.com.gnet.wireroute' \
+            -c "Set :keychain-access-groups:0 ${DIRECT_APP_GROUP_ID}" \
             "${app_entitlements}"
           /usr/libexec/PlistBuddy \
             -c 'Set :com.apple.developer.networking.networkextension:0 packet-tunnel-provider-systemextension' \
             -c "Set :com.apple.security.application-groups:0 ${DIRECT_APP_GROUP_ID}" \
+            -c 'Set :com.apple.security.application-groups:1 group.com.gnet.wireroute' \
+            -c "Set :keychain-access-groups:0 ${DIRECT_APP_GROUP_ID}" \
             "${extension_entitlements}"
           /usr/libexec/PlistBuddy \
             -c "Set :com.wireguard.macos.app_group_id ${DIRECT_APP_GROUP_ID}" \
@@ -456,6 +484,7 @@ jobs:
               "${app_entitlements}"
           fi
           plutil -lint "${app_entitlements}" "${extension_entitlements}" "${helper_entitlements}"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.network.server' "${extension_entitlements}")" == 'true' ]]
 
           cp "${MAIN_PROFILE_PATH}" "${app_path}/Contents/embedded.provisionprofile"
           cp "${EXTENSION_PROFILE_PATH}" "${system_extension_path}/Contents/embedded.provisionprofile"
@@ -503,11 +532,20 @@ jobs:
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${app_path}/Contents/Info.plist")" == 'com.gnet.wireroute' ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${system_extension_path}/Contents/Info.plist")" == 'com.gnet.wireroute.network-extension' ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "${system_extension_path}/Contents/Info.plist")" == 'SYSX' ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :NetworkExtension:NEMachServiceName' "${system_extension_path}/Contents/Info.plist")" == "${DIRECT_APP_GROUP_ID}.keychain-xpc" ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.wireguard.macos.app_group_id' "${app_path}/Contents/Info.plist")" == "${DIRECT_APP_GROUP_ID}" ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.wireguard.macos.app_group_id' "${system_extension_path}/Contents/Info.plist")" == "${DIRECT_APP_GROUP_ID}" ]]
           grep -q 'com.apple.developer.system-extension.install' <<< "${final_app_entitlements}"
           grep -q 'packet-tunnel-provider-systemextension' <<< "${final_app_entitlements}"
           grep -q 'packet-tunnel-provider-systemextension' <<< "${final_extension_entitlements}"
+          grep -q 'com.apple.security.network.server' <<< "${final_extension_entitlements}"
+          grep -q 'keychain-access-groups' <<< "${final_app_entitlements}"
+          grep -q 'keychain-access-groups' <<< "${final_extension_entitlements}"
+          if grep -q 'com.apple.security.network.server' <<< "${final_app_entitlements}"
+          then
+            echo 'The host app must not request the packet tunnel provider UDP listener entitlement.'
+            exit 1
+          fi
           for final_entitlements in "${final_app_entitlements}" "${final_extension_entitlements}"
           do
             grep -q "<string>${DIRECT_APP_GROUP_ID}</string>" <<< "${final_entitlements}"
@@ -554,7 +592,12 @@ jobs:
           ditto "${app_path}" "${staging_path}/WireRoute.app"
           ln -s /Applications "${staging_path}/Applications"
 
-          dmg_name="WireRoute-${RELEASE_TAG}-macOS-universal.dmg"
+          build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${app_path}/Contents/Info.plist")"
+          if [[ "${CANDIDATE_BUILD}" == "true" ]]; then
+            dmg_name="WireRoute-${RELEASE_TAG}-build${build_number}-candidate-macOS-universal.dmg"
+          else
+            dmg_name="WireRoute-${RELEASE_TAG}-macOS-universal.dmg"
+          fi
           dmg_path="${RUNNER_TEMP}/${dmg_name}"
           hdiutil create \
             -volname WireRoute \
@@ -599,6 +642,7 @@ jobs:
           echo "CHECKSUM_PATH=${checksum_path}" >> "${GITHUB_ENV}"
 
       - name: Attach installer to GitHub release
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.candidate }}
         shell: bash
         run: |
           set -euo pipefail
@@ -617,6 +661,7 @@ jobs:
             --clobber
 
       - name: Describe signed installer on release
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.candidate }}
         uses: actions/github-script@v8
         env:
           ASSET_NAME: ${{ env.DMG_NAME }}
@@ -645,6 +690,17 @@ jobs:
               release_id: release.data.id,
               body
             });
+
+      - name: Upload signed test candidate
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: WireRoute-${{ env.RELEASE_TAG }}-signed-macOS-candidate
+          path: |
+            ${{ env.DMG_PATH }}
+            ${{ env.CHECKSUM_PATH }}
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Remove temporary signing keychain
         if: always()

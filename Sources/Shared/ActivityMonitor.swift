@@ -19,18 +19,25 @@ enum WireRouteActivityRetention: Int, CaseIterable, Sendable {
 enum WireRouteActivityPreference {
     private static let retentionKey = "WireRoute.Activity.RetentionDays"
 
-    static func loadRetention() -> WireRouteActivityRetention {
+    static func loadRetention(ownerUID: uid_t? = nil) -> WireRouteActivityRetention {
         let defaults = sharedDefaults
-        guard defaults.object(forKey: retentionKey) != nil,
-              let retention = WireRouteActivityRetention(rawValue: defaults.integer(forKey: retentionKey)) else {
+        let key = storageKey(ownerUID: ownerUID)
+        guard defaults.object(forKey: key) != nil,
+              let retention = WireRouteActivityRetention(rawValue: defaults.integer(forKey: key)) else {
             return .defaultValue
         }
         return retention
     }
 
-    static func saveRetention(_ retention: WireRouteActivityRetention) {
-        sharedDefaults.set(retention.rawValue, forKey: retentionKey)
-        NotificationCenter.default.post(name: .wireRouteActivityRetentionDidChange, object: retention)
+    static func saveRetention(_ retention: WireRouteActivityRetention, ownerUID: uid_t? = nil) {
+        sharedDefaults.set(retention.rawValue, forKey: storageKey(ownerUID: ownerUID))
+        if ownerUID == nil {
+            NotificationCenter.default.post(name: .wireRouteActivityRetentionDidChange, object: retention)
+        }
+    }
+
+    private static func storageKey(ownerUID: uid_t?) -> String {
+        ownerUID.map { "\(retentionKey).\($0)" } ?? retentionKey
     }
 
     private static var sharedDefaults: UserDefaults {
@@ -48,7 +55,7 @@ extension Notification.Name {
     )
 }
 
-struct WireRouteActivityPoint: Equatable, Sendable {
+struct WireRouteActivityPoint: Codable, Equatable, Sendable {
     let date: Date
     let receivedBytesPerSecond: Double
     let sentBytesPerSecond: Double
@@ -57,7 +64,7 @@ struct WireRouteActivityPoint: Equatable, Sendable {
     let lastHandshake: Date?
 }
 
-struct WireRouteActivitySession: Equatable, Sendable {
+struct WireRouteActivitySession: Codable, Equatable, Sendable {
     let id: Int64
     let profileIdentifier: UUID
     let profileName: String
@@ -68,6 +75,36 @@ struct WireRouteActivitySession: Equatable, Sendable {
     let sentBytes: UInt64
     let lastHandshake: Date?
 }
+
+struct WireRouteActivitySnapshot: Codable, Equatable, Sendable {
+    let points: [WireRouteActivityPoint]
+    let sessions: [WireRouteActivitySession]
+}
+
+#if os(macOS)
+enum WireRouteActivityIPCOperation: String, Codable, Sendable {
+    case snapshot
+    case clearCompleted
+    case clearAll
+    case purge
+    case setRetention
+}
+
+struct WireRouteActivityIPCRequest: Codable, Sendable {
+    let operation: WireRouteActivityIPCOperation
+    let profileIdentifier: UUID?
+    let since: Date?
+    let pointLimit: Int?
+    let sessionLimit: Int?
+    let before: Date?
+    let retentionDays: Int?
+}
+
+struct WireRouteActivityIPCResponse: Codable, Sendable {
+    let snapshot: WireRouteActivitySnapshot?
+    let errorDescription: String?
+}
+#endif
 
 enum WireRouteActivityStoreError: Error, LocalizedError {
     case openFailed(String)
@@ -288,6 +325,25 @@ final class WireRouteActivityStore: @unchecked Sendable {
         }
     }
 
+    func snapshot(
+        profileIdentifier: UUID,
+        since date: Date,
+        pointLimit: Int = 720,
+        sessionLimit: Int = 24
+    ) throws -> WireRouteActivitySnapshot {
+        WireRouteActivitySnapshot(
+            points: try points(
+                profileIdentifier: profileIdentifier,
+                since: date,
+                limit: pointLimit
+            ),
+            sessions: try sessions(
+                profileIdentifier: profileIdentifier,
+                limit: sessionLimit
+            )
+        )
+    }
+
     func clearCompletedHistory(profileIdentifier: UUID) throws {
         try lock.withLock {
             guard let database else { throw WireRouteActivityStoreError.openFailed("Database is closed.") }
@@ -433,17 +489,88 @@ final class WireRouteActivityStore: @unchecked Sendable {
     }
 }
 
+#if os(macOS)
+final class WireRouteActivityHistoryAccess: @unchecked Sendable {
+    let usesSystemExtensionStore: Bool
+    private let localStore: WireRouteActivityStore?
+
+    init() {
+        usesSystemExtensionStore = WireRouteSystemActivityBridge.isAvailable
+        localStore = usesSystemExtensionStore ? nil : try? WireRouteActivityStore()
+    }
+
+    func snapshot(
+        profileIdentifier: UUID,
+        since: Date,
+        pointLimit: Int = 720,
+        sessionLimit: Int = 24
+    ) async throws -> WireRouteActivitySnapshot {
+        if usesSystemExtensionStore {
+            return try await WireRouteSystemActivityBridge.snapshot(
+                profileIdentifier: profileIdentifier,
+                since: since,
+                pointLimit: pointLimit,
+                sessionLimit: sessionLimit
+            )
+        }
+        guard let localStore else {
+            throw WireRouteActivityStoreError.openFailed("The shared app container is unavailable.")
+        }
+        return try localStore.snapshot(
+            profileIdentifier: profileIdentifier,
+            since: since,
+            pointLimit: pointLimit,
+            sessionLimit: sessionLimit
+        )
+    }
+
+    func clearCompleted(profileIdentifier: UUID) async throws {
+        if usesSystemExtensionStore {
+            try await WireRouteSystemActivityBridge.clearCompleted(profileIdentifier: profileIdentifier)
+        } else if let localStore {
+            try localStore.clearCompletedHistory(profileIdentifier: profileIdentifier)
+        } else {
+            throw WireRouteActivityStoreError.openFailed("The shared app container is unavailable.")
+        }
+    }
+
+    func clearAll(profileIdentifier: UUID) async throws {
+        if usesSystemExtensionStore {
+            try await WireRouteSystemActivityBridge.clearAll(profileIdentifier: profileIdentifier)
+        } else if let localStore {
+            try localStore.clearAllHistory(profileIdentifier: profileIdentifier)
+        } else {
+            throw WireRouteActivityStoreError.openFailed("The shared app container is unavailable.")
+        }
+    }
+
+    func applyRetention(_ retention: WireRouteActivityRetention, now: Date = Date()) async throws {
+        let cutoff = now.addingTimeInterval(-retention.interval)
+        if usesSystemExtensionStore {
+            try await WireRouteSystemActivityBridge.setRetention(retention)
+            try await WireRouteSystemActivityBridge.purge(before: cutoff)
+        } else if let localStore {
+            try localStore.purge(before: cutoff)
+        } else {
+            throw WireRouteActivityStoreError.openFailed("The shared app container is unavailable.")
+        }
+    }
+}
+#endif
+
 final class WireRouteActivityRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private let store: WireRouteActivityStore
     private let profileIdentifier: UUID
+    private let ownerUID: uid_t?
     private var sessionID: Int64?
     private var accumulator = WireRouteActivityAccumulator()
     private var lastPurgeDate: Date?
 
-    init(store: WireRouteActivityStore, profileIdentifier: UUID) {
+    init(store: WireRouteActivityStore, profileIdentifier: UUID, ownerUID: uid_t? = nil) {
         self.store = store
         self.profileIdentifier = profileIdentifier
+        self.ownerUID = ownerUID
     }
 
     func start(profileName: String, at date: Date = Date()) throws {
@@ -484,7 +611,7 @@ final class WireRouteActivityRecorder: @unchecked Sendable {
 
     private func purgeIfNeeded(at date: Date) throws {
         guard lastPurgeDate.map({ date.timeIntervalSince($0) >= 60 * 60 }) ?? true else { return }
-        let retention = WireRouteActivityPreference.loadRetention()
+        let retention = WireRouteActivityPreference.loadRetention(ownerUID: ownerUID)
         try store.purge(before: date.addingTimeInterval(-retention.interval))
         lastPurgeDate = date
     }

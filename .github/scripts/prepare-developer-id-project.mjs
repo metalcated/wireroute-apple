@@ -86,7 +86,7 @@ project = replaceExactly(
 project = replaceExactly(
   project,
   `\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "$(APP_ID_MACOS).network-extension";\n\t\t\t\tPRODUCT_NAME = WireRouteNetworkExtension;`,
-  `\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "$(APP_ID_MACOS).network-extension";\n\t\t\t\tPRODUCT_NAME = "$(PRODUCT_BUNDLE_IDENTIFIER)";`,
+  `\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "$(APP_ID_MACOS).network-extension";\n\t\t\t\tPRODUCT_NAME = "com.gnet.wireroute.network-extension";`,
   2
 )
 
@@ -126,6 +126,8 @@ const extensionDictionary = `\t<key>NSExtension</key>
 \t</dict>`
 const systemExtensionDictionary = `\t<key>NetworkExtension</key>
 \t<dict>
+\t\t<key>NEMachServiceName</key>
+\t\t<string>$(DEVELOPMENT_TEAM).group.$(APP_ID_MACOS).keychain-xpc</string>
 \t\t<key>NEProviderClasses</key>
 \t\t<dict>
 \t\t\t<key>com.apple.networkextension.packet-tunnel</key>
@@ -149,7 +151,7 @@ await writeFile(infoPlistPath, updatedInfoPlist)
 
 await writeFile(
   entryPointPath,
-  `import Dispatch\nimport NetworkExtension\n\n@main\nprivate enum DeveloperIDSystemExtensionMain {\n    static func main() {\n        NEProvider.startSystemExtensionMode()\n        dispatchMain()\n    }\n}\n`
+  `import Dispatch\nimport NetworkExtension\n\n@main\nprivate enum DeveloperIDSystemExtensionMain {\n    static func main() {\n        NEProvider.startSystemExtensionMode()\n        Keychain.startSystemExtensionKeychainService()\n        dispatchMain()\n    }\n}\n`
 )
 
 let appDelegate = await readFile(appDelegatePath, 'utf8')

@@ -1,3 +1,3 @@
 // Shared defaults for targets that do not override Version or Build in Xcode.
 MARKETING_VERSION = 1.0.17
-CURRENT_PROJECT_VERSION = 6
+CURRENT_PROJECT_VERSION = 11
