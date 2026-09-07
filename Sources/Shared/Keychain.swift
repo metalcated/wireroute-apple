@@ -3,6 +3,9 @@
 
 import Foundation
 import Security
+#if os(macOS)
+import LocalAuthentication
+#endif
 
 struct KeychainRecoveryConfiguration {
     let reference: Data
@@ -70,6 +73,15 @@ private enum WireRouteSystemKeychainIdentity {
         return identifier
     }
 
+    static var isContainingAppProcess: Bool {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier,
+              let appGroupIdentifier = FileManager.appGroupId,
+              let separatorRange = appGroupIdentifier.range(of: ".group.") else {
+            return false
+        }
+        return bundleIdentifier == String(appGroupIdentifier[separatorRange.upperBound...])
+    }
+
     static var embeddedSystemExtensionBundle: Bundle? {
         guard !isSystemExtensionProcess,
               let baseAppIdentifier else {
@@ -99,6 +111,16 @@ private enum WireRouteSystemKeychainIdentity {
             return nil
         }
         return name
+    }
+
+    static var legacyMigrationMachServiceName: String? {
+        guard isContainingAppProcess,
+              embeddedSystemExtensionBundle == nil,
+              let appGroupIdentifier = FileManager.appGroupId,
+              !appGroupIdentifier.isEmpty else {
+            return nil
+        }
+        return appGroupIdentifier + ".keychain-xpc"
     }
 
     static var teamIdentifier: String? {
@@ -150,8 +172,18 @@ private final class WireRouteSystemKeychainXPCClient {
     private let machServiceName: String
     private let serverRequirement: String
 
-    init?() {
-        guard let machServiceName = WireRouteSystemKeychainIdentity.machServiceName,
+    convenience init?() {
+        self.init(machServiceName: WireRouteSystemKeychainIdentity.machServiceName)
+    }
+
+    static func legacyMigrationClient() -> WireRouteSystemKeychainXPCClient? {
+        WireRouteSystemKeychainXPCClient(
+            machServiceName: WireRouteSystemKeychainIdentity.legacyMigrationMachServiceName
+        )
+    }
+
+    private init?(machServiceName: String?) {
+        guard let machServiceName,
               let baseAppIdentifier = WireRouteSystemKeychainIdentity.baseAppIdentifier,
               let serverRequirement = WireRouteSystemKeychainIdentity.codeSigningRequirement(
                   identifier: baseAppIdentifier + ".network-extension"
@@ -552,6 +584,19 @@ class Keychain {
            let data = result as? Data {
             return String(data: data, encoding: String.Encoding.utf8)
         }
+        #if os(macOS)
+        if let client = WireRouteSystemKeychainXPCClient.legacyMigrationClient() {
+            let (systemStatus, configuration) = client.load(reference: ref)
+            if systemStatus == errSecSuccess,
+               let configuration {
+                return configuration
+            }
+            if systemStatus != errSecItemNotFound,
+               systemStatus != errSecNotAvailable {
+                wg_log(.error, message: "Unable to open legacy system Keychain config through migration service: \(systemStatus)")
+            }
+        }
+        #endif
         wg_log(.error, message: "Unable to open config from keychain: \(ret)")
         return nil
     }
@@ -690,8 +735,9 @@ class Keychain {
         modernQuery[kSecUseDataProtectionKeychain] = true
         var status = SecItemUpdate(modernQuery as CFDictionary, attributes as CFDictionary)
         #if os(macOS)
-        if status == errSecItemNotFound {
-            status = SecItemUpdate(baseQuery as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound,
+           let legacyQuery = legacyUserKeychainQuery(baseQuery) {
+            status = SecItemUpdate(legacyQuery as CFDictionary, attributes as CFDictionary)
         }
         #endif
         if status == errSecSuccess {
@@ -732,7 +778,7 @@ class Keychain {
 
     static func deleteProfileRecoveryConfiguration(profileID: String) {
         guard let service = serviceIdentifier(suffix: ".profile-recovery") else { return }
-        var query: [CFString: Any] = [
+        let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: profileID,
@@ -740,9 +786,13 @@ class Keychain {
         ]
         var status = SecItemDelete(query as CFDictionary)
         #if os(macOS)
-        if shouldTryLegacyKeychain(after: status) {
-            query.removeValue(forKey: kSecUseDataProtectionKeychain)
-            status = SecItemDelete(query as CFDictionary)
+        if shouldTryLegacyKeychain(after: status),
+           let legacyQuery = legacyUserKeychainQuery([
+               kSecClass: kSecClassGenericPassword,
+               kSecAttrService: service,
+               kSecAttrAccount: profileID
+           ]) {
+            status = SecItemDelete(legacyQuery as CFDictionary)
         }
         #endif
         if status != errSecSuccess && status != errSecItemNotFound {
@@ -830,15 +880,19 @@ class Keychain {
             }
         }
         #endif
-        var query: [CFString: Any] = [
+        let query: [CFString: Any] = [
             kSecValuePersistentRef: ref,
             kSecUseDataProtectionKeychain: true
         ]
         var ret = SecItemDelete(query as CFDictionary)
         #if os(macOS)
-        if shouldTryLegacyKeychain(after: ret) {
-            query.removeValue(forKey: kSecUseDataProtectionKeychain)
-            ret = SecItemDelete(query as CFDictionary)
+        if shouldTryLegacyKeychain(after: ret),
+           let legacyQuery = legacyUserKeychainQuery([kSecValuePersistentRef: ref]) {
+            ret = SecItemDelete(legacyQuery as CFDictionary)
+        }
+        if ret != errSecSuccess,
+           let migrationClient = WireRouteSystemKeychainXPCClient.legacyMigrationClient() {
+            systemStatus = migrationClient.delete(reference: ref)
         }
         #endif
         #if os(macOS)
@@ -877,7 +931,15 @@ class Keychain {
         }
         #endif
         let (ret, _) = copyMatching([kSecValuePersistentRef: ref])
-        return ret == errSecSuccess
+        if ret == errSecSuccess {
+            return true
+        }
+        #if os(macOS)
+        if let client = WireRouteSystemKeychainXPCClient.legacyMigrationClient() {
+            return client.verify(reference: ref) == errSecSuccess
+        }
+        #endif
+        return false
     }
 
     #if os(macOS)
@@ -889,6 +951,30 @@ class Keychain {
         }
         let (localStatus, _) = copyMatching([kSecValuePersistentRef: ref])
         return localStatus == errSecSuccess
+    }
+
+    static func requiresDataProtectionKeychainMigration(called ref: Data) -> Bool {
+        guard WireRouteSystemKeychainIdentity.isContainingAppProcess,
+              WireRouteSystemKeychainIdentity.embeddedSystemExtensionBundle == nil else {
+            return false
+        }
+
+        let (dataProtectionStatus, _) = dataProtectionCopyMatching([
+            kSecValuePersistentRef: ref
+        ])
+        guard dataProtectionStatus != errSecSuccess else {
+            return false
+        }
+
+        if let legacyQuery = legacyUserKeychainQuery([kSecValuePersistentRef: ref]) {
+            var result: CFTypeRef?
+            if SecItemCopyMatching(legacyQuery as CFDictionary, &result) == errSecSuccess {
+                return true
+            }
+        }
+
+        return WireRouteSystemKeychainXPCClient.legacyMigrationClient()?
+            .verify(reference: ref) == errSecSuccess
     }
     #endif
 
@@ -907,18 +993,44 @@ class Keychain {
             return (status, result)
         }
         #endif
-        var modernAttributes = attributes
-        modernAttributes[kSecUseDataProtectionKeychain] = true
-        var result: CFTypeRef?
-        var ret = SecItemCopyMatching(modernAttributes as CFDictionary, &result)
+        var (ret, result) = dataProtectionCopyMatching(attributes)
         #if os(macOS)
-        if shouldTryLegacyKeychain(after: ret) {
+        if shouldTryLegacyKeychain(after: ret),
+           let legacyQuery = legacyUserKeychainQuery(attributes) {
             result = nil
-            ret = SecItemCopyMatching(attributes as CFDictionary, &result)
+            ret = SecItemCopyMatching(legacyQuery as CFDictionary, &result)
         }
         #endif
         return (ret, result)
     }
+
+    private static func dataProtectionCopyMatching(
+        _ attributes: [CFString: Any]
+    ) -> (OSStatus, CFTypeRef?) {
+        var modernAttributes = attributes
+        modernAttributes[kSecUseDataProtectionKeychain] = true
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(modernAttributes as CFDictionary, &result)
+        return (status, result)
+    }
+
+    #if os(macOS)
+    private static func legacyUserKeychainQuery(
+        _ attributes: [CFString: Any]
+    ) -> [CFString: Any]? {
+        var defaultKeychain: SecKeychain?
+        guard SecKeychainCopyDefault(&defaultKeychain) == errSecSuccess,
+              let defaultKeychain else {
+            return nil
+        }
+        let authenticationContext = LAContext()
+        authenticationContext.interactionNotAllowed = true
+        var query = attributes
+        query[kSecMatchSearchList] = [defaultKeychain]
+        query[kSecUseAuthenticationContext] = authenticationContext
+        return query
+    }
+    #endif
 
     private static func shouldTryLegacyKeychain(after status: OSStatus) -> Bool {
         status == errSecItemNotFound || status == errSecParam || status == errSecNotAvailable
@@ -937,6 +1049,14 @@ class Keychain {
         if useDataProtectionKeychain {
             query[kSecUseDataProtectionKeychain] = true
         }
+        #if os(macOS)
+        if !useDataProtectionKeychain {
+            guard let legacyQuery = legacyUserKeychainQuery(query) else {
+                return []
+            }
+            query = legacyQuery
+        }
+        #endif
         var result: CFTypeRef?
         let ret = SecItemCopyMatching(query as CFDictionary, &result)
         guard ret == errSecSuccess else { return [] }
@@ -977,6 +1097,14 @@ class Keychain {
         if useDataProtectionKeychain {
             query[kSecUseDataProtectionKeychain] = true
         }
+        #if os(macOS)
+        if !useDataProtectionKeychain {
+            guard let legacyQuery = legacyUserKeychainQuery(query) else {
+                return []
+            }
+            query = legacyQuery
+        }
+        #endif
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else { return [] }

@@ -868,11 +868,23 @@ class TunnelsManager {
                let passwordReference = proto.passwordReference,
                proto.verifyConfigurationReference() {
                 saveMacOSRecoveryConfiguration(for: manager)
-                if Keychain.requiresSystemExtensionMigration(called: passwordReference) {
-                    if await migrateMacOSSystemKeychainStorage(
+                if Keychain.requiresDataProtectionKeychainMigration(called: passwordReference) {
+                    if await migrateMacOSKeychainStorage(
                         manager: manager,
                         configuration: configuration,
-                        oldPasswordReference: passwordReference
+                        oldPasswordReference: passwordReference,
+                        destinationDescription: "Data Protection Keychain storage"
+                    ) {
+                        saveMacOSRecoveryConfiguration(for: manager)
+                    } else {
+                        didFailProviderBindingRefresh = true
+                    }
+                } else if Keychain.requiresSystemExtensionMigration(called: passwordReference) {
+                    if await migrateMacOSKeychainStorage(
+                        manager: manager,
+                        configuration: configuration,
+                        oldPasswordReference: passwordReference,
+                        destinationDescription: "system-extension-owned Keychain storage"
                     ) {
                         saveMacOSRecoveryConfiguration(for: manager)
                     } else {
@@ -931,10 +943,10 @@ class TunnelsManager {
             }
 
             let manager = NETunnelProviderManager()
-            let requiresSystemKeychainMigration = Keychain.requiresSystemExtensionMigration(
+            let requiresKeychainMigration = Keychain.requiresSystemExtensionMigration(
                 called: storedConfiguration.reference
-            )
-            let replacementProtocol = requiresSystemKeychainMigration
+            ) || Keychain.requiresDataProtectionKeychainMigration(called: storedConfiguration.reference)
+            let replacementProtocol = requiresKeychainMigration
                 ? manager.setTunnelConfiguration(configuration)
                 : manager.setRecoveredTunnelConfiguration(
                     configuration,
@@ -949,7 +961,7 @@ class TunnelsManager {
                 try await manager.saveToPreferences()
                 managers.append(manager)
                 usedNames.insert(storedConfiguration.name)
-                if requiresSystemKeychainMigration,
+                if requiresKeychainMigration,
                    let newReference = replacementProtocol.passwordReference {
                     Keychain.deleteReference(called: storedConfiguration.reference)
                     referencedConfigurations.insert(newReference)
@@ -960,7 +972,7 @@ class TunnelsManager {
                 saveMacOSRecoveryConfiguration(for: manager)
                 wg_log(.info, message: "Restored profile '\(storedConfiguration.name)' from its protected Keychain configuration")
             } catch {
-                if requiresSystemKeychainMigration {
+                if requiresKeychainMigration {
                     replacementProtocol.destroyConfigurationReference()
                 }
                 wg_log(.error, message: "Unable to restore profile '\(storedConfiguration.name)' from Keychain: \(error)")
@@ -1059,6 +1071,7 @@ class TunnelsManager {
 
         let canReuseReference = Keychain.openReference(called: record.passwordReference) != nil
             && !Keychain.requiresSystemExtensionMigration(called: record.passwordReference)
+            && !Keychain.requiresDataProtectionKeychainMigration(called: record.passwordReference)
         let replacementProtocol: NETunnelProviderProtocol?
         if canReuseReference {
             replacementProtocol = manager.setRecoveredTunnelConfiguration(
@@ -1147,14 +1160,15 @@ class TunnelsManager {
         }
     }
 
-    private static func migrateMacOSSystemKeychainStorage(
+    private static func migrateMacOSKeychainStorage(
         manager: NETunnelProviderManager,
         configuration: TunnelConfiguration,
-        oldPasswordReference: Data
+        oldPasswordReference: Data,
+        destinationDescription: String
     ) async -> Bool {
         switch manager.connection.status {
         case .connected, .connecting, .disconnecting, .reasserting:
-            wg_log(.info, message: "Deferring system Keychain migration for active profile '\(configuration.name ?? "unknown")'")
+            wg_log(.info, message: "Deferring \(destinationDescription) migration for active profile '\(configuration.name ?? "unknown")'")
             return false
         case .disconnected, .invalid:
             break
@@ -1172,21 +1186,21 @@ class TunnelsManager {
             manager.protocolConfiguration = previousProtocolConfiguration
             manager.localizedDescription = previousLocalizedDescription
             manager.cacheTunnelConfiguration(previousConfiguration)
-            wg_log(.error, message: "Unable to prepare system Keychain migration for profile '\(configuration.name ?? "unknown")'")
+            wg_log(.error, message: "Unable to prepare \(destinationDescription) migration for profile '\(configuration.name ?? "unknown")'")
             return false
         }
 
         do {
             try await manager.saveToPreferences()
             Keychain.deleteReference(called: oldPasswordReference)
-            wg_log(.info, message: "Migrated profile '\(configuration.name ?? "unknown")' to system-extension-owned Keychain storage")
+            wg_log(.info, message: "Migrated profile '\(configuration.name ?? "unknown")' to \(destinationDescription)")
             return true
         } catch {
             replacementProtocol.destroyConfigurationReference()
             manager.protocolConfiguration = previousProtocolConfiguration
             manager.localizedDescription = previousLocalizedDescription
             manager.cacheTunnelConfiguration(previousConfiguration)
-            wg_log(.error, message: "Unable to migrate profile '\(configuration.name ?? "unknown")' to system Keychain: \(error)")
+            wg_log(.error, message: "Unable to migrate profile '\(configuration.name ?? "unknown")' to \(destinationDescription): \(error)")
             return false
         }
     }
