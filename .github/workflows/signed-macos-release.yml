@@ -95,7 +95,9 @@ jobs:
             fi
           done
 
-          git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null
+          if [[ "${CANDIDATE_BUILD}" != "true" ]]; then
+            git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v6
