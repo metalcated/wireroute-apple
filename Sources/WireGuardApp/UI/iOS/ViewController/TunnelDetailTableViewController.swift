@@ -2,6 +2,7 @@
 // Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
 
 import UIKit
+import SwiftUI
 
 private final class SplitRouteEntryViewController: UIViewController, UITextViewDelegate {
     var onSave: ((String, @escaping @MainActor @Sendable (WireGuardAppError?) -> Void) -> Void)?
@@ -1348,6 +1349,8 @@ class TunnelDetailTableViewController: UITableViewController {
     }
 
     override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        tableView.reloadData()
         if tunnel.status == .active {
             self.startUpdatingRuntimeConfiguration()
         }
@@ -1739,11 +1742,15 @@ extension TunnelDetailTableViewController {
     private func onDemandCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
         let field = TunnelDetailTableViewController.onDemandFields[indexPath.row]
         if field == .onDemand {
-            let cell: KeyValueCell = tableView.dequeueReusableCell(for: indexPath)
-            configureConfigurationCell(cell, usesMonospacedValue: false)
-            cell.key = field.localizedUIString
-            cell.value = onDemandViewModel.localizedInterfaceDescription
-            cell.copyableGesture = false
+            let automaticProfilesEnabled = tunnelsManager.automaticProfilePolicy.isEnabled
+            let cell: ProfileActionCardCell = tableView.dequeueReusableCell(for: indexPath)
+            cell.configure(
+                title: tr("tunnelListCaptionOnDemand"),
+                detail: automaticProfilesEnabled
+                    ? "\(tr("automaticProfilesEnabled")) · \(tr("iosSettingsAutomaticProfilesDescription"))"
+                    : onDemandViewModel.localizedInterfaceDescription,
+                symbolName: automaticProfilesEnabled ? "arrow.triangle.branch" : "bolt.horizontal.circle"
+            )
             return cell
         } else {
             assert(field == .ssid)
@@ -1834,6 +1841,10 @@ extension TunnelDetailTableViewController {
             return indexPath
         }
         if case .onDemand = sections[indexPath.section],
+            case .onDemand = TunnelDetailTableViewController.onDemandFields[indexPath.row] {
+            return indexPath
+        }
+        if case .onDemand = sections[indexPath.section],
             case .ssid = TunnelDetailTableViewController.onDemandFields[indexPath.row] {
             return indexPath
         }
@@ -1849,10 +1860,36 @@ extension TunnelDetailTableViewController {
                 animated: true
             )
         } else if case .onDemand = sections[indexPath.section],
+            case .onDemand = TunnelDetailTableViewController.onDemandFields[indexPath.row] {
+            presentOnDemandConfiguration()
+        } else if case .onDemand = sections[indexPath.section],
             case .ssid = TunnelDetailTableViewController.onDemandFields[indexPath.row] {
             let ssidDetailVC = SSIDOptionDetailTableViewController(title: onDemandViewModel.ssidOption.localizedUIString, ssids: onDemandViewModel.selectedSSIDs)
             navigationController?.pushViewController(ssidDetailVC, animated: true)
         }
         tableView.deselectRow(at: indexPath, animated: true)
+    }
+
+    private func presentOnDemandConfiguration() {
+        guard tunnelsManager.automaticProfilePolicy.isEnabled else {
+            editTapped()
+            return
+        }
+        let closeEditor: () -> Void = { [weak self] in
+            self?.navigationController?.popViewController(animated: true)
+        }
+        let editor = AutomaticProfilesEditorView(
+            tunnelsManager: tunnelsManager,
+            onCancel: closeEditor,
+            onSaved: { [weak self] in
+                self?.tableView.reloadData()
+                closeEditor()
+            }
+        )
+        let host = UIHostingController(rootView: editor)
+        host.title = tr("automaticProfilesTitle")
+        host.navigationItem.largeTitleDisplayMode = .never
+        host.view.backgroundColor = WireRouteAppearance.background
+        navigationController?.pushViewController(host, animated: true)
     }
 }

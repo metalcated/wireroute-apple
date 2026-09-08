@@ -4,8 +4,11 @@
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
+import SwiftUI
 
 private final class WireRouteProfilesHeaderView: UIView {
+    var onAutomaticProfilesTapped: (() -> Void)?
+
     private let subtitleLabel: UILabel = {
         let label = UILabel()
         label.text = tr("iosProfilesSubtitle")
@@ -24,6 +27,16 @@ private final class WireRouteProfilesHeaderView: UIView {
         return label
     }()
 
+    private let automaticProfilesButton = UIButton(type: .custom)
+    private let automaticProfilesDetailLabel: UILabel = {
+        let label = UILabel()
+        label.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 2
+        return label
+    }()
+
     override init(frame: CGRect) {
         super.init(frame: frame)
 
@@ -36,9 +49,50 @@ private final class WireRouteProfilesHeaderView: UIView {
         sectionRow.alignment = .center
         sectionRow.spacing = 12
 
-        let stack = UIStackView(arrangedSubviews: [subtitleLabel, sectionRow])
+        let automaticProfilesIcon = UIImageView(image: UIImage(systemName: "arrow.triangle.branch"))
+        automaticProfilesIcon.tintColor = WireRouteAppearance.signalBlue
+        automaticProfilesIcon.contentMode = .scaleAspectFit
+        let automaticProfilesIconContainer = UIView()
+        automaticProfilesIconContainer.backgroundColor = WireRouteAppearance.signalBlue.withAlphaComponent(0.14)
+        automaticProfilesIconContainer.layer.cornerRadius = 12
+        automaticProfilesIconContainer.layer.cornerCurve = .continuous
+        automaticProfilesIconContainer.addSubview(automaticProfilesIcon)
+        automaticProfilesIcon.translatesAutoresizingMaskIntoConstraints = false
+
+        let automaticProfilesTitleLabel = UILabel()
+        automaticProfilesTitleLabel.text = tr("automaticProfilesTitle")
+        automaticProfilesTitleLabel.font = WireRouteAppearance.roundedFont(size: 17, weight: .semibold, textStyle: .headline)
+        automaticProfilesTitleLabel.adjustsFontForContentSizeCategory = true
+        let automaticProfilesLabels = UIStackView(arrangedSubviews: [automaticProfilesTitleLabel, automaticProfilesDetailLabel])
+        automaticProfilesLabels.axis = .vertical
+        automaticProfilesLabels.spacing = 3
+
+        let automaticProfilesChevron = UIImageView(image: UIImage(systemName: "chevron.right"))
+        automaticProfilesChevron.tintColor = .tertiaryLabel
+        automaticProfilesChevron.contentMode = .scaleAspectFit
+        let automaticProfilesRow = UIStackView(arrangedSubviews: [
+            automaticProfilesIconContainer,
+            automaticProfilesLabels,
+            UIView(),
+            automaticProfilesChevron
+        ])
+        automaticProfilesRow.axis = .horizontal
+        automaticProfilesRow.alignment = .center
+        automaticProfilesRow.spacing = 13
+        automaticProfilesRow.isUserInteractionEnabled = false
+
+        automaticProfilesButton.backgroundColor = WireRouteAppearance.card
+        automaticProfilesButton.layer.cornerRadius = 16
+        automaticProfilesButton.layer.cornerCurve = .continuous
+        automaticProfilesButton.layer.borderWidth = 1
+        automaticProfilesButton.layer.borderColor = WireRouteAppearance.border.withAlphaComponent(0.72).cgColor
+        automaticProfilesButton.addSubview(automaticProfilesRow)
+        automaticProfilesRow.translatesAutoresizingMaskIntoConstraints = false
+        automaticProfilesButton.addTarget(self, action: #selector(automaticProfilesTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [subtitleLabel, automaticProfilesButton, sectionRow])
         stack.axis = .vertical
-        stack.spacing = 24
+        stack.spacing = 18
         addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -47,13 +101,44 @@ private final class WireRouteProfilesHeaderView: UIView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
             stack.topAnchor.constraint(equalTo: topAnchor, constant: 8),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            automaticProfilesButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 76),
+            automaticProfilesRow.leadingAnchor.constraint(equalTo: automaticProfilesButton.leadingAnchor, constant: 14),
+            automaticProfilesRow.trailingAnchor.constraint(equalTo: automaticProfilesButton.trailingAnchor, constant: -14),
+            automaticProfilesRow.topAnchor.constraint(equalTo: automaticProfilesButton.topAnchor, constant: 12),
+            automaticProfilesRow.bottomAnchor.constraint(equalTo: automaticProfilesButton.bottomAnchor, constant: -12),
+            automaticProfilesIconContainer.widthAnchor.constraint(equalToConstant: 42),
+            automaticProfilesIconContainer.heightAnchor.constraint(equalTo: automaticProfilesIconContainer.widthAnchor),
+            automaticProfilesIcon.centerXAnchor.constraint(equalTo: automaticProfilesIconContainer.centerXAnchor),
+            automaticProfilesIcon.centerYAnchor.constraint(equalTo: automaticProfilesIconContainer.centerYAnchor),
+            automaticProfilesIcon.widthAnchor.constraint(equalToConstant: 20),
+            automaticProfilesIcon.heightAnchor.constraint(equalToConstant: 20),
+            automaticProfilesChevron.widthAnchor.constraint(equalToConstant: 12),
+            automaticProfilesChevron.heightAnchor.constraint(equalToConstant: 18),
             routeMark.widthAnchor.constraint(equalToConstant: 24),
             routeMark.heightAnchor.constraint(equalToConstant: 24)
         ])
+
+        updateAutomaticProfiles(isEnabled: false, isAvailable: false)
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    func updateAutomaticProfiles(isEnabled: Bool, isAvailable: Bool) {
+        let state = isEnabled
+            ? tr("automaticProfilesEnabled")
+            : tr("automaticProfilesDisabled")
+        automaticProfilesDetailLabel.text = "\(state) · \(tr("iosSettingsAutomaticProfilesDescription"))"
+        automaticProfilesButton.isEnabled = isAvailable
+        automaticProfilesButton.alpha = isAvailable ? 1 : 0.55
+        automaticProfilesButton.accessibilityLabel = tr("automaticProfilesTitle")
+        automaticProfilesButton.accessibilityValue = automaticProfilesDetailLabel.text
+        automaticProfilesButton.accessibilityTraits = .button
+    }
+
+    @objc private func automaticProfilesTapped() {
+        onAutomaticProfilesTapped?()
     }
 }
 
@@ -143,6 +228,9 @@ class TunnelsListTableViewController: UIViewController {
 
         tableView.dataSource = self
         tableView.delegate = self
+        profilesHeaderView.onAutomaticProfilesTapped = { [weak self] in
+            self?.presentAutomaticProfilesEditor()
+        }
         profilesHeaderView.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 112)
         tableView.tableHeaderView = profilesHeaderView
 
@@ -301,6 +389,7 @@ class TunnelsListTableViewController: UIViewController {
 
         busyIndicator.stopAnimating()
         tableView.reloadData()
+        refreshAutomaticProfilesStatus()
         updateEmptyState(animated: false)
         onTunnelListChanged?()
     }
@@ -339,6 +428,34 @@ class TunnelsListTableViewController: UIViewController {
         if let selectedRowIndexPath = tableView.indexPathForSelectedRow {
             tableView.deselectRow(at: selectedRowIndexPath, animated: false)
         }
+        refreshAutomaticProfilesStatus()
+    }
+
+    private func refreshAutomaticProfilesStatus() {
+        profilesHeaderView.updateAutomaticProfiles(
+            isEnabled: tunnelsManager?.automaticProfilePolicy.isEnabled == true,
+            isAvailable: (tunnelsManager?.numberOfTunnels() ?? 0) > 0
+        )
+    }
+
+    private func presentAutomaticProfilesEditor() {
+        guard let tunnelsManager else { return }
+        let closeEditor: () -> Void = { [weak self] in
+            self?.navigationController?.popViewController(animated: true)
+        }
+        let editor = AutomaticProfilesEditorView(
+            tunnelsManager: tunnelsManager,
+            onCancel: closeEditor,
+            onSaved: { [weak self] in
+                self?.refreshAutomaticProfilesStatus()
+                closeEditor()
+            }
+        )
+        let host = UIHostingController(rootView: editor)
+        host.title = tr("automaticProfilesTitle")
+        host.navigationItem.largeTitleDisplayMode = .never
+        host.view.backgroundColor = WireRouteAppearance.background
+        navigationController?.pushViewController(host, animated: true)
     }
 
     @objc func addButtonTapped(sender: AnyObject) {

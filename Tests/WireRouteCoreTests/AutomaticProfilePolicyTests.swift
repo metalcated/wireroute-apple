@@ -148,6 +148,23 @@ final class AutomaticProfilePolicyTests: XCTestCase {
         )
     }
 
+    func testDisabledRuntimeSnapshotDoesNotRequirePrivateProfileMaterial() throws {
+        let snapshot = try AutomaticProfileRuntimeSnapshot(
+            policy: AutomaticProfilePolicy(
+                isEnabled: false,
+                defaultProfile: homeProfile,
+                otherWiFiTarget: .profile(mobileProfile)
+            ),
+            profiles: []
+        ).validated()
+
+        XCTAssertTrue(snapshot.availableProfileIDs.isEmpty)
+        XCTAssertEqual(
+            snapshot.decision(transport: .wiFi, wiFiName: "Office"),
+            .hold(.disabled)
+        )
+    }
+
     func testRuntimeSnapshotRejectsDuplicateAndUnprotectedProfiles() {
         XCTAssertThrowsError(
             try AutomaticProfileRuntimeSnapshot(

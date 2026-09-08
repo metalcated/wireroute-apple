@@ -1553,6 +1553,19 @@ class TunnelsManager {
         policyRevision: UUID = UUID()
     ) throws -> AutomaticProfileRuntimeSnapshot {
         var updatedPolicy = try requestedPolicy.validated()
+        // A disabled policy is configuration only. It must remain editable even if
+        // one of the installed tunnel records cannot currently be read (for example,
+        // when a development-signed build cannot access App Store Keychain items).
+        // Runtime profile material is needed only when the controller can switch or
+        // manually activate profiles.
+        guard updatedPolicy.isEnabled else {
+            return try AutomaticProfileRuntimeSnapshot(
+                revision: revision,
+                policyRevision: policyRevision,
+                policy: updatedPolicy,
+                profiles: []
+            ).validated()
+        }
         let profiles = try tunnels.map { tunnel -> AutomaticProfileRuntimeProfile in
             guard let tunnelProtocol = tunnel.tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol,
                   let profile = tunnelProtocol.wireRouteAutomaticRuntimeProfile(called: tunnel.name) else {

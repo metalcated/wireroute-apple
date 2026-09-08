@@ -865,6 +865,24 @@ class ManageTunnelsRootViewController: NSViewController {
 }
 
 extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegate {
+    func automaticProfilesSelected() {
+        var hostingController: NSHostingController<AutomaticProfilesEditorView>?
+        let closeEditor: () -> Void = { [weak self] in
+            guard let hostingController else { return }
+            self?.dismiss(hostingController)
+            self?.tunnelDetailVC?.refreshAutomaticProfilesStatus()
+            self?.settingsVC?.refreshAutomaticProfilesStatus()
+        }
+        let editor = AutomaticProfilesEditorView(
+            tunnelsManager: tunnelsManager,
+            onCancel: closeEditor,
+            onSaved: closeEditor
+        )
+        let host = NSHostingController(rootView: editor)
+        hostingController = host
+        presentAsSheet(host)
+    }
+
     func editSelectedTunnel() {
         tunnelDetailVC?.handleEditTunnelAction()
     }
@@ -894,17 +912,8 @@ extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegat
         settingsVC.automaticProfilesIsEnabled = { [weak self] in
             self?.tunnelsManager.automaticProfilePolicy.isEnabled == true
         }
-        settingsVC.onConfigureAutomaticProfiles = { [weak self, weak settingsVC] in
-            guard let self, let settingsVC else { return }
-            let editor = AutomaticProfilesEditorView(
-                tunnelsManager: self.tunnelsManager,
-                onClose: { [weak settingsVC] in
-                    settingsVC?.dismiss(nil)
-                    settingsVC?.refreshAutomaticProfilesStatus()
-                }
-            )
-            let host = NSHostingController(rootView: editor)
-            settingsVC.presentAsSheet(host)
+        settingsVC.onConfigureAutomaticProfiles = { [weak self] in
+            self?.automaticProfilesSelected()
         }
         self.settingsVC = settingsVC
         setTunnelDetailContentVC(settingsVC)
@@ -918,6 +927,9 @@ extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegat
             lastSelectedTunnel = tunnel
             if tunnel.isTunnelAvailableToUser {
                 let tunnelDetailVC = TunnelDetailTableViewController(tunnelsManager: tunnelsManager, tunnel: tunnel)
+                tunnelDetailVC.onAutomaticProfilesSaved = { [weak self] in
+                    self?.settingsVC?.refreshAutomaticProfilesStatus()
+                }
                 setTunnelDetailContentVC(tunnelDetailVC)
                 self.tunnelDetailVC = tunnelDetailVC
             } else {

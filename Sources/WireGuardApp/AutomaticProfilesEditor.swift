@@ -253,164 +253,260 @@ struct AutomaticProfilesEditorView: View {
     @StateObject private var model: AutomaticProfilesEditorModel
     @Environment(\.dismiss) private var dismiss
     @State private var showsModeChangeConfirmation = false
-    private let onClose: (() -> Void)?
+    private let onCancel: (() -> Void)?
+    private let onSaved: (() -> Void)?
 
-    init(tunnelsManager: TunnelsManager, onClose: (() -> Void)? = nil) {
+    init(
+        tunnelsManager: TunnelsManager,
+        onCancel: (() -> Void)? = nil,
+        onSaved: (() -> Void)? = nil
+    ) {
         _model = StateObject(
             wrappedValue: AutomaticProfilesEditorModel(tunnelsManager: tunnelsManager)
         )
-        self.onClose = onClose
+        self.onCancel = onCancel
+        self.onSaved = onSaved
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Toggle(tr("automaticProfilesEnable"), isOn: $model.isEnabled)
-                        .disabled(model.references.isEmpty)
-                } footer: {
-                    Text(tr("automaticProfilesIntro"))
-                }
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    editorHeader
 
-                Section {
-                    defaultProfilePicker
-                } header: {
-                    Text(tr("automaticProfilesDefaultTitle"))
-                } footer: {
-                    Text(tr("automaticProfilesDefaultHelp"))
-                }
-
-                Section {
-                    targetPicker(
-                        tr("automaticProfilesOtherWiFi"),
-                        selection: $model.otherWiFiTarget
-                    )
-                    #if os(iOS)
-                    targetPicker(
-                        tr("automaticProfilesCellular"),
-                        selection: $model.cellularTarget
-                    )
-                    #endif
-                    targetPicker(
-                        tr("automaticProfilesEthernet"),
-                        selection: $model.ethernetTarget
-                    )
-                } header: {
-                    Text(tr("automaticProfilesActionsTitle"))
-                } footer: {
-                    Text(tr("automaticProfilesActionsHelp"))
-                }
-
-                Section {
-                    TextEditor(text: $model.trustedWiFiNames)
-                        .frame(minHeight: 76)
-                        .accessibilityLabel(tr("automaticProfilesTrustedWiFiNames"))
-                    Button(tr("automaticProfilesAddCurrentWiFi")) {
-                        model.addCurrentWiFiAsTrusted()
+                    panel {
+                        Toggle(tr("automaticProfilesEnable"), isOn: $model.isEnabled)
+                            .toggleStyle(.switch)
+                            .font(.system(.headline, design: .rounded, weight: .semibold))
+                            .tint(automaticProfilesAccent)
+                            .disabled(model.references.isEmpty)
                     }
-                } header: {
-                    Text(tr("automaticProfilesTrustedWiFiTitle"))
-                } footer: {
-                    Text(tr("automaticProfilesTrustedWiFiHelp"))
-                }
 
-                Section {
-                    if model.assignments.isEmpty {
-                        Text(tr("automaticProfilesAssignmentsEmpty"))
-                            .foregroundStyle(.secondary)
+                    sectionCard(
+                        title: tr("automaticProfilesDefaultTitle"),
+                        detail: tr("automaticProfilesDefaultHelp")
+                    ) {
+                        defaultProfilePicker
                     }
-                    ForEach($model.assignments) { $assignment in
-                        VStack(alignment: .leading, spacing: 8) {
-                            TextField(
-                                tr("automaticProfilesWiFiName"),
-                                text: $assignment.ssid
-                            )
-                            assignmentProfilePicker(selection: $assignment.target)
-                        }
-                        .padding(.vertical, 3)
-                    }
-                    .onDelete(perform: model.removeAssignments)
-                    Button {
-                        model.addAssignment()
-                    } label: {
-                        Label(
-                            tr("automaticProfilesAddAssignment"),
-                            systemImage: "plus.circle.fill"
+
+                    sectionCard(
+                        title: tr("automaticProfilesActionsTitle"),
+                        detail: tr("automaticProfilesActionsHelp")
+                    ) {
+                        targetPicker(
+                            tr("automaticProfilesOtherWiFi"),
+                            selection: $model.otherWiFiTarget
+                        )
+                        #if os(iOS)
+                        targetPicker(
+                            tr("automaticProfilesCellular"),
+                            selection: $model.cellularTarget
+                        )
+                        #endif
+                        targetPicker(
+                            tr("automaticProfilesEthernet"),
+                            selection: $model.ethernetTarget
                         )
                     }
-                    .disabled(model.references.isEmpty)
-                } header: {
-                    Text(tr("automaticProfilesAssignmentsTitle"))
-                } footer: {
-                    Text(tr("automaticProfilesAssignmentsHelp"))
-                }
 
-                Section(tr("automaticProfilesControlTitle")) {
-                    Label(
-                        tr("automaticProfilesControlHelp"),
-                        systemImage: "hand.raised.fill"
-                    )
-                    .foregroundStyle(.secondary)
-                }
-            }
-            .navigationTitle(tr("automaticProfilesTitle"))
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(tr("automaticProfilesCancel")) {
-                        close()
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(tr("automaticProfilesSave")) {
-                        if model.shouldConfirmSave {
-                            showsModeChangeConfirmation = true
-                        } else {
-                            save()
+                    sectionCard(
+                        title: tr("automaticProfilesTrustedWiFiTitle"),
+                        detail: tr("automaticProfilesTrustedWiFiHelp")
+                    ) {
+                        TextEditor(text: $model.trustedWiFiNames)
+                            .font(.system(.body, design: .rounded))
+                            .scrollContentBackground(.hidden)
+                            .padding(10)
+                            .frame(minHeight: 88)
+                            .background(automaticProfilesInset)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(automaticProfilesBorder.opacity(0.82), lineWidth: 1)
+                            }
+                            .accessibilityLabel(tr("automaticProfilesTrustedWiFiNames"))
+
+                        secondaryActionButton(
+                            title: tr("automaticProfilesAddCurrentWiFi"),
+                            systemImage: "wifi"
+                        ) {
+                            model.addCurrentWiFiAsTrusted()
                         }
                     }
-                    .disabled(model.isSaving)
+
+                    sectionCard(
+                        title: tr("automaticProfilesAssignmentsTitle"),
+                        detail: tr("automaticProfilesAssignmentsHelp")
+                    ) {
+                        if model.assignments.isEmpty {
+                            Text(tr("automaticProfilesAssignmentsEmpty"))
+                                .font(.system(.subheadline, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 4)
+                        }
+                        ForEach($model.assignments) { $assignment in
+                            assignmentRow(assignment: $assignment)
+                        }
+                        secondaryActionButton(
+                            title: tr("automaticProfilesAddAssignment"),
+                            systemImage: "plus"
+                        ) {
+                            model.addAssignment()
+                        }
+                        .disabled(model.references.isEmpty)
+                    }
+
+                    panel {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "hand.raised.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(automaticProfilesAccent)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(tr("automaticProfilesControlTitle"))
+                                    .font(.system(.headline, design: .rounded, weight: .semibold))
+                                Text(tr("automaticProfilesControlHelp"))
+                                    .font(.system(.subheadline, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
                 }
+                .frame(maxWidth: 720)
+                .padding(.horizontal, 22)
+                .padding(.top, 22)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity)
             }
-            .disabled(model.isSaving)
-            .overlay {
-                if model.isSaving {
+
+            footer
+        }
+        .background(automaticProfilesBackground.ignoresSafeArea())
+        .tint(automaticProfilesAccent)
+        .disabled(model.isSaving)
+        .overlay {
+            if model.isSaving {
+                ZStack {
+                    Color.black.opacity(0.28).ignoresSafeArea()
                     ProgressView(tr("automaticProfilesSaving"))
-                        .padding(18)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                        .font(.system(.body, design: .rounded, weight: .medium))
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 18)
+                        .background(automaticProfilesRaised)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(automaticProfilesBorder.opacity(0.72), lineWidth: 1)
+                        }
                 }
-            }
-            .alert(tr("automaticProfilesReplaceOnDemandTitle"), isPresented: $showsModeChangeConfirmation) {
-                Button(tr("automaticProfilesCancel"), role: .cancel) {}
-                Button(tr("automaticProfilesEnable")) { save() }
-            } message: {
-                Text(tr("automaticProfilesReplaceOnDemandMessage"))
-            }
-            .alert(
-                model.alertTitle ?? tr("automaticProfilesSaveFailureTitle"),
-                isPresented: Binding(
-                    get: { model.alertMessage != nil },
-                    set: { if !$0 { model.alertMessage = nil } }
-                )
-            ) {
-                Button(tr("automaticProfilesOK"), role: .cancel) {}
-            } message: {
-                Text(model.alertMessage ?? "")
             }
         }
+        .alert(tr("automaticProfilesReplaceOnDemandTitle"), isPresented: $showsModeChangeConfirmation) {
+            Button(tr("automaticProfilesCancel"), role: .cancel) {}
+            Button(tr("automaticProfilesEnable")) { save() }
+        } message: {
+            Text(tr("automaticProfilesReplaceOnDemandMessage"))
+        }
+        .alert(
+            model.alertTitle ?? tr("automaticProfilesSaveFailureTitle"),
+            isPresented: Binding(
+                get: { model.alertMessage != nil },
+                set: { if !$0 { model.alertMessage = nil } }
+            )
+        ) {
+            Button(tr("automaticProfilesOK"), role: .cancel) {}
+        } message: {
+            Text(model.alertMessage ?? "")
+        }
         #if os(macOS)
-        .frame(minWidth: 620, idealWidth: 680, minHeight: 640, idealHeight: 760)
+        .frame(minWidth: 650, idealWidth: 700, minHeight: 650, idealHeight: 760)
         #endif
     }
 
     @ViewBuilder
-    private var defaultProfilePicker: some View {
-        Picker(tr("automaticProfilesDefault"), selection: $model.defaultProfileID) {
-            Text(tr("automaticProfilesVPNOff")).tag(nil as UUID?)
-            ForEach(model.references, id: \.id) { reference in
-                Text(model.displayName(for: reference)).tag(Optional(reference.id))
+    private var editorHeader: some View {
+        HStack(alignment: .top, spacing: 15) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(automaticProfilesAccent)
+                .frame(width: 48, height: 48)
+                .background(automaticProfilesAccent.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            VStack(alignment: .leading, spacing: 5) {
+                Text(tr("automaticProfilesTitle"))
+                    .font(.system(.title, design: .rounded, weight: .bold))
+                Text(tr("automaticProfilesIntro"))
+                    .font(.system(.body, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .pickerStyle(.menu)
+    }
+
+    @ViewBuilder
+    private func panel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(automaticProfilesCard)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(automaticProfilesBorder.opacity(0.72), lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private func sectionCard<Content: View>(
+        title: String,
+        detail: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title)
+                .font(.system(.title3, design: .rounded, weight: .semibold))
+            Text(detail)
+                .font(.system(.subheadline, design: .rounded))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            panel(content: content)
+        }
+    }
+
+    @ViewBuilder
+    private var defaultProfilePicker: some View {
+        Menu {
+            Button {
+                model.defaultProfileID = nil
+            } label: {
+                choiceMenuLabel(
+                    tr("automaticProfilesVPNOff"),
+                    isSelected: model.defaultProfileID == nil
+                )
+            }
+            ForEach(model.references, id: \.id) { reference in
+                Button {
+                    model.defaultProfileID = reference.id
+                } label: {
+                    choiceMenuLabel(
+                        model.displayName(for: reference),
+                        isSelected: model.defaultProfileID == reference.id
+                    )
+                }
+            }
+        } label: {
+            choiceRow(
+                title: tr("automaticProfilesDefault"),
+                value: model.defaultProfileID
+                    .flatMap { id in model.references.first { $0.id == id } }
+                    .map(model.displayName(for:)) ?? tr("automaticProfilesVPNOff")
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -418,39 +514,268 @@ struct AutomaticProfilesEditorView: View {
         _ title: String,
         selection: Binding<AutomaticProfileTargetChoice>
     ) -> some View {
-        Picker(title, selection: selection) {
-            Text(tr("automaticProfilesUseDefault")).tag(AutomaticProfileTargetChoice.useDefault)
-            Text(tr("automaticProfilesVPNOff")).tag(AutomaticProfileTargetChoice.vpnOff)
+        Menu {
+            choiceMenuButton(
+                title: tr("automaticProfilesUseDefault"),
+                choice: .useDefault,
+                selection: selection
+            )
+            choiceMenuButton(
+                title: tr("automaticProfilesVPNOff"),
+                choice: .vpnOff,
+                selection: selection
+            )
             ForEach(model.references, id: \.id) { reference in
-                Text(model.displayName(for: reference))
-                    .tag(AutomaticProfileTargetChoice.profile(reference.id))
+                choiceMenuButton(
+                    title: model.displayName(for: reference),
+                    choice: .profile(reference.id),
+                    selection: selection
+                )
             }
+        } label: {
+            choiceRow(title: title, value: model.label(for: selection.wrappedValue))
         }
-        .pickerStyle(.menu)
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
     private func assignmentProfilePicker(
         selection: Binding<AutomaticProfileTargetChoice>
     ) -> some View {
-        Picker(tr("automaticProfilesProfile"), selection: selection) {
+        Menu {
             ForEach(model.references, id: \.id) { reference in
-                Text(model.displayName(for: reference))
-                    .tag(AutomaticProfileTargetChoice.profile(reference.id))
+                choiceMenuButton(
+                    title: model.displayName(for: reference),
+                    choice: .profile(reference.id),
+                    selection: selection
+                )
             }
+        } label: {
+            choiceRow(
+                title: tr("automaticProfilesProfile"),
+                value: model.label(for: selection.wrappedValue)
+            )
         }
-        .pickerStyle(.menu)
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func choiceMenuButton(
+        title: String,
+        choice: AutomaticProfileTargetChoice,
+        selection: Binding<AutomaticProfileTargetChoice>
+    ) -> some View {
+        Button {
+            selection.wrappedValue = choice
+        } label: {
+            choiceMenuLabel(title, isSelected: selection.wrappedValue == choice)
+        }
+    }
+
+    @ViewBuilder
+    private func choiceMenuLabel(_ title: String, isSelected: Bool) -> some View {
+        if isSelected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
+        }
+    }
+
+    @ViewBuilder
+    private func choiceRow(title: String, value: String) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.system(.body, design: .rounded, weight: .medium))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.system(.subheadline, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(automaticProfilesAccent)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 48)
+        .background(automaticProfilesInset)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func assignmentRow(
+        assignment: Binding<AutomaticWiFiAssignmentDraft>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 10) {
+                TextField(tr("automaticProfilesWiFiName"), text: assignment.ssid)
+                    .font(.system(.body, design: .rounded))
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 44)
+                    .background(automaticProfilesInset)
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .stroke(automaticProfilesBorder.opacity(0.82), lineWidth: 1)
+                    }
+                Button {
+                    model.assignments.removeAll { $0.id == assignment.wrappedValue.id }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.red)
+                        .frame(width: 42, height: 42)
+                        .background(automaticProfilesInset)
+                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("automaticProfilesRemoveAssignment"))
+            }
+            assignmentProfilePicker(selection: assignment.target)
+        }
+        .padding(12)
+        .background(automaticProfilesRaised.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func secondaryActionButton(
+        title: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: systemImage)
+                Text(title)
+                    .font(.system(.body, design: .rounded, weight: .medium))
+                Spacer()
+            }
+            .foregroundStyle(automaticProfilesAccent)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .background(automaticProfilesAccent.opacity(0.11))
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Spacer()
+            Button(tr("automaticProfilesCancel")) {
+                cancel()
+            }
+            .buttonStyle(.plain)
+            .font(.system(.body, design: .rounded, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 22)
+            .frame(minHeight: 44)
+            .background(automaticProfilesRaised)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .keyboardShortcut(.cancelAction)
+
+            Button(tr("automaticProfilesSave")) {
+                if model.shouldConfirmSave {
+                    showsModeChangeConfirmation = true
+                } else {
+                    save()
+                }
+            }
+            .buttonStyle(.plain)
+            .font(.system(.body, design: .rounded, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 26)
+            .frame(minHeight: 44)
+            .background(automaticProfilesAccent)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 14)
+        .background(automaticProfilesCard)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(automaticProfilesBorder.opacity(0.72))
+                .frame(height: 1)
+        }
     }
 
     private func save() {
-        model.save { close() }
+        model.save {
+            if let onSaved {
+                onSaved()
+            } else {
+                dismiss()
+            }
+        }
     }
 
-    private func close() {
-        if let onClose {
-            onClose()
+    private func cancel() {
+        if let onCancel {
+            onCancel()
         } else {
             dismiss()
         }
+    }
+
+    private var automaticProfilesBackground: Color {
+        #if os(iOS)
+        return Color(uiColor: WireRouteAppearance.background)
+        #else
+        return Color(nsColor: WireRouteTheme.isBlueNordic
+            ? WireRouteTheme.color(for: .canvas)
+            : .windowBackgroundColor)
+        #endif
+    }
+
+    private var automaticProfilesCard: Color {
+        #if os(iOS)
+        return Color(uiColor: WireRouteAppearance.card)
+        #else
+        return Color(nsColor: WireRouteTheme.isBlueNordic
+            ? WireRouteTheme.color(for: .surface)
+            : .controlBackgroundColor)
+        #endif
+    }
+
+    private var automaticProfilesInset: Color {
+        #if os(iOS)
+        return Color(uiColor: WireRouteAppearance.inset)
+        #else
+        return Color(nsColor: WireRouteTheme.isBlueNordic
+            ? WireRouteTheme.color(for: .inset)
+            : .textBackgroundColor)
+        #endif
+    }
+
+    private var automaticProfilesRaised: Color {
+        #if os(iOS)
+        return Color(uiColor: WireRouteAppearance.raised)
+        #else
+        return Color(nsColor: WireRouteTheme.isBlueNordic
+            ? WireRouteTheme.color(for: .raised)
+            : .underPageBackgroundColor)
+        #endif
+    }
+
+    private var automaticProfilesBorder: Color {
+        #if os(iOS)
+        return Color(uiColor: WireRouteAppearance.border)
+        #else
+        return Color(nsColor: WireRouteTheme.isBlueNordic
+            ? WireRouteTheme.borderColor
+            : .separatorColor)
+        #endif
+    }
+
+    private var automaticProfilesAccent: Color {
+        #if os(iOS)
+        return Color(uiColor: WireRouteAppearance.signalBlue)
+        #else
+        return Color(nsColor: WireRouteTheme.accentColor)
+        #endif
     }
 }

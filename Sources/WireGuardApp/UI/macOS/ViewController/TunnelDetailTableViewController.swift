@@ -2,6 +2,7 @@
 // Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
 
 import Cocoa
+import SwiftUI
 
 @MainActor
 private final class MacSplitRouteEntryViewController: NSViewController {
@@ -967,6 +968,23 @@ class TunnelDetailTableViewController: NSViewController {
         button.imagePosition = .imageLeading
         return button
     }()
+    private let onDemandDescriptionLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        label.maximumNumberOfLines = 2
+        return label
+    }()
+    private let onDemandButton: NSButton = {
+        let button = WireRouteButton(title: "", target: nil, action: nil)
+        button.bezelStyle = .regularSquare
+        button.image = NSImage(
+            systemSymbolName: "arrow.triangle.branch",
+            accessibilityDescription: tr("tunnelListCaptionOnDemand")
+        )
+        button.imagePosition = .imageLeading
+        return button
+    }()
     private let connectionButton: NSButton = {
         let button = WireRouteButton(title: "", target: nil, action: nil)
         button.bezelStyle = .regularSquare
@@ -1007,6 +1025,7 @@ class TunnelDetailTableViewController: NSViewController {
     private var hasOnDemandRulesObservationToken: AnyObject?
     private var tunnelEditVC: TunnelEditViewController?
     private var reloadRuntimeConfigurationTimer: Timer?
+    var onAutomaticProfilesSaved: (() -> Void)?
 
     init(tunnelsManager: TunnelsManager, tunnel: TunnelContainer) {
         self.tunnelsManager = tunnelsManager
@@ -1072,6 +1091,8 @@ class TunnelDetailTableViewController: NSViewController {
         connectionButton.action = #selector(handleToggleActiveStatusAction)
         dnsProtectionButton.target = self
         dnsProtectionButton.action = #selector(dnsProtectionClicked)
+        onDemandButton.target = self
+        onDemandButton.action = #selector(onDemandClicked)
         activityDashboard.onOpenHistory = { [weak self] in
             guard let self else { return }
             self.presentAsSheet(ActivityMonitorViewController(tunnel: self.tunnel))
@@ -1134,7 +1155,20 @@ class TunnelDetailTableViewController: NSViewController {
         dnsRow.alignment = .centerY
         dnsRow.spacing = 16
 
-        let heroStack = NSStackView(views: [identityRow, routingRow, descriptionRow, dnsRow])
+        let onDemandLabel = NSTextField(labelWithString: tr("tunnelListCaptionOnDemand"))
+        onDemandLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        let onDemandTextStack = NSStackView(views: [onDemandLabel, onDemandDescriptionLabel])
+        onDemandTextStack.orientation = .vertical
+        onDemandTextStack.alignment = .leading
+        onDemandTextStack.spacing = 2
+        let onDemandSpacer = NSView()
+        onDemandSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let onDemandRow = NSStackView(views: [onDemandTextStack, onDemandSpacer, onDemandButton])
+        onDemandRow.orientation = .horizontal
+        onDemandRow.alignment = .centerY
+        onDemandRow.spacing = 16
+
+        let heroStack = NSStackView(views: [identityRow, routingRow, descriptionRow, dnsRow, onDemandRow])
         heroStack.orientation = .vertical
         heroStack.alignment = .leading
         heroStack.spacing = 15
@@ -1163,6 +1197,7 @@ class TunnelDetailTableViewController: NSViewController {
             routingRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
             descriptionRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
             dnsRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
+            onDemandRow.widthAnchor.constraint(equalTo: heroStack.widthAnchor),
             identityImageView.widthAnchor.constraint(equalToConstant: 44),
             identityImageView.heightAnchor.constraint(equalTo: identityImageView.widthAnchor),
             routeModeControl.widthAnchor.constraint(equalToConstant: 220),
@@ -1306,6 +1341,28 @@ class TunnelDetailTableViewController: NSViewController {
         presentAsSheet(dnsViewController)
     }
 
+    @objc private func onDemandClicked() {
+        guard tunnelsManager.automaticProfilePolicy.isEnabled else {
+            handleEditTunnelAction()
+            return
+        }
+        var hostingController: NSHostingController<AutomaticProfilesEditorView>?
+        let closeEditor: () -> Void = { [weak self] in
+            guard let self, let hostingController else { return }
+            self.dismiss(hostingController)
+            self.updateDashboard()
+            self.onAutomaticProfilesSaved?()
+        }
+        let editor = AutomaticProfilesEditorView(
+            tunnelsManager: tunnelsManager,
+            onCancel: closeEditor,
+            onSaved: closeEditor
+        )
+        let host = NSHostingController(rootView: editor)
+        hostingController = host
+        presentAsSheet(host)
+    }
+
     @objc private func routingModeChanged() {
         let requestedMode: TunnelRouteMode = routeModeControl.selectedSegment == 1
             ? .full
@@ -1378,6 +1435,13 @@ class TunnelDetailTableViewController: NSViewController {
             : tr("tunnelRoutingSplitDescription")
         dnsProtectionButton.title = tunnel.dnsProtectionPolicy.localizedTitle
         dnsProtectionDescriptionLabel.stringValue = tunnel.dnsProtectionPolicy.localizedDescription
+        let automaticProfilesEnabled = tunnelsManager.automaticProfilePolicy.isEnabled
+        onDemandButton.title = automaticProfilesEnabled
+            ? tr("automaticProfilesTitle")
+            : tr("macSettingsConfigureOnDemand")
+        onDemandDescriptionLabel.stringValue = automaticProfilesEnabled
+            ? "\(tr("automaticProfilesEnabled")) · \(tr("macSettingsAutomaticProfilesHelp"))"
+            : onDemandViewModel.localizedInterfaceDescription
         identityImageView.image = NSImage(
             systemSymbolName: tunnel.routingMode == .full
                 ? "globe.americas.fill"
@@ -1409,6 +1473,11 @@ class TunnelDetailTableViewController: NSViewController {
                 accessibilityDescription: connectionButton.title
             )
         }
+    }
+
+    func refreshAutomaticProfilesStatus() {
+        updateDashboard()
+        tableView.reloadData()
     }
 
     override func viewWillAppear() {

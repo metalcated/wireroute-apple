@@ -865,9 +865,10 @@
 "automaticProfilesTrustedWiFiHelp" = "Keep the VPN off on these exact network names. Enter one name per line; spelling and spaces matter.";
 "automaticProfilesAddCurrentWiFi" = "Add Current Wi-Fi as Trusted";
 "automaticProfilesAssignmentsTitle" = "Wi-Fi profile assignments";
-"automaticProfilesAssignmentsHelp" = "Connect a specific profile on each named network. All other Wi-Fi uses the action above. Swipe left to remove an assignment on iPhone or iPad.";
+"automaticProfilesAssignmentsHelp" = "Connect a specific profile on each named network. All other Wi-Fi uses the action above.";
 "automaticProfilesAssignmentsEmpty" = "No network-specific profiles yet.";
 "automaticProfilesAddAssignment" = "Add Wi-Fi Assignment";
+"automaticProfilesRemoveAssignment" = "Remove Wi-Fi Assignment";
 "automaticProfilesWiFiName" = "Exact Wi-Fi name";
 "automaticProfilesProfile" = "Profile";
 "automaticProfilesControlTitle" = "Your connection stays in your control";

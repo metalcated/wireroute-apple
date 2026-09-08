@@ -342,6 +342,11 @@ class SettingsTableViewController: UITableViewController {
         tableView.tableFooterView = brandFooterView
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        tableView.reloadData()
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateIntroHeaderSize()
@@ -485,25 +490,34 @@ class SettingsTableViewController: UITableViewController {
             )
             return
         }
+        let state = tunnelsManager.automaticProfilePolicy.isEnabled
+            ? tr("automaticProfilesEnabled")
+            : tr("automaticProfilesDisabled")
         cell.configure(
             title: tr("iosSettingsAutomaticProfiles"),
-            detail: tr("iosSettingsAutomaticProfilesDescription"),
+            detail: "\(state) · \(tr("iosSettingsAutomaticProfilesDescription"))",
             symbolName: "arrow.triangle.branch",
             trailingSymbol: "chevron.right",
-            isInteractive: true
+            isInteractive: tunnelsManager.numberOfTunnels() > 0
         )
         cell.onTapped = { [weak self] in
             guard let self else { return }
+            let closeEditor: () -> Void = { [weak self] in
+                self?.navigationController?.popViewController(animated: true)
+            }
             let editor = AutomaticProfilesEditorView(
                 tunnelsManager: tunnelsManager,
-                onClose: { [weak self] in
-                    self?.navigationController?.popViewController(animated: true)
-                }
+                onCancel: closeEditor,
+                onSaved: closeEditor
             )
             let host = UIHostingController(rootView: editor)
+            host.title = tr("automaticProfilesTitle")
+            host.navigationItem.largeTitleDisplayMode = .never
+            host.view.backgroundColor = WireRouteAppearance.background
             self.navigationController?.pushViewController(host, animated: true)
         }
     }
+
 }
 
 extension SettingsTableViewController {
