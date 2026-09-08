@@ -1342,10 +1342,6 @@ class TunnelDetailTableViewController: NSViewController {
     }
 
     @objc private func onDemandClicked() {
-        guard tunnelsManager.automaticProfilePolicy.isEnabled else {
-            handleEditTunnelAction()
-            return
-        }
         var hostingController: NSHostingController<AutomaticProfilesEditorView>?
         let closeEditor: () -> Void = { [weak self] in
             guard let self, let hostingController else { return }
@@ -1435,13 +1431,8 @@ class TunnelDetailTableViewController: NSViewController {
             : tr("tunnelRoutingSplitDescription")
         dnsProtectionButton.title = tunnel.dnsProtectionPolicy.localizedTitle
         dnsProtectionDescriptionLabel.stringValue = tunnel.dnsProtectionPolicy.localizedDescription
-        let automaticProfilesEnabled = tunnelsManager.automaticProfilePolicy.isEnabled
-        onDemandButton.title = automaticProfilesEnabled
-            ? tr("automaticProfilesTitle")
-            : tr("macSettingsConfigureOnDemand")
-        onDemandDescriptionLabel.stringValue = automaticProfilesEnabled
-            ? "\(tr("automaticProfilesEnabled")) · \(tr("macSettingsAutomaticProfilesHelp"))"
-            : onDemandViewModel.localizedInterfaceDescription
+        onDemandButton.title = tr("automaticProfilesTitle")
+        onDemandDescriptionLabel.stringValue = tr("automaticProfilesProfileActionHelp")
         identityImageView.image = NSImage(
             systemSymbolName: tunnel.routingMode == .full
                 ? "globe.americas.fill"
