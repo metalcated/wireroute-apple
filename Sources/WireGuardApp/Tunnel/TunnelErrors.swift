@@ -7,6 +7,7 @@ enum TunnelsManagerError: WireGuardAppError {
     case tunnelNameEmpty
     case tunnelAlreadyExistsWithThatName
     case tunnelConfigurationUnavailable
+    case automaticProfilesEnabled
     case systemErrorOnListingTunnels(systemError: Error)
     case systemErrorOnAddTunnel(systemError: Error)
     case systemErrorOnModifyTunnel(systemError: Error)
@@ -23,6 +24,11 @@ enum TunnelsManagerError: WireGuardAppError {
                 tr("alertTunnelConfigurationUnavailableTitle"),
                 tr("alertTunnelConfigurationUnavailableMessage")
             )
+        case .automaticProfilesEnabled:
+            return (
+                tr("automaticProfilesOnDemandUnavailableTitle"),
+                tr("automaticProfilesOnDemandUnavailableMessage")
+            )
         case .systemErrorOnListingTunnels(let systemError):
             return (tr("alertSystemErrorOnListingTunnelsTitle"), systemError.localizedUIString)
         case .systemErrorOnAddTunnel(let systemError):
@@ -35,9 +41,42 @@ enum TunnelsManagerError: WireGuardAppError {
     }
 }
 
+enum AutomaticProfilesManagementError: WireGuardAppError {
+    case sharedStorageUnavailable
+    case profileStorageUnavailable(String)
+    case wiFiNameAccessDenied
+    case saveFailed(Error)
+
+    var alertText: AlertText {
+        switch self {
+        case .sharedStorageUnavailable:
+            return (
+                tr("automaticProfilesSaveFailureTitle"),
+                tr("automaticProfilesSharedStorageUnavailable")
+            )
+        case .profileStorageUnavailable(let profileName):
+            return (
+                tr("automaticProfilesSaveFailureTitle"),
+                tr(format: "automaticProfilesProfileStorageUnavailable (%@)", profileName)
+            )
+        case .wiFiNameAccessDenied:
+            return (
+                tr("automaticProfilesWiFiPermissionTitle"),
+                tr("automaticProfilesWiFiPermissionMessage")
+            )
+        case .saveFailed(let error):
+            return (
+                tr("automaticProfilesSaveFailureTitle"),
+                error.localizedUIString
+            )
+        }
+    }
+}
+
 enum TunnelsManagerActivationAttemptError: WireGuardAppError {
     case tunnelIsNotInactive
     case configurationUnavailable
+    case automaticProfilesUnavailable
     case failedWhileStarting(systemError: Error) // startTunnel() throwed
     case failedWhileSaving(systemError: Error) // save config after re-enabling throwed
     case failedWhileLoading(systemError: Error) // reloading config throwed
@@ -49,6 +88,11 @@ enum TunnelsManagerActivationAttemptError: WireGuardAppError {
             return (tr("alertTunnelActivationErrorTunnelIsNotInactiveTitle"), tr("alertTunnelActivationErrorTunnelIsNotInactiveMessage"))
         case .configurationUnavailable:
             return TunnelsManagerError.tunnelConfigurationUnavailable.alertText
+        case .automaticProfilesUnavailable:
+            return (
+                tr("automaticProfilesActivationFailureTitle"),
+                tr("automaticProfilesActivationFailureMessage")
+            )
         case .failedWhileStarting(let systemError),
              .failedWhileSaving(let systemError),
              .failedWhileLoading(let systemError),
@@ -152,6 +196,11 @@ extension PacketTunnelProviderError: WireGuardAppError {
         switch self {
         case .savedProtocolConfigurationIsInvalid:
             return (tr("alertTunnelActivationFailureTitle"), tr("alertTunnelActivationSavedConfigFailureMessage"))
+        case .automaticProfilesUnavailable:
+            return (
+                tr("automaticProfilesActivationFailureTitle"),
+                tr("automaticProfilesActivationFailureMessage")
+            )
         case .invalidDNSProtectionConfiguration:
             return (tr("dnsProtectionInvalidTitle"), tr("dnsProtectionInvalidStoredMessage"))
         case .dnsResolutionFailure:

@@ -2,6 +2,7 @@
 
 import Cocoa
 import CoreImage.CIFilterBuiltins
+import SwiftUI
 import UniformTypeIdentifiers
 
 @MainActor
@@ -2538,6 +2539,12 @@ final class RouterOSSettingsViewController: NSViewController {
         target: nil,
         action: nil
     )
+    private let configureAutomaticProfilesButton = WireRouteButton(
+        title: tr("macSettingsConfigureAutomaticProfiles"),
+        target: nil,
+        action: nil
+    )
+    private let automaticProfilesStateLabel = NSTextField(labelWithString: "")
     private let connectionsTableView = NSTableView()
     private let connectionsEmptyLabel = NSTextField(wrappingLabelWithString: tr("macRouterOSConnectionsEmpty"))
     private let addConnectionButton = WireRouteButton(title: tr("macRouterOSAddConnection"), target: nil, action: nil)
@@ -2551,6 +2558,8 @@ final class RouterOSSettingsViewController: NSViewController {
     private var connections = [RouterOSStoredConnection]()
     var onConfigureOnDemand: (() -> Void)?
     var onDemandProfileName: (() -> String?)?
+    var onConfigureAutomaticProfiles: (() -> Void)?
+    var automaticProfilesIsEnabled: (() -> Bool)?
 
     override func viewWillAppear() {
         super.viewWillAppear()
@@ -2558,6 +2567,7 @@ final class RouterOSSettingsViewController: NSViewController {
         loadStoredDefaults()
         loadConnections()
         updateOnDemandButton()
+        updateAutomaticProfilesButton()
     }
 
     override func loadView() {
@@ -2576,10 +2586,12 @@ final class RouterOSSettingsViewController: NSViewController {
         configureFields()
         let appearanceForm = makeAppearanceForm()
         let persistentVPNForm = makePersistentVPNForm()
+        let automaticProfilesForm = makeAutomaticProfilesForm()
         let connectionsForm = makeConnectionsForm()
         let peerDefaultsForm = makePeerDefaultsForm()
         let appearanceTitle = sectionTitle(tr("macSettingsAppearanceTitle"))
         let persistentVPNTitle = sectionTitle(tr("macSettingsPersistentVPNTitle"))
+        let automaticProfilesTitle = sectionTitle(tr("macSettingsAutomaticProfilesTitle"))
         let connectionsTitle = sectionTitle(tr("macRouterOSConnectionsTitle"))
         let peerDefaultsTitle = sectionTitle(tr("macRouterOSSettingsTitle"))
 
@@ -2615,6 +2627,8 @@ final class RouterOSSettingsViewController: NSViewController {
             appearanceForm,
             persistentVPNTitle,
             persistentVPNForm,
+            automaticProfilesTitle,
+            automaticProfilesForm,
             connectionsTitle,
             connectionsForm,
             peerDefaultsTitle,
@@ -2631,6 +2645,8 @@ final class RouterOSSettingsViewController: NSViewController {
         stack.setCustomSpacing(18, after: appearanceForm)
         stack.setCustomSpacing(6, after: persistentVPNTitle)
         stack.setCustomSpacing(18, after: persistentVPNForm)
+        stack.setCustomSpacing(6, after: automaticProfilesTitle)
+        stack.setCustomSpacing(18, after: automaticProfilesForm)
         stack.setCustomSpacing(6, after: connectionsTitle)
         stack.setCustomSpacing(18, after: connectionsForm)
         stack.setCustomSpacing(6, after: peerDefaultsTitle)
@@ -2664,6 +2680,7 @@ final class RouterOSSettingsViewController: NSViewController {
             subtitleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             appearanceForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             persistentVPNForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            automaticProfilesForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             connectionsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             peerDefaultsForm.widthAnchor.constraint(equalTo: stack.widthAnchor),
             errorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
@@ -2865,6 +2882,61 @@ final class RouterOSSettingsViewController: NSViewController {
 
     @objc private func configureOnDemandClicked() {
         onConfigureOnDemand?()
+    }
+
+    private func makeAutomaticProfilesForm() -> NSView {
+        let card = makeCard()
+        let helpLabel = NSTextField(
+            wrappingLabelWithString: tr("macSettingsAutomaticProfilesHelp")
+        )
+        helpLabel.font = .systemFont(ofSize: 13)
+        helpLabel.textColor = .secondaryLabelColor
+
+        automaticProfilesStateLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        automaticProfilesStateLabel.textColor = .secondaryLabelColor
+        configureAutomaticProfilesButton.target = self
+        configureAutomaticProfilesButton.action = #selector(configureAutomaticProfilesClicked)
+        configureAutomaticProfilesButton.bezelStyle = .regularSquare
+
+        let informationStack = NSStackView(views: [helpLabel, automaticProfilesStateLabel])
+        informationStack.orientation = .vertical
+        informationStack.alignment = .leading
+        informationStack.spacing = 7
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [informationStack, spacer, configureAutomaticProfilesButton])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 18
+
+        card.addSubview(row)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -18),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            helpLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 250),
+            configureAutomaticProfilesButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 210)
+        ])
+        updateAutomaticProfilesButton()
+        return card
+    }
+
+    private func updateAutomaticProfilesButton() {
+        configureAutomaticProfilesButton.isEnabled = onConfigureAutomaticProfiles != nil
+        automaticProfilesStateLabel.stringValue = automaticProfilesIsEnabled?() == true
+            ? tr("automaticProfilesEnabled")
+            : tr("automaticProfilesDisabled")
+    }
+
+    func refreshAutomaticProfilesStatus() {
+        updateAutomaticProfilesButton()
+    }
+
+    @objc private func configureAutomaticProfilesClicked() {
+        onConfigureAutomaticProfiles?()
     }
 
     private func makeConnectionsForm() -> NSView {

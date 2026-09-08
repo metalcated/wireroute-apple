@@ -4,6 +4,7 @@
 import UIKit
 import os.log
 import SafariServices
+import SwiftUI
 
 private final class WireRouteSettingsMarkView: UIView {
     override var intrinsicContentSize: CGSize {
@@ -256,6 +257,7 @@ class SettingsTableViewController: UITableViewController {
         case goBackendVersion
         case appearance
         case activityRetention
+        case automaticProfiles
         case exportZipArchive
         case viewLog
         case support
@@ -270,6 +272,7 @@ class SettingsTableViewController: UITableViewController {
             case .goBackendVersion: return tr("settingsVersionKeyWireGuardGoBackend")
             case .appearance: return tr("iosSettingsAppearance")
             case .activityRetention: return tr("iosSettingsActivityRetention")
+            case .automaticProfiles: return tr("iosSettingsAutomaticProfiles")
             case .exportZipArchive: return tr("settingsExportZipButtonTitle")
             case .viewLog: return tr("settingsViewLogButtonTitle")
             case .support: return tr("iosSettingsSupport")
@@ -295,7 +298,7 @@ class SettingsTableViewController: UITableViewController {
 
     let settingsFieldsBySection: [[SettingsFields]] = [
         [.iosAppVersion, .goBackendVersion],
-        [.appearance, .activityRetention],
+        [.appearance, .activityRetention, .automaticProfiles],
         [.exportZipArchive, .viewLog],
         [.support, .privacy, .security, .legal, .routerOSSetup]
     ]
@@ -470,6 +473,37 @@ class SettingsTableViewController: UITableViewController {
         })
         cell.actionButton.showsMenuAsPrimaryAction = true
     }
+
+    private func configureAutomaticProfilesButton(_ cell: WireRouteSettingsItemCell) {
+        guard let tunnelsManager else {
+            cell.configure(
+                title: tr("iosSettingsAutomaticProfiles"),
+                detail: tr("iosSettingsAutomaticProfilesDescription"),
+                symbolName: "arrow.triangle.branch",
+                trailingSymbol: nil,
+                isInteractive: false
+            )
+            return
+        }
+        cell.configure(
+            title: tr("iosSettingsAutomaticProfiles"),
+            detail: tr("iosSettingsAutomaticProfilesDescription"),
+            symbolName: "arrow.triangle.branch",
+            trailingSymbol: "chevron.right",
+            isInteractive: true
+        )
+        cell.onTapped = { [weak self] in
+            guard let self else { return }
+            let editor = AutomaticProfilesEditorView(
+                tunnelsManager: tunnelsManager,
+                onClose: { [weak self] in
+                    self?.navigationController?.popViewController(animated: true)
+                }
+            )
+            let host = UIHostingController(rootView: editor)
+            self.navigationController?.pushViewController(host, animated: true)
+        }
+    }
 }
 
 extension SettingsTableViewController {
@@ -525,6 +559,8 @@ extension SettingsTableViewController {
             configureAppearanceButton(cell)
         case .activityRetention:
             configureActivityRetentionButton(cell)
+        case .automaticProfiles:
+            configureAutomaticProfilesButton(cell)
         case .exportZipArchive:
             cell.configure(
                 title: field.localizedUIString,

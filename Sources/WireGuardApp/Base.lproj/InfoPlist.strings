@@ -5,3 +5,8 @@
 
 NSCameraUsageDescription = "WireRoute uses the camera to import a tunnel configuration from a QR code";
 NSFaceIDUsageDescription = "Face ID is used for authenticating viewing and exporting of private keys";
+
+// macOS permission prompt
+
+NSLocationUsageDescription = "WireRoute uses the current Wi-Fi network name to apply your Automatic Profiles rules. It does not request or store your physical location.";
+NSLocationWhenInUseUsageDescription = "WireRoute uses the current Wi-Fi network name to apply your Automatic Profiles rules. It does not request or store your physical location.";

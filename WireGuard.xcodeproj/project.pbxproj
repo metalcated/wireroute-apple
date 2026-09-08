@@ -222,6 +222,8 @@
 		A71000000000000000000053 /* AutomaticProfilePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000051 /* AutomaticProfilePolicy.swift */; };
 		A71000000000000000000054 /* AutomaticProfilePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000051 /* AutomaticProfilePolicy.swift */; };
 		A71000000000000000000055 /* AutomaticProfilePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000051 /* AutomaticProfilePolicy.swift */; };
+		A72000000000000000000011 /* AutomaticProfilesEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72000000000000000000001 /* AutomaticProfilesEditor.swift */; };
+		A72000000000000000000012 /* AutomaticProfilesEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72000000000000000000001 /* AutomaticProfilesEditor.swift */; };
 		A71000000000000000000021 /* ActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000002 /* ActivityMonitor.swift */; };
 		A71000000000000000000022 /* ActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000002 /* ActivityMonitor.swift */; };
 		A71000000000000000000023 /* ActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71000000000000000000002 /* ActivityMonitor.swift */; };
@@ -482,6 +484,7 @@
 		6FFACD1E21E4D89600E9A2A5 /* ParseError+WireGuardAppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ParseError+WireGuardAppError.swift"; sourceTree = "<group>"; };
 		A71000000000000000000001 /* ActivityMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityMetrics.swift; sourceTree = "<group>"; };
 		A71000000000000000000051 /* AutomaticProfilePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomaticProfilePolicy.swift; sourceTree = "<group>"; };
+		A72000000000000000000001 /* AutomaticProfilesEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomaticProfilesEditor.swift; sourceTree = "<group>"; };
 		A71000000000000000000002 /* ActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityMonitor.swift; sourceTree = "<group>"; };
 		A71000000000000000000003 /* ActivityMonitorViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityMonitorViewController.swift; sourceTree = "<group>"; };
 		A71000000000000000000004 /* ActivityMonitorViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityMonitorViewController.swift; sourceTree = "<group>"; };
@@ -862,6 +865,7 @@
 		6FF4AC16211EC46F002C96EB /* WireGuardApp */ = {
 			isa = PBXGroup;
 			children = (
+				A72000000000000000000001 /* AutomaticProfilesEditor.swift */,
 				6F919ED3218C65C50023B400 /* Resources */,
 				6F7774DD217181B1006A79B3 /* UI */,
 				6F7774ED21722D0C006A79B3 /* Tunnel */,
@@ -1421,6 +1425,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A72000000000000000000012 /* AutomaticProfilesEditor.swift in Sources */,
 				A71000000000000000000012 /* ActivityMetrics.swift in Sources */,
 				A71000000000000000000053 /* AutomaticProfilePolicy.swift in Sources */,
 				A71000000000000000000022 /* ActivityMonitor.swift in Sources */,
@@ -1548,6 +1553,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A72000000000000000000011 /* AutomaticProfilesEditor.swift in Sources */,
 				A71000000000000000000011 /* ActivityMetrics.swift in Sources */,
 				A71000000000000000000052 /* AutomaticProfilePolicy.swift in Sources */,
 				A71000000000000000000021 /* ActivityMonitor.swift in Sources */,

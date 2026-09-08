@@ -54,6 +54,27 @@ extension FileManager {
         return sharedFolderURL?.appendingPathComponent("activity.sqlite3")
     }
 
+    static func automaticProfilesSnapshotURL(ownerUID: uid_t? = nil) -> URL? {
+        automaticProfilesURL(fileName: "automatic-profiles.json", ownerUID: ownerUID)
+    }
+
+    static func automaticProfilesStateURL(ownerUID: uid_t? = nil) -> URL? {
+        automaticProfilesURL(fileName: "automatic-profiles-state.json", ownerUID: ownerUID)
+    }
+
+    private static func automaticProfilesURL(fileName: String, ownerUID: uid_t?) -> URL? {
+        #if os(macOS)
+        let resolvedOwnerUID = ownerUID ?? getuid()
+        let stem = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent
+        let pathExtension = URL(fileURLWithPath: fileName).pathExtension
+        return sharedFolderURL?.appendingPathComponent(
+            "\(stem)-\(resolvedOwnerUID).\(pathExtension)"
+        )
+        #else
+        return sharedFolderURL?.appendingPathComponent(fileName)
+        #endif
+    }
+
     static var loginHelperTimestampURL: URL? {
         return sharedFolderURL?.appendingPathComponent("login-helper-timestamp.bin")
     }

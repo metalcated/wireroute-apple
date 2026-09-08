@@ -839,6 +839,61 @@
 "iosSettingsRouterOSSetup" = "RouterOS setup";
 "iosSettingsRouterOSSetupDescription" = "Configure secure RouterOS access and peer management.";
 
+// Automatic profiles
+
+"automaticProfilesControllerName" = "WireRoute Automatic Profiles";
+"automaticProfilesSaveFailureTitle" = "Automatic profiles could not be saved";
+"automaticProfilesSharedStorageUnavailable" = "WireRoute could not open its protected shared app container.";
+"automaticProfilesProfileStorageUnavailable (%@)" = "The protected configuration for ‘%@’ is unavailable. Restore or re-import that profile before enabling automatic profiles.";
+"automaticProfilesActivationFailureTitle" = "Automatic profile unavailable";
+"automaticProfilesActivationFailureMessage" = "WireRoute could not safely load the profile selected for this network. Your saved rules were kept; open Automatic Profiles to review the selected profile.";
+"automaticProfilesTitle" = "Automatic Profiles";
+"automaticProfilesIntro" = "Choose which saved profile connects as your network changes. Automatic Profiles is optional and starts off.";
+"automaticProfilesEnable" = "Enable Automatic Profiles";
+"automaticProfilesDefaultTitle" = "Default profile";
+"automaticProfilesDefault" = "Default";
+"automaticProfilesDefaultHelp" = "Used when a network action says Use default profile. VPN off means no automatic connection.";
+"automaticProfilesActionsTitle" = "Network actions";
+"automaticProfilesActionsHelp" = "Wi-Fi assignments take priority over Other Wi-Fi. Trusted Wi-Fi always keeps the VPN off.";
+"automaticProfilesOtherWiFi" = "Other Wi-Fi";
+"automaticProfilesCellular" = "Cellular";
+"automaticProfilesEthernet" = "Ethernet";
+"automaticProfilesUseDefault" = "Use default profile";
+"automaticProfilesVPNOff" = "VPN off";
+"automaticProfilesTrustedWiFiTitle" = "Trusted Wi-Fi";
+"automaticProfilesTrustedWiFiNames" = "Trusted Wi-Fi names";
+"automaticProfilesTrustedWiFiHelp" = "Keep the VPN off on these exact network names. Enter one name per line; spelling and spaces matter.";
+"automaticProfilesAddCurrentWiFi" = "Add Current Wi-Fi as Trusted";
+"automaticProfilesAssignmentsTitle" = "Wi-Fi profile assignments";
+"automaticProfilesAssignmentsHelp" = "Connect a specific profile on each named network. All other Wi-Fi uses the action above. Swipe left to remove an assignment on iPhone or iPad.";
+"automaticProfilesAssignmentsEmpty" = "No network-specific profiles yet.";
+"automaticProfilesAddAssignment" = "Add Wi-Fi Assignment";
+"automaticProfilesWiFiName" = "Exact Wi-Fi name";
+"automaticProfilesProfile" = "Profile";
+"automaticProfilesControlTitle" = "Your connection stays in your control";
+"automaticProfilesControlHelp" = "Only profiles connected by Automatic Profiles are switched. A manual connection is not replaced. Switching briefly disconnects the VPN and is not a kill switch.";
+"automaticProfilesUnavailable" = "Unavailable profile";
+"automaticProfilesUnavailableProfile (%@)" = "%@ (unavailable)";
+"automaticProfilesWiFiUnavailableTitle" = "Wi-Fi name unavailable";
+"automaticProfilesWiFiUnavailableMessage" = "Connect to Wi-Fi and allow WireRoute to read the current network name, or enter the exact Wi-Fi name manually.";
+"automaticProfilesWiFiPermissionTitle" = "Wi-Fi name access is required";
+"automaticProfilesWiFiPermissionMessage" = "WireRoute needs Location access on macOS only to read the current Wi-Fi network name. It does not request or store your physical location. Allow access in System Settings, then try again.";
+"automaticProfilesReplaceOnDemandTitle" = "Use Automatic Profiles?";
+"automaticProfilesReplaceOnDemandMessage" = "Single-profile On-Demand will be disabled. Its saved rules and your current connection will be kept.";
+"automaticProfilesOnDemandUnavailableTitle" = "Automatic Profiles is enabled";
+"automaticProfilesOnDemandUnavailableMessage" = "Turn off Automatic Profiles before enabling single-profile On-Demand. Your saved On-Demand rules are still available.";
+"automaticProfilesSaving" = "Saving…";
+"automaticProfilesSave" = "Save";
+"automaticProfilesCancel" = "Cancel";
+"automaticProfilesOK" = "OK";
+"automaticProfilesEnabled" = "On";
+"automaticProfilesDisabled" = "Off";
+"iosSettingsAutomaticProfiles" = "Automatic Profiles";
+"iosSettingsAutomaticProfilesDescription" = "Choose profiles for Wi-Fi, cellular, and Ethernet.";
+"macSettingsAutomaticProfilesTitle" = "Automatic Profiles";
+"macSettingsAutomaticProfilesHelp" = "Switch saved profiles as Wi-Fi or Ethernet changes.";
+"macSettingsConfigureAutomaticProfiles" = "Configure Automatic Profiles…";
+
 // VPN privacy disclosure
 
 "iosVPNPrivacyDisclosureTitle" = "VPN Privacy";

@@ -2,7 +2,8 @@
 // Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
 
 import Foundation
-import NetworkExtension
+import Network
+@preconcurrency import NetworkExtension
 import os
 
 /// NetworkExtension completion blocks are Objective-C callbacks that are safe to invoke from the
@@ -87,6 +88,482 @@ private final class ActivitySamplingCoordinator: @unchecked Sendable {
     }
 }
 
+private final class AutomaticProfilesNetworkCoordinator: @unchecked Sendable {
+    private weak var provider: NEPacketTunnelProvider?
+    private let adapter: WireGuardAdapter
+    private let activitySamplingCoordinator: ActivitySamplingCoordinator
+    private let ownerUID: uid_t?
+    private let queue = DispatchQueue(label: "WireRouteAutomaticProfiles")
+    private var monitor: NWPathMonitor?
+    private var snapshot: AutomaticProfileRuntimeSnapshot
+    private var activeProfileID: UUID?
+    private var currentOwnership: AutomaticProfileRuntimeOwnership?
+    private var currentNetworkIdentity: String?
+    private var currentNetwork: AutomaticProfileNetworkObservation?
+    private var requestedManualProfileID: UUID?
+    private var initialCompletion: NetworkExtensionCallback<Error?>?
+    private var errorNotifier: ErrorNotifier?
+    private var observationGeneration = UInt64(0)
+    private var hasStartedAdapter = false
+    private var appliedSnapshotRevision: UUID?
+
+    init?(
+        provider: NEPacketTunnelProvider,
+        adapter: WireGuardAdapter,
+        activitySamplingCoordinator: ActivitySamplingCoordinator,
+        ownerUID: uid_t?
+    ) {
+        guard let snapshotURL = FileManager.automaticProfilesSnapshotURL(ownerUID: ownerUID),
+              let loadedSnapshot = try? AutomaticProfileFileStore.loadSnapshot(from: snapshotURL),
+              let snapshot = try? loadedSnapshot.validated(),
+              snapshot.policy.isEnabled else {
+            return nil
+        }
+        self.provider = provider
+        self.adapter = adapter
+        self.activitySamplingCoordinator = activitySamplingCoordinator
+        self.ownerUID = ownerUID
+        self.snapshot = snapshot
+
+        if let stateURL = FileManager.automaticProfilesStateURL(ownerUID: ownerUID),
+           let state = try? AutomaticProfileFileStore.loadState(from: stateURL),
+           state.policyRevision == snapshot.policyRevision,
+           state.activeProfile.map({ snapshot.availableProfileIDs.contains($0.id) }) != false {
+            activeProfileID = state.activeProfile?.id
+            currentOwnership = state.ownership
+            currentNetworkIdentity = state.networkIdentity
+            currentNetwork = state.network
+        }
+    }
+
+    func start(
+        options: [String: NSObject]?,
+        errorNotifier: ErrorNotifier,
+        completion: NetworkExtensionCallback<Error?>
+    ) {
+        self.errorNotifier = errorNotifier
+        initialCompletion = completion
+
+        let initialCommand = (options?["automaticProfileCommand"] as? Data).flatMap {
+            try? JSONDecoder().decode(AutomaticProfileProviderCommand.self, from: $0)
+        }
+        #if os(iOS)
+        if let initialCommand,
+           initialCommand.action == .activateManualProfile,
+           initialCommand.network == nil,
+           let profileID = initialCommand.profileID {
+            requestedManualProfileID = profileID
+        } else if let initialCommand {
+            queue.async { [weak self] in
+                self?.handleCommand(initialCommand)
+            }
+        } else if let requestedID = (options?["automaticProfileID"] as? String)
+            .flatMap(UUID.init(uuidString:)) {
+            requestedManualProfileID = requestedID
+        }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            self?.observe(path: path)
+        }
+        self.monitor = monitor
+        monitor.start(queue: queue)
+        #elseif os(macOS)
+        if let initialCommand {
+            queue.async { [weak self] in
+                self?.handleCommand(initialCommand)
+            }
+        } else {
+            failInitialStart(with: .automaticProfilesUnavailable)
+        }
+        #endif
+    }
+
+    func stop() {
+        queue.async { [weak self] in
+            self?.monitor?.cancel()
+            self?.monitor = nil
+        }
+    }
+
+    func reload() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            refreshSnapshot()
+            if let currentNetwork {
+                apply(currentNetwork)
+                return
+            }
+            #if os(iOS)
+            if let monitor {
+                observe(path: monitor.currentPath)
+            }
+            #endif
+        }
+    }
+
+    func submit(_ command: AutomaticProfileProviderCommand) {
+        queue.async { [weak self] in
+            self?.handleCommand(command)
+        }
+    }
+
+    func runtimeStateData() -> Data? {
+        guard let stateURL = FileManager.automaticProfilesStateURL(ownerUID: ownerUID),
+              let state = try? AutomaticProfileFileStore.loadState(from: stateURL) else {
+            return nil
+        }
+        return try? JSONEncoder().encode(state)
+    }
+
+    private func observe(path: NWPath) {
+        refreshSnapshot()
+        observationGeneration &+= 1
+        let generation = observationGeneration
+        let transport = Self.transport(for: path)
+
+        guard transport == .wiFi && snapshot.policy.needsWiFiName else {
+            apply(
+                AutomaticProfileNetworkObservation(transport: transport),
+                generation: generation
+            )
+            return
+        }
+
+        #if os(iOS)
+        NEHotspotNetwork.fetchCurrent { [weak self] network in
+            let wiFiName = network?.ssid
+            guard let coordinator = self else { return }
+            coordinator.queue.async {
+                coordinator.apply(
+                    AutomaticProfileNetworkObservation(transport: transport, wiFiName: wiFiName),
+                    generation: generation
+                )
+            }
+        }
+        #else
+        apply(
+            AutomaticProfileNetworkObservation(transport: transport),
+            generation: generation
+        )
+        #endif
+    }
+
+    private func refreshSnapshot() {
+        guard let snapshotURL = FileManager.automaticProfilesSnapshotURL(ownerUID: ownerUID),
+              let loadedSnapshot = try? AutomaticProfileFileStore.loadSnapshot(from: snapshotURL),
+              let refreshedSnapshot = try? loadedSnapshot.validated(),
+              refreshedSnapshot.revision != snapshot.revision else {
+            return
+        }
+        snapshot = refreshedSnapshot
+    }
+
+    private func handleCommand(_ command: AutomaticProfileProviderCommand) {
+        let previousPolicyRevision = snapshot.policyRevision
+        refreshSnapshot()
+        if snapshot.policyRevision != previousPolicyRevision,
+           currentOwnership == .manual,
+           activeProfileID == nil {
+            currentOwnership = nil
+            currentNetworkIdentity = nil
+        }
+        switch command.action {
+        case .networkChanged:
+            guard let network = command.network else {
+                failInitialStart(with: .automaticProfilesUnavailable)
+                return
+            }
+            observationGeneration &+= 1
+            apply(network, generation: observationGeneration)
+        case .activateManualProfile:
+            guard let profileID = command.profileID else {
+                failInitialStart(with: .automaticProfilesUnavailable)
+                return
+            }
+            let network = command.network ?? currentNetwork
+            if let network {
+                currentNetwork = network
+            }
+            connect(
+                profileID: profileID,
+                ownership: .manual,
+                networkIdentity: network?.identity ?? currentNetworkIdentity ?? "manual"
+            )
+        case .deactivateManualProfile:
+            if let network = command.network ?? currentNetwork {
+                currentNetwork = network
+                pauseManually(networkIdentity: network.identity)
+            } else {
+                pauseManually(networkIdentity: currentNetworkIdentity ?? "manual")
+            }
+        case .reloadSnapshot:
+            if let currentNetwork {
+                observationGeneration &+= 1
+                apply(currentNetwork, generation: observationGeneration)
+            }
+        }
+    }
+
+    private func apply(_ observation: AutomaticProfileNetworkObservation) {
+        observationGeneration &+= 1
+        apply(observation, generation: observationGeneration)
+    }
+
+    private func apply(
+        _ observation: AutomaticProfileNetworkObservation,
+        generation: UInt64
+    ) {
+        guard generation == observationGeneration else { return }
+        currentNetwork = observation
+        let networkIdentity = observation.identity
+
+        if let requestedManualProfileID {
+            self.requestedManualProfileID = nil
+            connect(
+                profileID: requestedManualProfileID,
+                ownership: .manual,
+                networkIdentity: networkIdentity
+            )
+            return
+        }
+
+        if currentOwnership == .manual {
+            if let activeProfileID {
+                currentNetworkIdentity = networkIdentity
+                connect(
+                    profileID: activeProfileID,
+                    ownership: .manual,
+                    networkIdentity: networkIdentity
+                )
+                return
+            }
+            if currentNetworkIdentity == networkIdentity {
+                completeInitialStart(nil)
+                return
+            }
+            currentOwnership = nil
+            currentNetworkIdentity = nil
+        }
+
+        switch snapshot.decision(
+            transport: observation.transport,
+            wiFiName: observation.wiFiName
+        ) {
+        case .connect(let profileID):
+            connect(profileID: profileID, ownership: .automatic, networkIdentity: networkIdentity)
+        case .disconnect:
+            persistState(activeProfile: nil, ownership: .automatic, networkIdentity: networkIdentity)
+            disconnectWithoutError()
+        case .hold(let reason):
+            wg_log(.error, message: "Automatic profiles held the current tunnel: \(reason)")
+            if !hasStartedAdapter {
+                currentOwnership = .automatic
+                currentNetworkIdentity = networkIdentity
+                persistState(
+                    activeProfile: nil,
+                    ownership: .automatic,
+                    networkIdentity: networkIdentity
+                )
+                completeInitialStart(nil)
+            }
+        }
+    }
+
+    private func connect(
+        profileID: UUID,
+        ownership: AutomaticProfileRuntimeOwnership,
+        networkIdentity: String
+    ) {
+        guard activeProfileID != profileID
+                || !hasStartedAdapter
+                || appliedSnapshotRevision != snapshot.revision else {
+            currentOwnership = ownership
+            currentNetworkIdentity = networkIdentity
+            persistState(
+                activeProfile: snapshot.profile(withID: profileID)?.profile,
+                ownership: ownership,
+                networkIdentity: networkIdentity
+            )
+            completeInitialStart(nil)
+            return
+        }
+        guard let runtimeProfile = snapshot.profile(withID: profileID),
+              let tunnelProtocol = NETunnelProviderProtocol.wireRouteProtocol(from: runtimeProfile),
+              let tunnelConfiguration = tunnelProtocol.asTunnelConfiguration(called: runtimeProfile.profile.name),
+              let dnsProtectionPolicy = try? tunnelProtocol.wireRouteDNSProtectionPolicy() else {
+            wg_log(.error, message: "Automatic profile '\(snapshot.profile(withID: profileID)?.profile.name ?? profileID.uuidString)' is unavailable")
+            if !hasStartedAdapter {
+                failInitialStart(with: .automaticProfilesUnavailable)
+            }
+            return
+        }
+
+        let blockedAddressFamilies = tunnelProtocol.wireRouteEffectiveBlockedAddressFamilies(
+            for: tunnelConfiguration
+        )
+        let completion: @Sendable (WireGuardAdapterError?) -> Void = { [weak self] adapterError in
+            guard let self else { return }
+            self.queue.async {
+                if let adapterError {
+                    self.handleAdapterError(adapterError)
+                    return
+                }
+                self.hasStartedAdapter = true
+                self.activeProfileID = profileID
+                self.appliedSnapshotRevision = self.snapshot.revision
+                self.currentOwnership = ownership
+                self.currentNetworkIdentity = networkIdentity
+                self.activitySamplingCoordinator.start(
+                    adapter: self.adapter,
+                    profileIdentifier: runtimeProfile.profile.id,
+                    profileName: runtimeProfile.profile.name,
+                    ownerUID: self.ownerUID
+                )
+                self.persistState(
+                    activeProfile: runtimeProfile.profile,
+                    ownership: ownership,
+                    networkIdentity: networkIdentity
+                )
+                self.completeInitialStart(nil)
+            }
+        }
+
+        if hasStartedAdapter {
+            adapter.update(
+                tunnelConfiguration: tunnelConfiguration,
+                blockedAddressFamilies: blockedAddressFamilies,
+                dnsProtectionPolicy: dnsProtectionPolicy,
+                completionHandler: completion
+            )
+        } else {
+            adapter.start(
+                tunnelConfiguration: tunnelConfiguration,
+                blockedAddressFamilies: blockedAddressFamilies,
+                dnsProtectionPolicy: dnsProtectionPolicy,
+                completionHandler: completion
+            )
+        }
+    }
+
+    private func handleAdapterError(_ error: WireGuardAdapterError) {
+        let providerError: PacketTunnelProviderError
+        switch error {
+        case .cannotLocateTunnelFileDescriptor:
+            providerError = .couldNotDetermineFileDescriptor
+        case .dnsResolution:
+            providerError = .dnsResolutionFailure
+        case .setNetworkSettings:
+            providerError = .couldNotSetNetworkSettings
+        case .startWireGuardBackend:
+            providerError = .couldNotStartBackend
+        case .invalidState:
+            providerError = .automaticProfilesUnavailable
+        }
+        wg_log(.error, message: "Automatic profile transition failed: \(error)")
+        if !hasStartedAdapter {
+            failInitialStart(with: providerError)
+        }
+    }
+
+    private func failInitialStart(with error: PacketTunnelProviderError) {
+        errorNotifier?.notify(error)
+        completeInitialStart(error)
+    }
+
+    private func completeInitialStart(_ error: Error?) {
+        let completion = initialCompletion
+        initialCompletion = nil
+        completion?(error)
+    }
+
+    private func disconnectWithoutError() {
+        completeInitialStart(nil)
+        provider?.cancelTunnelWithError(nil)
+    }
+
+    private func pauseManually(networkIdentity: String) {
+        currentOwnership = .manual
+        currentNetworkIdentity = networkIdentity
+
+        let finishPause: @Sendable () -> Void = { [weak self] in
+            guard let self else { return }
+            self.queue.async {
+                self.hasStartedAdapter = false
+                self.activeProfileID = nil
+                self.appliedSnapshotRevision = nil
+                self.activitySamplingCoordinator.stop()
+                self.persistState(
+                    activeProfile: nil,
+                    ownership: .manual,
+                    networkIdentity: networkIdentity
+                )
+                self.completeInitialStart(nil)
+            }
+        }
+
+        guard hasStartedAdapter else {
+            finishPause()
+            return
+        }
+
+        adapter.stop { [weak self] adapterError in
+            guard let self else { return }
+            if let adapterError {
+                self.queue.async {
+                    self.handleAdapterError(adapterError)
+                }
+                return
+            }
+            guard let provider = self.provider else {
+                finishPause()
+                return
+            }
+            provider.setTunnelNetworkSettings(nil) { error in
+                if let error {
+                    wg_log(
+                        .error,
+                        message: "Automatic profile pause could not clear network settings: \(error.localizedDescription)"
+                    )
+                    provider.cancelTunnelWithError(error)
+                }
+                finishPause()
+            }
+        }
+    }
+
+    private func persistState(
+        activeProfile: AutomaticProfileReference?,
+        ownership: AutomaticProfileRuntimeOwnership?,
+        networkIdentity: String
+    ) {
+        guard let stateURL = FileManager.automaticProfilesStateURL(ownerUID: ownerUID) else { return }
+        let state = AutomaticProfileRuntimeState(
+            snapshotRevision: snapshot.revision,
+            policyRevision: snapshot.policyRevision,
+            activeProfile: activeProfile,
+            ownership: ownership,
+            networkIdentity: networkIdentity,
+            network: currentNetwork
+        )
+        do {
+            try AutomaticProfileFileStore.saveState(state, to: stateURL)
+        } catch {
+            wg_log(.error, message: "Automatic profile state could not be saved: \(error)")
+        }
+    }
+
+    private static func transport(for path: NWPath) -> AutomaticProfileTransport {
+        guard path.status == .satisfied else { return .unavailable }
+        if path.usesInterfaceType(.wifi) { return .wiFi }
+        #if os(iOS)
+        if path.usesInterfaceType(.cellular) { return .cellular }
+        #endif
+        if path.usesInterfaceType(.wiredEthernet) { return .ethernet }
+        return .other
+    }
+
+}
+
 class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private lazy var adapter: WireGuardAdapter = {
@@ -95,6 +572,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }()
     private let activitySamplingCoordinator = ActivitySamplingCoordinator()
+    private var automaticProfilesCoordinator: AutomaticProfilesNetworkCoordinator?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let completion = NetworkExtensionCallback(completionHandler)
@@ -105,8 +583,29 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
         wg_log(.info, message: "Starting tunnel from the " + (activationAttemptId == nil ? "OS directly, rather than the app" : "app"))
 
-        guard let tunnelProviderProtocol = self.protocolConfiguration as? NETunnelProviderProtocol,
-              let tunnelConfiguration = tunnelProviderProtocol.asTunnelConfiguration() else {
+        guard let tunnelProviderProtocol = self.protocolConfiguration as? NETunnelProviderProtocol else {
+            errorNotifier.notify(PacketTunnelProviderError.savedProtocolConfigurationIsInvalid)
+            completion(PacketTunnelProviderError.savedProtocolConfigurationIsInvalid)
+            return
+        }
+
+        if tunnelProviderProtocol.isWireRouteAutomaticProfilesController {
+            guard let coordinator = AutomaticProfilesNetworkCoordinator(
+                provider: self,
+                adapter: adapter,
+                activitySamplingCoordinator: activitySamplingCoordinator,
+                ownerUID: tunnelProviderProtocol.wireRouteOwnerUID
+            ) else {
+                errorNotifier.notify(PacketTunnelProviderError.automaticProfilesUnavailable)
+                completion(PacketTunnelProviderError.automaticProfilesUnavailable)
+                return
+            }
+            automaticProfilesCoordinator = coordinator
+            coordinator.start(options: options, errorNotifier: errorNotifier, completion: completion)
+            return
+        }
+
+        guard let tunnelConfiguration = tunnelProviderProtocol.asTunnelConfiguration() else {
             errorNotifier.notify(PacketTunnelProviderError.savedProtocolConfigurationIsInvalid)
             completion(PacketTunnelProviderError.savedProtocolConfigurationIsInvalid)
             return
@@ -190,6 +689,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         let completion = NetworkExtensionCallback<Void> { completionHandler() }
         wg_log(.info, staticMessage: "Stopping tunnel")
+        automaticProfilesCoordinator?.stop()
+        automaticProfilesCoordinator = nil
         activitySamplingCoordinator.stop()
 
         adapter.stop { error in
@@ -221,6 +722,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 completion(data)
             }
+        } else if messageData.count == 1 && messageData[0] == 1 {
+            completion(automaticProfilesCoordinator?.runtimeStateData())
+        } else if messageData.count == 1 && messageData[0] == 2 {
+            automaticProfilesCoordinator?.reload()
+            completion(Data())
+        } else if let command = try? JSONDecoder().decode(
+            AutomaticProfileProviderCommand.self,
+            from: messageData
+        ), let automaticProfilesCoordinator {
+            automaticProfilesCoordinator.submit(command)
+            completion(Data())
         } else {
             completion(nil)
         }

@@ -89,19 +89,19 @@ final class AutomaticProfilePolicyTests: XCTestCase {
         )
     }
 
-    func testValidationNormalizesNamesAndRejectsDuplicatesAcrossRuleTypes() throws {
-        let normalized = try AutomaticProfilePolicy(
-                trustedWiFiNames: ["  Home  "],
-            wiFiAssignments: [AutomaticWiFiAssignment(ssid: "Office\n", target: .profile(officeProfile))]
+    func testValidationPreservesExactNamesAndRejectsDuplicatesAcrossRuleTypes() throws {
+        let exact = try AutomaticProfilePolicy(
+            trustedWiFiNames: ["  Home  "],
+            wiFiAssignments: [AutomaticWiFiAssignment(ssid: "Office ", target: .profile(officeProfile))]
         ).validated()
 
-        XCTAssertEqual(normalized.trustedWiFiNames, ["Home"])
-        XCTAssertEqual(normalized.wiFiAssignments.map(\.ssid), ["Office"])
+        XCTAssertEqual(exact.trustedWiFiNames, ["  Home  "])
+        XCTAssertEqual(exact.wiFiAssignments.map(\.ssid), ["Office "])
 
         XCTAssertThrowsError(
             try AutomaticProfilePolicy(
                 trustedWiFiNames: ["Home"],
-                wiFiAssignments: [AutomaticWiFiAssignment(ssid: " Home ", target: .profile(officeProfile))]
+                wiFiAssignments: [AutomaticWiFiAssignment(ssid: "Home", target: .profile(officeProfile))]
             ).validated()
         ) { error in
             XCTAssertEqual(error as? AutomaticProfilePolicyError, .duplicateWiFiName("Home"))
@@ -190,5 +190,64 @@ final class AutomaticProfilePolicyTests: XCTestCase {
         XCTAssertEqual(policy.cellularTarget, .profile(renamedHome))
         XCTAssertEqual(policy.ethernetTarget, .profile(renamedHome))
         XCTAssertEqual(policy.wiFiAssignments.first?.target, .profile(renamedHome))
+    }
+
+    func testNetworkIdentityDistinguishesExactWiFiAndTransport() {
+        XCTAssertEqual(
+            AutomaticProfileNetworkObservation(transport: .wiFi, wiFiName: "Office").identity,
+            "wiFi:Office"
+        )
+        XCTAssertEqual(
+            AutomaticProfileNetworkObservation(transport: .cellular).identity,
+            "cellular"
+        )
+        XCTAssertEqual(
+            AutomaticProfileNetworkObservation(transport: .wiFi).identity,
+            "wiFi:unknown"
+        )
+    }
+
+    func testProviderCommandsRoundTripWithoutLosingManualOrNetworkIntent() throws {
+        let observation = AutomaticProfileNetworkObservation(
+            transport: .wiFi,
+            wiFiName: "Office"
+        )
+        let commands: [AutomaticProfileProviderCommand] = [
+            .networkChanged(observation),
+            .activateManually(profileID: office, network: observation),
+            .deactivateManually(network: observation),
+            .reloadSnapshot
+        ]
+
+        for command in commands {
+            let data = try JSONEncoder().encode(command)
+            XCTAssertEqual(
+                try JSONDecoder().decode(AutomaticProfileProviderCommand.self, from: data),
+                command
+            )
+        }
+    }
+
+    func testRuntimeStateRoundTripsNetworkUsedForManualOwnership() throws {
+        let observation = AutomaticProfileNetworkObservation(
+            transport: .wiFi,
+            wiFiName: "Office"
+        )
+        let state = AutomaticProfileRuntimeState(
+            snapshotRevision: UUID(uuidString: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")!,
+            policyRevision: UUID(uuidString: "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE")!,
+            activeProfile: officeProfile,
+            ownership: .manual,
+            networkIdentity: observation.identity,
+            network: observation
+        )
+
+        XCTAssertEqual(
+            try JSONDecoder().decode(
+                AutomaticProfileRuntimeState.self,
+                from: JSONEncoder().encode(state)
+            ),
+            state
+        )
     }
 }

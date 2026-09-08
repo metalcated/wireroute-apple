@@ -2,6 +2,7 @@
 // Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
 
 import Cocoa
+import SwiftUI
 
 enum WireRouteAppearance: String, CaseIterable {
     case system
@@ -889,6 +890,21 @@ extension ManageTunnelsRootViewController: TunnelsListTableViewControllerDelegat
         }
         settingsVC.onConfigureOnDemand = { [weak self] in
             self?.configureOnDemandForRelevantTunnel()
+        }
+        settingsVC.automaticProfilesIsEnabled = { [weak self] in
+            self?.tunnelsManager.automaticProfilePolicy.isEnabled == true
+        }
+        settingsVC.onConfigureAutomaticProfiles = { [weak self, weak settingsVC] in
+            guard let self, let settingsVC else { return }
+            let editor = AutomaticProfilesEditorView(
+                tunnelsManager: self.tunnelsManager,
+                onClose: { [weak settingsVC] in
+                    settingsVC?.dismiss(nil)
+                    settingsVC?.refreshAutomaticProfilesStatus()
+                }
+            )
+            let host = NSHostingController(rootView: editor)
+            settingsVC.presentAsSheet(host)
         }
         self.settingsVC = settingsVC
         setTunnelDetailContentVC(settingsVC)

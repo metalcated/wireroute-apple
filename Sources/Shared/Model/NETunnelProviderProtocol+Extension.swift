@@ -11,6 +11,7 @@ private enum WireRouteProviderMetadataKey {
     static let dnsProtection = "WireRouteDNSProtection"
     static let activityProfileIdentifier = "WireRouteActivityProfileIdentifier"
     static let activityProfileName = "WireRouteActivityProfileName"
+    static let automaticProfilesController = "WireRouteAutomaticProfilesController"
 }
 
 private enum WireRouteDNSProtectionMetadataKey {
@@ -27,6 +28,7 @@ private enum WireRouteProviderRoutingMode: String {
 
 enum PacketTunnelProviderError: String, Error {
     case savedProtocolConfigurationIsInvalid
+    case automaticProfilesUnavailable
     case invalidDNSProtectionConfiguration
     case dnsResolutionFailure
     case couldNotStartBackend
@@ -35,6 +37,18 @@ enum PacketTunnelProviderError: String, Error {
 }
 
 extension NETunnelProviderProtocol {
+    convenience init?(automaticProfilesControllerOwnerUID ownerUID: uid_t? = nil) {
+        self.init()
+        guard let appID = Bundle.main.bundleIdentifier else { return nil }
+        providerBundleIdentifier = "\(appID).network-extension"
+        serverAddress = "Automatic profile selection"
+        var metadata: [String: Any] = [WireRouteProviderMetadataKey.automaticProfilesController: true]
+        #if os(macOS)
+        metadata["UID"] = ownerUID ?? getuid()
+        #endif
+        providerConfiguration = metadata
+    }
+
     convenience init?(tunnelConfiguration: TunnelConfiguration, previouslyFrom old: NEVPNProtocol? = nil) {
         self.init()
         guard configureWireRouteMetadata(
@@ -120,6 +134,55 @@ extension NETunnelProviderProtocol {
     func verifyConfigurationReference() -> Bool {
         guard let ref = passwordReference else { return false }
         return Keychain.verifyReference(called: ref)
+    }
+
+    var isWireRouteAutomaticProfilesController: Bool {
+        providerConfiguration?[WireRouteProviderMetadataKey.automaticProfilesController] as? Bool == true
+    }
+
+    var wireRouteOwnerUID: uid_t? {
+        #if os(macOS)
+        return (providerConfiguration?["UID"] as? NSNumber).map { uid_t($0.uint32Value) }
+            ?? (providerConfiguration?["UID"] as? uid_t)
+        #else
+        return nil
+        #endif
+    }
+
+    func wireRouteAutomaticRuntimeProfile(called name: String) -> AutomaticProfileRuntimeProfile? {
+        guard !isWireRouteAutomaticProfilesController,
+              let keychainReference = passwordReference,
+              verifyConfigurationReference() else {
+            return nil
+        }
+        let encodedProviderConfiguration = providerConfiguration.flatMap {
+            try? PropertyListSerialization.data(
+                fromPropertyList: $0,
+                format: .binary,
+                options: 0
+            )
+        }
+        return AutomaticProfileRuntimeProfile(
+            profile: AutomaticProfileReference(id: wireRouteActivityProfileIdentifier, name: name),
+            keychainReference: keychainReference,
+            providerConfiguration: encodedProviderConfiguration
+        )
+    }
+
+    static func wireRouteProtocol(from runtimeProfile: AutomaticProfileRuntimeProfile) -> NETunnelProviderProtocol? {
+        let tunnelProtocol = NETunnelProviderProtocol()
+        tunnelProtocol.passwordReference = runtimeProfile.keychainReference
+        if let encodedProviderConfiguration = runtimeProfile.providerConfiguration {
+            guard let metadata = try? PropertyListSerialization.propertyList(
+                from: encodedProviderConfiguration,
+                options: [],
+                format: nil
+            ) as? [String: Any] else {
+                return nil
+            }
+            tunnelProtocol.providerConfiguration = metadata
+        }
+        return tunnelProtocol
     }
 
     var wireRouteRoutingMode: String? {

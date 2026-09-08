@@ -144,11 +144,7 @@ public struct AutomaticProfilePolicy: Codable, Equatable, Sendable {
     }
 
     public func validated() throws -> Self {
-        let trustedNames = trustedWiFiNames.map(Self.normalizedSSID)
-        let assignments = wiFiAssignments.map {
-            AutomaticWiFiAssignment(ssid: Self.normalizedSSID($0.ssid), target: $0.target)
-        }
-        let names = trustedNames + assignments.map(\.ssid)
+        let names = trustedWiFiNames + wiFiAssignments.map(\.ssid)
         guard names.count <= 64 else {
             throw AutomaticProfilePolicyError.tooManyWiFiNames
         }
@@ -159,10 +155,7 @@ public struct AutomaticProfilePolicy: Codable, Equatable, Sendable {
         for name in names where !seen.insert(name).inserted {
             throw AutomaticProfilePolicyError.duplicateWiFiName(name)
         }
-        var normalized = self
-        normalized.trustedWiFiNames = trustedNames
-        normalized.wiFiAssignments = assignments
-        return normalized
+        return self
     }
 
     public func decide(
@@ -227,9 +220,6 @@ public struct AutomaticProfilePolicy: Codable, Equatable, Sendable {
         return updated
     }
 
-    private static func normalizedSSID(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }
 
 public struct AutomaticProfileRuntimeProfile: Codable, Equatable, Sendable {
@@ -267,17 +257,20 @@ public struct AutomaticProfileRuntimeSnapshot: Codable, Equatable, Sendable {
 
     public var version: Int
     public var revision: UUID
+    public var policyRevision: UUID
     public var policy: AutomaticProfilePolicy
     public var profiles: [AutomaticProfileRuntimeProfile]
 
     public init(
         version: Int = Self.currentVersion,
         revision: UUID = UUID(),
+        policyRevision: UUID = UUID(),
         policy: AutomaticProfilePolicy,
         profiles: [AutomaticProfileRuntimeProfile]
     ) {
         self.version = version
         self.revision = revision
+        self.policyRevision = policyRevision
         self.policy = policy
         self.profiles = profiles
     }
@@ -322,27 +315,94 @@ public enum AutomaticProfileRuntimeOwnership: String, Codable, Equatable, Sendab
     case manual
 }
 
+public struct AutomaticProfileNetworkObservation: Codable, Equatable, Sendable {
+    public var transport: AutomaticProfileTransport
+    public var wiFiName: String?
+
+    public init(transport: AutomaticProfileTransport, wiFiName: String? = nil) {
+        self.transport = transport
+        self.wiFiName = wiFiName
+    }
+
+    public var identity: String {
+        if transport == .wiFi {
+            return "wiFi:\(wiFiName ?? "unknown")"
+        }
+        return transport.rawValue
+    }
+}
+
+public struct AutomaticProfileProviderCommand: Codable, Equatable, Sendable {
+    public enum Action: String, Codable, Sendable {
+        case networkChanged
+        case activateManualProfile
+        case deactivateManualProfile
+        case reloadSnapshot
+    }
+
+    public var action: Action
+    public var profileID: UUID?
+    public var network: AutomaticProfileNetworkObservation?
+
+    public init(
+        action: Action,
+        profileID: UUID? = nil,
+        network: AutomaticProfileNetworkObservation? = nil
+    ) {
+        self.action = action
+        self.profileID = profileID
+        self.network = network
+    }
+
+    public static func networkChanged(_ observation: AutomaticProfileNetworkObservation) -> Self {
+        Self(action: .networkChanged, network: observation)
+    }
+
+    public static func activateManually(
+        profileID: UUID,
+        network: AutomaticProfileNetworkObservation? = nil
+    ) -> Self {
+        Self(action: .activateManualProfile, profileID: profileID, network: network)
+    }
+
+    public static func deactivateManually(
+        network: AutomaticProfileNetworkObservation? = nil
+    ) -> Self {
+        Self(action: .deactivateManualProfile, network: network)
+    }
+
+    public static var reloadSnapshot: Self {
+        Self(action: .reloadSnapshot)
+    }
+}
+
 public struct AutomaticProfileRuntimeState: Codable, Equatable, Sendable {
     public static let currentVersion = 1
 
     public var version: Int
     public var snapshotRevision: UUID
+    public var policyRevision: UUID
     public var activeProfile: AutomaticProfileReference?
     public var ownership: AutomaticProfileRuntimeOwnership?
     public var networkIdentity: String?
+    public var network: AutomaticProfileNetworkObservation?
 
     public init(
         version: Int = Self.currentVersion,
         snapshotRevision: UUID,
+        policyRevision: UUID,
         activeProfile: AutomaticProfileReference?,
         ownership: AutomaticProfileRuntimeOwnership?,
-        networkIdentity: String?
+        networkIdentity: String?,
+        network: AutomaticProfileNetworkObservation? = nil
     ) {
         self.version = version
         self.snapshotRevision = snapshotRevision
+        self.policyRevision = policyRevision
         self.activeProfile = activeProfile
         self.ownership = ownership
         self.networkIdentity = networkIdentity
+        self.network = network
     }
 }
 

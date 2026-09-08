@@ -2,9 +2,12 @@
 // Copyright © 2018-2023 WireGuard LLC. All Rights Reserved.
 
 import Foundation
+import Network
 @preconcurrency import NetworkExtension
 import os.log
 #if os(macOS)
+import CoreLocation
+import CoreWLAN
 import Security
 #endif
 
@@ -161,6 +164,220 @@ private struct PreparedMacOSTunnelManagers {
     let recoveredNames: [String]
     let failedRecoveryNames: [String]
 }
+
+@MainActor
+private final class AutomaticProfilesMacNetworkObserver: NSObject,
+    @preconcurrency CLLocationManagerDelegate,
+    CWEventDelegate,
+    @unchecked Sendable {
+    private let monitorQueue = DispatchQueue(label: "WireRouteAutomaticProfilesMacNetwork")
+    private let locationManager = CLLocationManager()
+    private let wiFiClient = CWWiFiClient.shared()
+    private var monitor: NWPathMonitor?
+    private var latestPath: NWPath?
+    private var needsWiFiName = false
+    private var authorizationCompletions = [@MainActor (AutomaticProfilesManagementError?) -> Void]()
+    private let onChange: @MainActor (AutomaticProfileNetworkObservation) -> Void
+
+    private(set) var currentObservation: AutomaticProfileNetworkObservation?
+
+    init(onChange: @escaping @MainActor (AutomaticProfileNetworkObservation) -> Void) {
+        self.onChange = onChange
+        super.init()
+        locationManager.delegate = self
+        wiFiClient.delegate = self
+    }
+
+    func start(needsWiFiName: Bool) {
+        self.needsWiFiName = needsWiFiName
+        do {
+            if needsWiFiName {
+                try wiFiClient.startMonitoringEvent(with: .ssidDidChange)
+            } else {
+                try wiFiClient.stopMonitoringEvent(with: .ssidDidChange)
+            }
+        } catch {
+            wg_log(.error, message: "Automatic Profiles could not monitor Wi-Fi name changes: \(error.localizedDescription)")
+        }
+        guard monitor == nil else {
+            if let latestPath {
+                receive(latestPath)
+            }
+            return
+        }
+        let monitor = NWPathMonitor()
+        let observer = UncheckedTransfer(value: self)
+        monitor.pathUpdateHandler = { path in
+            let transferredPath = UncheckedTransfer(value: path)
+            Task { @MainActor in
+                observer.value.receive(transferredPath.value)
+            }
+        }
+        self.monitor = monitor
+        monitor.start(queue: monitorQueue)
+    }
+
+    func stop() {
+        monitor?.cancel()
+        monitor = nil
+        try? wiFiClient.stopMonitoringEvent(with: .ssidDidChange)
+        latestPath = nil
+        currentObservation = nil
+    }
+
+    nonisolated func ssidDidChangeForWiFiInterface(withName interfaceName: String) {
+        Task { @MainActor [weak self] in
+            guard let self, let latestPath else { return }
+            receive(latestPath)
+        }
+    }
+
+    func requestWiFiNameAuthorization(
+        completion: @escaping @MainActor (AutomaticProfilesManagementError?) -> Void
+    ) {
+        guard needsWiFiName else {
+            completion(nil)
+            return
+        }
+        switch locationManager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            completion(nil)
+        case .denied, .restricted:
+            completion(.wiFiNameAccessDenied)
+        case .notDetermined:
+            authorizationCompletions.append(completion)
+            locationManager.requestWhenInUseAuthorization()
+        @unknown default:
+            completion(.wiFiNameAccessDenied)
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard manager.authorizationStatus != .notDetermined else { return }
+        let error: AutomaticProfilesManagementError?
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            error = nil
+        case .denied, .restricted, .notDetermined:
+            error = .wiFiNameAccessDenied
+        @unknown default:
+            error = .wiFiNameAccessDenied
+        }
+        let completions = authorizationCompletions
+        authorizationCompletions.removeAll()
+        completions.forEach { $0(error) }
+        if let latestPath {
+            receive(latestPath)
+        }
+    }
+
+    private func receive(_ path: NWPath) {
+        latestPath = path
+        let transport: AutomaticProfileTransport
+        if path.status != .satisfied {
+            transport = .unavailable
+        } else if path.usesInterfaceType(.wifi) {
+            transport = .wiFi
+        } else if path.usesInterfaceType(.wiredEthernet) {
+            transport = .ethernet
+        } else {
+            transport = .other
+        }
+
+        let wiFiName: String?
+        if transport == .wiFi && needsWiFiName {
+            switch locationManager.authorizationStatus {
+            case .authorizedAlways, .authorizedWhenInUse:
+                wiFiName = CWWiFiClient.shared().interface()?.ssid()
+            default:
+                wiFiName = nil
+            }
+        } else {
+            wiFiName = nil
+        }
+
+        let observation = AutomaticProfileNetworkObservation(
+            transport: transport,
+            wiFiName: wiFiName
+        )
+        guard observation != currentObservation else { return }
+        currentObservation = observation
+        onChange(observation)
+    }
+}
+#endif
+
+#if os(iOS)
+@MainActor
+private final class AutomaticProfilesIOSNetworkObserver: @unchecked Sendable {
+    private let monitorQueue = DispatchQueue(label: "WireRouteAutomaticProfilesIOSNetwork")
+    private var monitor: NWPathMonitor?
+    private var latestPath: NWPath?
+    private var needsWiFiName = false
+    private var generation = UInt64(0)
+    private(set) var currentObservation: AutomaticProfileNetworkObservation?
+
+    func start(needsWiFiName: Bool) {
+        self.needsWiFiName = needsWiFiName
+        guard monitor == nil else {
+            if let latestPath {
+                receive(latestPath)
+            }
+            return
+        }
+        let monitor = NWPathMonitor()
+        let observer = UncheckedTransfer(value: self)
+        monitor.pathUpdateHandler = { path in
+            let transferredPath = UncheckedTransfer(value: path)
+            Task { @MainActor in
+                observer.value.receive(transferredPath.value)
+            }
+        }
+        self.monitor = monitor
+        monitor.start(queue: monitorQueue)
+    }
+
+    func stop() {
+        monitor?.cancel()
+        monitor = nil
+        latestPath = nil
+        currentObservation = nil
+        generation &+= 1
+    }
+
+    private func receive(_ path: NWPath) {
+        latestPath = path
+        generation &+= 1
+        let observationGeneration = generation
+        let transport: AutomaticProfileTransport
+        if path.status != .satisfied {
+            transport = .unavailable
+        } else if path.usesInterfaceType(.wifi) {
+            transport = .wiFi
+        } else if path.usesInterfaceType(.cellular) {
+            transport = .cellular
+        } else if path.usesInterfaceType(.wiredEthernet) {
+            transport = .ethernet
+        } else {
+            transport = .other
+        }
+
+        guard transport == .wiFi && needsWiFiName else {
+            currentObservation = AutomaticProfileNetworkObservation(transport: transport)
+            return
+        }
+        NEHotspotNetwork.fetchCurrent { [weak self] network in
+            let wiFiName = network?.ssid
+            Task { @MainActor [weak self] in
+                guard let self, generation == observationGeneration else { return }
+                currentObservation = AutomaticProfileNetworkObservation(
+                    transport: transport,
+                    wiFiName: wiFiName
+                )
+            }
+        }
+    }
+}
 #endif
 
 @MainActor
@@ -182,31 +399,63 @@ protocol TunnelsManagerActivationDelegate: AnyObject {
 @MainActor
 class TunnelsManager {
     private var tunnels: [TunnelContainer]
+    private var automaticProfilesController: NETunnelProviderManager?
     weak var tunnelsListDelegate: TunnelsManagerListDelegate?
     weak var activationDelegate: TunnelsManagerActivationDelegate?
     private var statusObservationToken: NotificationToken?
     private var waiteeObservationToken: NSKeyValueObservation?
     private var configurationsObservationToken: NotificationToken?
+    private var automaticProfilesStatusTimer: Timer?
+    private var automaticProfilesRuntimeState: AutomaticProfileRuntimeState?
+    private var automaticProfilesStateRequestToken: UUID?
+    private weak var pendingAutomaticProfilesActivationTunnel: TunnelContainer?
+    private var pendingAutomaticProfilesActivationToken: UUID?
+    private weak var pendingDirectActivationTunnel: TunnelContainer?
 
     #if os(macOS)
+    private var automaticProfilesMacNetworkObserver: AutomaticProfilesMacNetworkObserver?
     private(set) var profileRecoveryNamesRequiringApproval: [String]
     var profileRecoveryAttentionHandler: (([String]) -> Void)?
     private var isReloadingTunnelConfigurations = false
     private var didAttemptProfileRecovery: Bool
+    #elseif os(iOS)
+    private var automaticProfilesIOSNetworkObserver: AutomaticProfilesIOSNetworkObserver?
     #endif
 
     init(
         tunnelProviders: [NETunnelProviderManager],
+        automaticProfilesController: NETunnelProviderManager? = nil,
         profileRecoveryNamesRequiringApproval: [String] = [],
         didAttemptProfileRecovery: Bool = false
     ) {
         tunnels = tunnelProviders.map { TunnelContainer(tunnel: $0) }.sorted { TunnelsManager.tunnelNameIsLessThan($0.name, $1.name) }
+        self.automaticProfilesController = automaticProfilesController
         #if os(macOS)
         self.profileRecoveryNamesRequiringApproval = profileRecoveryNamesRequiringApproval
         self.didAttemptProfileRecovery = didAttemptProfileRecovery
         #endif
         startObservingTunnelStatuses()
         startObservingTunnelConfigurations()
+        #if os(macOS)
+        let observer = AutomaticProfilesMacNetworkObserver { [weak self] observation in
+            self?.handleMacAutomaticProfilesNetworkChange(observation)
+        }
+        automaticProfilesMacNetworkObserver = observer
+        let policy = automaticProfilePolicy
+        if policy.isEnabled {
+            observer.start(needsWiFiName: policy.needsWiFiName)
+        }
+        #elseif os(iOS)
+        let observer = AutomaticProfilesIOSNetworkObserver()
+        automaticProfilesIOSNetworkObserver = observer
+        let policy = automaticProfilePolicy
+        if policy.isEnabled {
+            observer.start(needsWiFiName: policy.needsWiFiName)
+        }
+        #endif
+        startAutomaticProfilesStatusPolling()
+        refreshAutomaticProfilesSnapshotIfNeeded()
+        refreshAutomaticProfilesProjection()
     }
 
     static func create(
@@ -231,12 +480,21 @@ class TunnelsManager {
                     return
                 }
 
+                let loadedManagers = managers ?? []
+                let automaticProfilesController = loadedManagers.first {
+                    ($0.protocolConfiguration as? NETunnelProviderProtocol)?.isWireRouteAutomaticProfilesController == true
+                }
+                let profileManagers = loadedManagers.filter {
+                    ($0.protocolConfiguration as? NETunnelProviderProtocol)?.isWireRouteAutomaticProfilesController != true
+                }
+
                 #if os(macOS)
-                let prepared = await prepareMacOSTunnelManagers(managers ?? [])
+                let prepared = await prepareMacOSTunnelManagers(profileManagers)
                 completionHandler(
                     .success(
                         TunnelsManager(
                             tunnelProviders: prepared.managers,
+                            automaticProfilesController: automaticProfilesController,
                             profileRecoveryNamesRequiringApproval: prepared.failedRecoveryNames,
                             didAttemptProfileRecovery: !prepared.recoveredNames.isEmpty
                                 || !prepared.failedRecoveryNames.isEmpty
@@ -244,7 +502,7 @@ class TunnelsManager {
                     )
                 )
                 #elseif os(iOS)
-                var tunnelManagers = managers ?? []
+                var tunnelManagers = profileManagers
                 var refs: Set<Data> = []
                 var tunnelNames: Set<String> = []
                 for (index, tunnelManager) in tunnelManagers.enumerated().reversed() {
@@ -270,7 +528,10 @@ class TunnelsManager {
                 }
                 Keychain.deleteReferences(except: refs)
                 RecentTunnelsTracker.cleanupTunnels(except: tunnelNames)
-                completionHandler(.success(TunnelsManager(tunnelProviders: tunnelManagers)))
+                completionHandler(.success(TunnelsManager(
+                    tunnelProviders: tunnelManagers,
+                    automaticProfilesController: automaticProfilesController
+                )))
                 #else
                 #error("Unimplemented")
                 #endif
@@ -302,9 +563,17 @@ class TunnelsManager {
                     return
                 }
 
+                let automaticProfilesController = managers.first {
+                    ($0.protocolConfiguration as? NETunnelProviderProtocol)?.isWireRouteAutomaticProfilesController == true
+                }
+                let profileManagers = managers.filter {
+                    ($0.protocolConfiguration as? NETunnelProviderProtocol)?.isWireRouteAutomaticProfilesController != true
+                }
+                self.automaticProfilesController = automaticProfilesController
+
                 let loadedTunnelProviders: [NETunnelProviderManager]
                 #if os(macOS)
-                let loadedNames = Set(managers.compactMap(\.localizedDescription))
+                let loadedNames = Set(profileManagers.compactMap(\.localizedDescription))
                 let missingCurrentNames = Set(self.tunnels.map(\.name)).subtracting(loadedNames)
                 if self.didAttemptProfileRecovery && !missingCurrentNames.isEmpty {
                     let names = missingCurrentNames.sorted(by: Self.tunnelNameIsLessThan)
@@ -312,7 +581,7 @@ class TunnelsManager {
                     wg_log(.error, staticMessage: "A recovered VPN preference disappeared again; preserving the current profile list until the extension is enabled and recovery is retried")
                     return
                 }
-                let prepared = await Self.prepareMacOSTunnelManagers(managers)
+                let prepared = await Self.prepareMacOSTunnelManagers(profileManagers)
                 let attemptedRecoveryNames = Array(
                     Set(prepared.recoveredNames + prepared.failedRecoveryNames)
                 ).sorted(by: Self.tunnelNameIsLessThan)
@@ -336,7 +605,7 @@ class TunnelsManager {
                 }
                 loadedTunnelProviders = prepared.managers
                 #elseif os(iOS)
-                loadedTunnelProviders = managers
+                loadedTunnelProviders = profileManagers
                 #else
                 #error("Unimplemented")
                 #endif
@@ -371,6 +640,23 @@ class TunnelsManager {
                         self.tunnelsListDelegate?.tunnelAdded(at: self.tunnels.firstIndex(of: tunnel)!)
                     }
                 }
+                self.refreshAutomaticProfilesSnapshotIfNeeded()
+                #if os(macOS)
+                let policy = self.automaticProfilePolicy
+                if policy.isEnabled {
+                    self.automaticProfilesMacNetworkObserver?.start(
+                        needsWiFiName: policy.needsWiFiName
+                    )
+                }
+                #elseif os(iOS)
+                let policy = self.automaticProfilePolicy
+                if policy.isEnabled {
+                    self.automaticProfilesIOSNetworkObserver?.start(
+                        needsWiFiName: policy.needsWiFiName
+                    )
+                }
+                #endif
+                self.refreshAutomaticProfilesProjection()
             }
         }
     }
@@ -448,6 +734,7 @@ class TunnelsManager {
             self.tunnels.append(tunnel)
             self.tunnels.sort { TunnelsManager.tunnelNameIsLessThan($0.name, $1.name) }
             self.tunnelsListDelegate?.tunnelAdded(at: self.tunnels.firstIndex(of: tunnel)!)
+            self.refreshAutomaticProfilesSnapshotIfNeeded()
             completionHandler(.success(tunnel))
         }
     }
@@ -514,7 +801,10 @@ class TunnelsManager {
         let previousOnDemandRules = tunnelProviderManager.onDemandRules
         let previousIsOnDemandEnabled = tunnelProviderManager.isOnDemandEnabled
 
-        let isIntroducingOnDemandRules = (tunnelProviderManager.onDemandRules ?? []).isEmpty && onDemandOption != .off
+        let automaticProfilesEnabled = automaticProfilePolicy.isEnabled
+        let isIntroducingOnDemandRules = !automaticProfilesEnabled
+            && (tunnelProviderManager.onDemandRules ?? []).isEmpty
+            && onDemandOption != .off
         if isIntroducingOnDemandRules && tunnel.status != .inactive && tunnel.status != .deactivating {
             tunnel.onDeactivated = { [weak self] in
                 self?.modify(tunnel: tunnel, tunnelConfiguration: tunnelConfiguration,
@@ -555,8 +845,10 @@ class TunnelsManager {
 
         let isActivatingOnDemand = !tunnelProviderManager.isOnDemandEnabled && shouldEnsureOnDemandEnabled
         onDemandOption.apply(on: tunnelProviderManager)
-        if shouldEnsureOnDemandEnabled {
+        if shouldEnsureOnDemandEnabled && !automaticProfilesEnabled {
             tunnelProviderManager.isOnDemandEnabled = true
+        } else if automaticProfilesEnabled {
+            tunnelProviderManager.isOnDemandEnabled = false
         }
 
         Task { @MainActor [weak self] in
@@ -592,9 +884,12 @@ class TunnelsManager {
                 #endif
             }
             self.tunnelsListDelegate?.tunnelModified(at: self.tunnels.firstIndex(of: tunnel)!)
+            self.refreshAutomaticProfilesSnapshotIfNeeded()
 
             if isTunnelConfigurationChanged {
-                if tunnel.status == .active || tunnel.status == .activating || tunnel.status == .reasserting {
+                if tunnel.isAutomaticProfilesProjection {
+                    // The controller reload above updates this logical profile in place.
+                } else if tunnel.status == .active || tunnel.status == .activating || tunnel.status == .reasserting {
                     // Turn off the tunnel, and then turn it back on, so the changes are made effective
                     tunnel.status = .restarting
                     (tunnel.tunnelProvider.connection as? NETunnelProviderSession)?.stopTunnel()
@@ -623,6 +918,7 @@ class TunnelsManager {
         completionHandler: @escaping @MainActor @Sendable (TunnelsManagerError?) -> Void
     ) {
         let tunnelProviderManager = tunnel.tunnelProvider
+        let wasAutomaticProfilesProjection = tunnel.isAutomaticProfilesProjection
         let protocolConfiguration = tunnelProviderManager.protocolConfiguration as? NETunnelProviderProtocol
         let activityProfileIdentifier = tunnel.activityProfileIdentifier
         #if os(macOS)
@@ -661,6 +957,10 @@ class TunnelsManager {
             if let self, let index = self.tunnels.firstIndex(of: tunnel) {
                 self.tunnels.remove(at: index)
                 self.tunnelsListDelegate?.tunnelRemoved(at: index, tunnel: tunnel)
+                if wasAutomaticProfilesProjection {
+                    (self.automaticProfilesController?.connection as? NETunnelProviderSession)?.stopTunnel()
+                }
+                self.refreshAutomaticProfilesSnapshotIfNeeded()
             }
             completionHandler(nil)
 
@@ -713,6 +1013,10 @@ class TunnelsManager {
         on tunnel: TunnelContainer,
         completionHandler: @escaping @MainActor @Sendable (TunnelsManagerError?) -> Void
     ) {
+        if isOnDemandEnabled && automaticProfilePolicy.isEnabled {
+            completionHandler(.automaticProfilesEnabled)
+            return
+        }
         let tunnelProviderManager = tunnel.tunnelProvider
         let isCurrentlyEnabled = (tunnelProviderManager.isOnDemandEnabled && tunnelProviderManager.isEnabled)
         guard isCurrentlyEnabled != isOnDemandEnabled else {
@@ -813,12 +1117,13 @@ class TunnelsManager {
         let previousProviderConfiguration = tunnelProtocol.providerConfiguration
         tunnelProtocol.setWireRouteDNSProtectionPolicy(policy)
 
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
             do {
                 try await tunnel.tunnelProvider.saveToPreferences()
                 #if os(macOS)
                 Self.saveMacOSRecoveryConfiguration(for: tunnel.tunnelProvider)
                 #endif
+                self?.refreshAutomaticProfilesSnapshotIfNeeded()
                 completionHandler(nil)
             } catch {
                 tunnelProtocol.providerConfiguration = previousProviderConfiguration
@@ -1206,6 +1511,444 @@ class TunnelsManager {
     }
     #endif
 
+    var automaticProfilePolicy: AutomaticProfilePolicy {
+        guard let url = FileManager.automaticProfilesSnapshotURL(),
+              let snapshot = try? AutomaticProfileFileStore.loadSnapshot(from: url) else {
+            return AutomaticProfilePolicy()
+        }
+        return snapshot.policy
+    }
+
+    var automaticProfileReferences: [AutomaticProfileReference] {
+        tunnels.map {
+            AutomaticProfileReference(id: $0.activityProfileIdentifier, name: $0.name)
+        }
+    }
+
+    var hasEnabledSingleProfileOnDemand: Bool {
+        tunnels.contains { $0.tunnelProvider.isEnabled && $0.tunnelProvider.isOnDemandEnabled }
+    }
+
+    func prepareAutomaticProfilesAuthorization(
+        for policy: AutomaticProfilePolicy,
+        completionHandler: @escaping @MainActor (AutomaticProfilesManagementError?) -> Void
+    ) {
+        #if os(macOS)
+        guard policy.isEnabled && policy.needsWiFiName else {
+            completionHandler(nil)
+            return
+        }
+        automaticProfilesMacNetworkObserver?.start(needsWiFiName: true)
+        automaticProfilesMacNetworkObserver?.requestWiFiNameAuthorization(
+            completion: completionHandler
+        )
+        #else
+        completionHandler(nil)
+        #endif
+    }
+
+    private func makeAutomaticProfilesSnapshot(
+        policy requestedPolicy: AutomaticProfilePolicy,
+        revision: UUID = UUID(),
+        policyRevision: UUID = UUID()
+    ) throws -> AutomaticProfileRuntimeSnapshot {
+        var updatedPolicy = try requestedPolicy.validated()
+        let profiles = try tunnels.map { tunnel -> AutomaticProfileRuntimeProfile in
+            guard let tunnelProtocol = tunnel.tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol,
+                  let profile = tunnelProtocol.wireRouteAutomaticRuntimeProfile(called: tunnel.name) else {
+                throw AutomaticProfilesManagementError.profileStorageUnavailable(tunnel.name)
+            }
+            updatedPolicy = updatedPolicy.updatingProfile(profile.profile)
+            return profile
+        }
+        return try AutomaticProfileRuntimeSnapshot(
+            revision: revision,
+            policyRevision: policyRevision,
+            policy: updatedPolicy,
+            profiles: profiles
+        ).validated()
+    }
+
+    private func refreshAutomaticProfilesSnapshotIfNeeded() {
+        guard let snapshotURL = FileManager.automaticProfilesSnapshotURL(),
+              let existingSnapshot = try? AutomaticProfileFileStore.loadSnapshot(from: snapshotURL),
+              existingSnapshot.policy.isEnabled else {
+            return
+        }
+        do {
+            let comparableSnapshot = try makeAutomaticProfilesSnapshot(
+                policy: existingSnapshot.policy,
+                revision: existingSnapshot.revision,
+                policyRevision: existingSnapshot.policyRevision
+            )
+            guard comparableSnapshot != existingSnapshot else { return }
+            var snapshot = comparableSnapshot
+            snapshot.revision = UUID()
+            try AutomaticProfileFileStore.saveSnapshot(snapshot, to: snapshotURL)
+            guard let controller = automaticProfilesController else { return }
+            snapshot.policy.applyAutomaticProfiles(
+                on: controller,
+                availableProfileIDs: snapshot.availableProfileIDs
+            )
+            Task { @MainActor [weak self] in
+                do {
+                    try await controller.saveToPreferences()
+                    self?.sendAutomaticProfilesCommand(
+                        .reloadSnapshot,
+                        startIfDisconnected: false
+                    )
+                } catch {
+                    wg_log(.error, message: "Automatic Profiles controller refresh failed: \(error.localizedDescription)")
+                }
+            }
+        } catch {
+            wg_log(.error, message: "Automatic Profiles snapshot refresh failed: \(error.localizedDescription)")
+        }
+    }
+
+    func saveAutomaticProfilePolicy(
+        _ requestedPolicy: AutomaticProfilePolicy,
+        completionHandler: @escaping @MainActor @Sendable (AutomaticProfilesManagementError?) -> Void
+    ) {
+        guard let snapshotURL = FileManager.automaticProfilesSnapshotURL() else {
+            completionHandler(.sharedStorageUnavailable)
+            return
+        }
+
+        let previousSnapshot = try? AutomaticProfileFileStore.loadSnapshot(from: snapshotURL)
+        let snapshot: AutomaticProfileRuntimeSnapshot
+        do {
+            snapshot = try makeAutomaticProfilesSnapshot(policy: requestedPolicy)
+            try AutomaticProfileFileStore.saveSnapshot(snapshot, to: snapshotURL)
+        } catch let error as AutomaticProfilesManagementError {
+            completionHandler(error)
+            return
+        } catch {
+            completionHandler(.saveFailed(error))
+            return
+        }
+
+        let existingController = automaticProfilesController
+        let controller = existingController ?? NETunnelProviderManager()
+        let previousControllerProtocol = controller.protocolConfiguration
+        let previousControllerDescription = controller.localizedDescription
+        let previousControllerEnabled = controller.isEnabled
+        let previousControllerOnDemandRules = controller.onDemandRules
+        let previousControllerOnDemandEnabled = controller.isOnDemandEnabled
+        let profileOnDemandStates = tunnels.map {
+            ($0, $0.tunnelProvider.isOnDemandEnabled)
+        }
+        let hasDirectlyActiveTunnel = tunnels.contains {
+            !$0.isAutomaticProfilesProjection
+                && ($0.status == .active || $0.status == .activating)
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                if snapshot.policy.isEnabled {
+                    guard let controllerProtocol = NETunnelProviderProtocol(
+                        automaticProfilesControllerOwnerUID: {
+                            #if os(macOS)
+                            getuid()
+                            #else
+                            nil
+                            #endif
+                        }()
+                    ) else {
+                        throw AutomaticProfilesManagementError.sharedStorageUnavailable
+                    }
+                    controller.localizedDescription = tr("automaticProfilesControllerName")
+                    controller.protocolConfiguration = controllerProtocol
+                    controller.isEnabled = true
+                    for (tunnel, wasOnDemandEnabled) in profileOnDemandStates where wasOnDemandEnabled {
+                        tunnel.tunnelProvider.isOnDemandEnabled = false
+                        try await tunnel.tunnelProvider.saveToPreferences()
+                        tunnel.isActivateOnDemandEnabled = false
+                    }
+                    snapshot.policy.applyAutomaticProfiles(
+                        on: controller,
+                        availableProfileIDs: snapshot.availableProfileIDs
+                    )
+                    // Save the controller last. Apple only permits one enabled enterprise VPN
+                    // configuration, so this prevents an older single-profile rule from winning.
+                    try await controller.saveToPreferences()
+                    self.automaticProfilesController = controller
+                    #if os(macOS)
+                    self.automaticProfilesMacNetworkObserver?.start(
+                        needsWiFiName: snapshot.policy.needsWiFiName
+                    )
+                    #elseif os(iOS)
+                    self.automaticProfilesIOSNetworkObserver?.start(
+                        needsWiFiName: snapshot.policy.needsWiFiName
+                    )
+                    #endif
+                    if !hasDirectlyActiveTunnel {
+                        if controller.connection.status == .connected
+                            || controller.connection.status == .reasserting {
+                            self.sendAutomaticProfilesCommand(
+                                .reloadSnapshot,
+                                startIfDisconnected: false
+                            )
+                        } else {
+                            #if os(macOS)
+                            if let observation = self.automaticProfilesMacNetworkObserver?.currentObservation {
+                                self.handleMacAutomaticProfilesNetworkChange(observation)
+                            }
+                            #endif
+                        }
+                    }
+                } else if let existingController {
+                    existingController.isOnDemandEnabled = false
+                    try await existingController.saveToPreferences()
+                    self.sendAutomaticProfilesCommand(
+                        .reloadSnapshot,
+                        startIfDisconnected: false
+                    )
+                    #if os(macOS)
+                    self.automaticProfilesMacNetworkObserver?.stop()
+                    #elseif os(iOS)
+                    self.automaticProfilesIOSNetworkObserver?.stop()
+                    #endif
+                }
+                self.refreshAutomaticProfilesProjection()
+                completionHandler(nil)
+            } catch {
+                controller.protocolConfiguration = previousControllerProtocol
+                controller.localizedDescription = previousControllerDescription
+                controller.isEnabled = previousControllerEnabled
+                controller.onDemandRules = previousControllerOnDemandRules
+                controller.isOnDemandEnabled = previousControllerOnDemandEnabled
+                for (tunnel, wasOnDemandEnabled) in profileOnDemandStates {
+                    tunnel.tunnelProvider.isOnDemandEnabled = wasOnDemandEnabled
+                    tunnel.isActivateOnDemandEnabled = wasOnDemandEnabled && tunnel.tunnelProvider.isEnabled
+                    try? await tunnel.tunnelProvider.saveToPreferences()
+                }
+                if let previousSnapshot {
+                    try? AutomaticProfileFileStore.saveSnapshot(previousSnapshot, to: snapshotURL)
+                } else {
+                    let disabledSnapshot = AutomaticProfileRuntimeSnapshot(
+                        policy: AutomaticProfilePolicy(),
+                        profiles: snapshot.profiles
+                    )
+                    try? AutomaticProfileFileStore.saveSnapshot(disabledSnapshot, to: snapshotURL)
+                }
+                completionHandler((error as? AutomaticProfilesManagementError) ?? .saveFailed(error))
+            }
+        }
+    }
+
+    private func sendAutomaticProfilesCommand(
+        _ command: AutomaticProfileProviderCommand,
+        startIfDisconnected: Bool,
+        activationAttemptID: String? = nil
+    ) {
+        guard let controller = automaticProfilesController,
+              let session = controller.connection as? NETunnelProviderSession,
+              let commandData = try? JSONEncoder().encode(command) else {
+            return
+        }
+
+        switch session.status {
+        case .connected, .reasserting:
+            do {
+                try session.sendProviderMessage(commandData) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        self?.refreshAutomaticProfilesProjection()
+                    }
+                }
+            } catch {
+                wg_log(.error, message: "Automatic Profiles command failed: \(error.localizedDescription)")
+            }
+        case .disconnected where startIfDisconnected,
+             .invalid where startIfDisconnected:
+            var options: [String: NSObject] = [
+                "automaticProfileCommand": commandData as NSData
+            ]
+            if let activationAttemptID {
+                options["activationAttemptId"] = activationAttemptID as NSString
+            }
+            do {
+                try session.startTunnel(options: options)
+            } catch {
+                wg_log(.error, message: "Automatic Profiles controller could not start: \(error.localizedDescription)")
+                if let tunnel = pendingAutomaticProfilesActivationTunnel {
+                    pendingAutomaticProfilesActivationTunnel = nil
+                    pendingAutomaticProfilesActivationToken = nil
+                    tunnel.status = .inactive
+                    activationDelegate?.tunnelActivationAttemptFailed(
+                        tunnel: tunnel,
+                        error: .failedWhileStarting(systemError: error)
+                    )
+                }
+            }
+        case .connecting, .disconnecting, .disconnected, .invalid:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    #if os(macOS)
+    private func handleMacAutomaticProfilesNetworkChange(
+        _ observation: AutomaticProfileNetworkObservation
+    ) {
+        let policy = automaticProfilePolicy
+        guard policy.isEnabled else { return }
+        guard !tunnels.contains(where: {
+            !$0.isAutomaticProfilesProjection
+                && ($0.status == .active || $0.status == .activating || $0.status == .reasserting)
+        }) else {
+            return
+        }
+        if let pendingTunnel = pendingAutomaticProfilesActivationTunnel {
+            sendAutomaticProfilesCommand(
+                .activateManually(
+                    profileID: pendingTunnel.activityProfileIdentifier,
+                    network: observation
+                ),
+                startIfDisconnected: true,
+                activationAttemptID: pendingTunnel.activationAttemptId
+            )
+            return
+        }
+        if let state = automaticProfilesRuntimeState,
+           state.ownership == .manual,
+           state.activeProfile == nil,
+           state.networkIdentity == observation.identity {
+            return
+        }
+        let decision = policy.decide(
+            transport: observation.transport,
+            wiFiName: observation.wiFiName,
+            availableProfileIDs: Set(automaticProfileReferences.map(\.id))
+        )
+        sendAutomaticProfilesCommand(
+            .networkChanged(observation),
+            startIfDisconnected: {
+                if case .connect = decision { return true }
+                return false
+            }()
+        )
+    }
+    #endif
+
+    private func startAutomaticProfilesStatusPolling() {
+        guard automaticProfilesStatusTimer == nil else { return }
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshAutomaticProfilesProjection()
+            }
+        }
+        automaticProfilesStatusTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func refreshAutomaticProfilesProjection() {
+        guard let controller = automaticProfilesController,
+              let session = controller.connection as? NETunnelProviderSession else {
+            automaticProfilesRuntimeState = nil
+            automaticProfilesStateRequestToken = nil
+            tunnels.forEach { $0.clearAutomaticProfilesProjection() }
+            return
+        }
+
+        let controllerStatus = TunnelStatus(from: session.status)
+        guard session.status != .disconnected && session.status != .invalid else {
+            automaticProfilesRuntimeState = nil
+            automaticProfilesStateRequestToken = nil
+            tunnels.forEach { $0.clearAutomaticProfilesProjection() }
+            if let pendingTunnel = pendingAutomaticProfilesActivationTunnel {
+                sendAutomaticProfilesCommand(
+                    .activateManually(
+                        profileID: pendingTunnel.activityProfileIdentifier,
+                        network: automaticProfilesCurrentNetworkObservation
+                    ),
+                    startIfDisconnected: true,
+                    activationAttemptID: pendingTunnel.activationAttemptId
+                )
+            }
+            return
+        }
+
+        applyAutomaticProfilesProjection(session: session, controllerStatus: controllerStatus)
+        requestAutomaticProfilesRuntimeState(from: session)
+    }
+
+    private func applyAutomaticProfilesProjection(
+        session: NETunnelProviderSession,
+        controllerStatus: TunnelStatus
+    ) {
+        let activeProfileID = automaticProfilesRuntimeState?.activeProfile?.id
+            ?? pendingAutomaticProfilesActivationTunnel?.activityProfileIdentifier
+        for tunnel in tunnels {
+            if tunnel.activityProfileIdentifier == activeProfileID {
+                tunnel.applyAutomaticProfilesProjection(
+                    session: session,
+                    status: controllerStatus
+                )
+            } else {
+                tunnel.clearAutomaticProfilesProjection()
+            }
+        }
+
+        if session.status == .connected,
+           let pendingTunnel = pendingAutomaticProfilesActivationTunnel,
+           automaticProfilesRuntimeState?.activeProfile?.id == pendingTunnel.activityProfileIdentifier {
+            pendingAutomaticProfilesActivationTunnel = nil
+            pendingAutomaticProfilesActivationToken = nil
+            activationDelegate?.tunnelActivationSucceeded(tunnel: pendingTunnel)
+        }
+    }
+
+    private func requestAutomaticProfilesRuntimeState(from session: NETunnelProviderSession) {
+        guard automaticProfilesStateRequestToken == nil else { return }
+        let requestToken = UUID()
+        automaticProfilesStateRequestToken = requestToken
+        do {
+            try session.sendProviderMessage(Data([UInt8(1)])) { [weak self] data in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          self.automaticProfilesStateRequestToken == requestToken else { return }
+                    self.automaticProfilesStateRequestToken = nil
+                    guard let data,
+                          let state = try? JSONDecoder().decode(
+                              AutomaticProfileRuntimeState.self,
+                              from: data
+                          ),
+                          let currentSession = self.automaticProfilesController?.connection
+                              as? NETunnelProviderSession,
+                          currentSession.status != .disconnected,
+                          currentSession.status != .invalid else {
+                        return
+                    }
+                    self.automaticProfilesRuntimeState = state
+                    self.applyAutomaticProfilesProjection(
+                        session: currentSession,
+                        controllerStatus: TunnelStatus(from: currentSession.status)
+                    )
+                }
+            }
+        } catch {
+            automaticProfilesStateRequestToken = nil
+            wg_log(
+                .error,
+                message: "Automatic Profiles runtime state request failed: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    private var automaticProfilesCurrentNetworkObservation: AutomaticProfileNetworkObservation? {
+        #if os(macOS)
+        return automaticProfilesMacNetworkObserver?.currentObservation
+        #else
+        if let observation = automaticProfilesIOSNetworkObserver?.currentObservation {
+            return observation
+        }
+        return automaticProfilesRuntimeState?.network
+        #endif
+    }
+
     func numberOfTunnels() -> Int {
         return tunnels.count
     }
@@ -1254,6 +1997,38 @@ class TunnelsManager {
             return
         }
 
+        if automaticProfilePolicy.isEnabled {
+            if tunnels.contains(where: {
+                $0 != tunnel
+                    && !$0.isAutomaticProfilesProjection
+                    && $0.status != .inactive
+            }) {
+                activationDelegate?.tunnelActivationAttemptFailed(
+                    tunnel: tunnel,
+                    error: .tunnelIsNotInactive
+                )
+                return
+            }
+            startAutomaticProfilesManualActivation(of: tunnel)
+            #if os(iOS)
+            RecentTunnelsTracker.handleTunnelActivated(tunnelName: tunnel.name)
+            #endif
+            return
+        }
+
+        if let controllerSession = automaticProfilesController?.connection as? NETunnelProviderSession,
+           controllerSession.status != .disconnected,
+           controllerSession.status != .invalid {
+            if let previousPending = pendingDirectActivationTunnel,
+               previousPending != tunnel {
+                previousPending.status = .inactive
+            }
+            pendingDirectActivationTunnel = tunnel
+            tunnel.status = .waiting
+            controllerSession.stopTunnel()
+            return
+        }
+
         if let alreadyWaitingTunnel = tunnels.first(where: { $0.status == .waiting }) {
             alreadyWaitingTunnel.status = .inactive
         }
@@ -1295,12 +2070,121 @@ class TunnelsManager {
         #if targetEnvironment(simulator)
         tunnel.status = .inactive
         #else
-        tunnel.startDeactivation()
+        if tunnel.isAutomaticProfilesProjection,
+           automaticProfilesController != nil {
+            tunnel.status = .deactivating
+            if pendingAutomaticProfilesActivationTunnel == tunnel {
+                pendingAutomaticProfilesActivationTunnel = nil
+                pendingAutomaticProfilesActivationToken = nil
+            }
+            sendAutomaticProfilesCommand(
+                .deactivateManually(network: automaticProfilesCurrentNetworkObservation),
+                startIfDisconnected: false
+            )
+        } else {
+            if automaticProfilePolicy.isEnabled,
+               let network = automaticProfilesCurrentNetworkObservation,
+               let snapshotURL = FileManager.automaticProfilesSnapshotURL(),
+               let snapshot = try? AutomaticProfileFileStore.loadSnapshot(from: snapshotURL) {
+                let state = AutomaticProfileRuntimeState(
+                    snapshotRevision: snapshot.revision,
+                    policyRevision: snapshot.policyRevision,
+                    activeProfile: nil,
+                    ownership: .manual,
+                    networkIdentity: network.identity,
+                    network: network
+                )
+                if let stateURL = FileManager.automaticProfilesStateURL() {
+                    try? AutomaticProfileFileStore.saveState(state, to: stateURL)
+                }
+                automaticProfilesRuntimeState = state
+            }
+            tunnel.startDeactivation()
+        }
         #endif
     }
 
     func refreshStatuses() {
         tunnels.forEach { $0.refreshStatus() }
+        refreshAutomaticProfilesProjection()
+    }
+
+    private func startAutomaticProfilesManualActivation(of tunnel: TunnelContainer) {
+        guard automaticProfilesController != nil else {
+            activationDelegate?.tunnelActivationAttemptFailed(
+                tunnel: tunnel,
+                error: .automaticProfilesUnavailable
+            )
+            return
+        }
+        if let previousPending = pendingAutomaticProfilesActivationTunnel,
+           previousPending != tunnel {
+            previousPending.status = .inactive
+        }
+        pendingAutomaticProfilesActivationTunnel = tunnel
+        let pendingToken = UUID()
+        pendingAutomaticProfilesActivationToken = pendingToken
+        tunnels.forEach {
+            if $0 == tunnel {
+                $0.status = .activating
+            } else {
+                $0.clearAutomaticProfilesProjection()
+            }
+        }
+        let activationAttemptID = UUID().uuidString
+        tunnel.activationAttemptId = activationAttemptID
+        #if os(macOS)
+        let network = automaticProfilesMacNetworkObserver?.currentObservation
+        if network == nil {
+            let policy = automaticProfilePolicy
+            automaticProfilesMacNetworkObserver?.start(needsWiFiName: policy.needsWiFiName)
+        }
+        #else
+        let network: AutomaticProfileNetworkObservation? = nil
+        #endif
+        #if os(macOS)
+        if network != nil {
+            sendAutomaticProfilesCommand(
+                .activateManually(
+                    profileID: tunnel.activityProfileIdentifier,
+                    network: network
+                ),
+                startIfDisconnected: true,
+                activationAttemptID: activationAttemptID
+            )
+        }
+        #else
+        sendAutomaticProfilesCommand(
+            .activateManually(
+                profileID: tunnel.activityProfileIdentifier,
+                network: network
+            ),
+            startIfDisconnected: true,
+            activationAttemptID: activationAttemptID
+        )
+        #endif
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self, weak tunnel] in
+            guard let self, let tunnel,
+                  self.pendingAutomaticProfilesActivationToken == pendingToken,
+                  self.pendingAutomaticProfilesActivationTunnel == tunnel else { return }
+            self.pendingAutomaticProfilesActivationToken = nil
+            self.pendingAutomaticProfilesActivationTunnel = nil
+            tunnel.status = .inactive
+            if let controllerSession = self.automaticProfilesController?.connection
+                as? NETunnelProviderSession {
+                self.reportActivationFailure(
+                    for: tunnel,
+                    session: controllerSession,
+                    wasOnDemandEnabled: self.automaticProfilesController?.isOnDemandEnabled == true
+                )
+            } else {
+                self.activationDelegate?.tunnelActivationAttemptFailed(
+                    tunnel: tunnel,
+                    error: .automaticProfilesUnavailable
+                )
+            }
+        }
+        activationDelegate?.tunnelActivationAttemptSucceeded(tunnel: tunnel)
     }
 
     private func activateWaitingTunnelOnDeactivation(of tunnel: TunnelContainer) {
@@ -1323,8 +2207,44 @@ class TunnelsManager {
             MainActor.assumeIsolated {
                 guard let self,
                     let session = notificationObject.value as? NETunnelProviderSession,
-                    let tunnelProvider = session.manager as? NETunnelProviderManager,
-                    let tunnel = self.tunnels.first(where: { $0.tunnelProvider == tunnelProvider }) else { return }
+                    let tunnelProvider = session.manager as? NETunnelProviderManager else { return }
+
+                if tunnelProvider == self.automaticProfilesController {
+                    wg_log(.debug, message: "Automatic Profiles controller status changed to '\(session.status)'")
+                    self.refreshAutomaticProfilesProjection()
+                    if session.status == .connected,
+                       let pendingTunnel = self.pendingAutomaticProfilesActivationTunnel {
+                        self.sendAutomaticProfilesCommand(
+                            .activateManually(
+                                profileID: pendingTunnel.activityProfileIdentifier,
+                                network: self.automaticProfilesCurrentNetworkObservation
+                            ),
+                            startIfDisconnected: false,
+                            activationAttemptID: pendingTunnel.activationAttemptId
+                        )
+                    }
+                    if session.status == .disconnected,
+                       let pendingDirectTunnel = self.pendingDirectActivationTunnel {
+                        self.pendingDirectActivationTunnel = nil
+                        pendingDirectTunnel.status = .inactive
+                        self.startActivation(of: pendingDirectTunnel)
+                    }
+                    #if os(macOS)
+                    if session.status == .connected,
+                       self.pendingAutomaticProfilesActivationTunnel == nil,
+                       let observation = self.automaticProfilesMacNetworkObserver?.currentObservation {
+                        self.sendAutomaticProfilesCommand(
+                            .networkChanged(observation),
+                            startIfDisconnected: false
+                        )
+                    }
+                    #endif
+                    return
+                }
+
+                guard let tunnel = self.tunnels.first(where: { $0.tunnelProvider == tunnelProvider }) else {
+                    return
+                }
 
                 wg_log(.debug, message: "Tunnel '\(tunnel.name)' connection status changed to '\(tunnel.tunnelProvider.connection.status)'")
 
@@ -1353,6 +2273,13 @@ class TunnelsManager {
                 }
 
                 tunnel.refreshStatus()
+                #if os(macOS)
+                if session.status == .disconnected,
+                   self.automaticProfilePolicy.isEnabled,
+                   let observation = self.automaticProfilesMacNetworkObserver?.currentObservation {
+                    self.handleMacAutomaticProfilesNetworkChange(observation)
+                }
+                #endif
             }
         }
     }
@@ -1487,6 +2414,8 @@ class TunnelContainer: NSObject {
     var activationTimer: Timer?
     var deactivationTimer: Timer?
     var onDeactivated: (@MainActor @Sendable () -> Void)?
+    private(set) var isAutomaticProfilesProjection = false
+    private weak var automaticProfilesSession: NETunnelProviderSession?
 
     var tunnelProvider: NETunnelProviderManager {
         didSet {
@@ -1564,7 +2493,9 @@ class TunnelContainer: NSObject {
     func getRuntimeTunnelConfiguration(
         completionHandler: @escaping @MainActor @Sendable (TunnelConfiguration?) -> Void
     ) {
-        guard status != .inactive, let session = tunnelProvider.connection as? NETunnelProviderSession else {
+        let runtimeSession = automaticProfilesSession
+            ?? (tunnelProvider.connection as? NETunnelProviderSession)
+        guard status != .inactive, let session = runtimeSession else {
             completionHandler(tunnelConfiguration)
             return
         }
@@ -1592,9 +2523,26 @@ class TunnelContainer: NSObject {
     }
 
     func refreshStatus() {
+        guard !isAutomaticProfilesProjection else { return }
         if (status == .restarting) || (status == .waiting && tunnelProvider.connection.status == .disconnected) {
             return
         }
+        status = TunnelStatus(from: tunnelProvider.connection.status)
+    }
+
+    func applyAutomaticProfilesProjection(
+        session: NETunnelProviderSession,
+        status: TunnelStatus
+    ) {
+        isAutomaticProfilesProjection = true
+        automaticProfilesSession = session
+        self.status = status
+    }
+
+    func clearAutomaticProfilesProjection() {
+        guard isAutomaticProfilesProjection else { return }
+        isAutomaticProfilesProjection = false
+        automaticProfilesSession = nil
         status = TunnelStatus(from: tunnelProvider.connection.status)
     }
 
