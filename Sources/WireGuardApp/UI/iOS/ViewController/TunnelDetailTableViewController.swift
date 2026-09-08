@@ -1773,13 +1773,9 @@ extension TunnelDetailTableViewController {
     private func deleteConfigurationCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
         let cell: ButtonCell = tableView.dequeueReusableCell(for: indexPath)
         cell.backgroundColor = WireRouteAppearance.card
-        var buttonConfiguration = UIButton.Configuration.gray()
-        buttonConfiguration.title = tr("deleteTunnelButtonTitle")
-        buttonConfiguration.baseForegroundColor = .systemRed
-        buttonConfiguration.baseBackgroundColor = UIColor.systemRed.withAlphaComponent(0.12)
-        buttonConfiguration.cornerStyle = .medium
-        buttonConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 24, bottom: 11, trailing: 24)
-        cell.button.configuration = buttonConfiguration
+        cell.selectionStyle = .none
+        cell.button.configuration = nil
+        cell.buttonText = tr("deleteTunnelButtonTitle")
         cell.hasDestructiveAction = true
         cell.onTapped = { [weak self] in
             guard let self = self else { return }
