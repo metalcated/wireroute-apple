@@ -1593,6 +1593,8 @@ extension TunnelDetailTableViewController {
             return nil
         case .dnsProtection:
             return tunnel.dnsProtectionPolicy.localizedDescription
+        case .onDemand:
+            return tr("automaticProfilesProfileActionHelpIOS")
         default:
             return nil
         }
@@ -1742,14 +1744,11 @@ extension TunnelDetailTableViewController {
     private func onDemandCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
         let field = TunnelDetailTableViewController.onDemandFields[indexPath.row]
         if field == .onDemand {
-            let automaticProfilesEnabled = tunnelsManager.automaticProfilePolicy.isEnabled
             let cell: ProfileActionCardCell = tableView.dequeueReusableCell(for: indexPath)
             cell.configure(
                 title: tr("tunnelListCaptionOnDemand"),
-                detail: automaticProfilesEnabled
-                    ? "\(tr("automaticProfilesEnabled")) · \(tr("iosSettingsAutomaticProfilesDescription"))"
-                    : onDemandViewModel.localizedInterfaceDescription,
-                symbolName: automaticProfilesEnabled ? "arrow.triangle.branch" : "bolt.horizontal.circle"
+                detail: tr("automaticProfilesProfileActionTitle"),
+                symbolName: "arrow.triangle.branch"
             )
             return cell
         } else {
@@ -1871,10 +1870,6 @@ extension TunnelDetailTableViewController {
     }
 
     private func presentOnDemandConfiguration() {
-        guard tunnelsManager.automaticProfilePolicy.isEnabled else {
-            editTapped()
-            return
-        }
         let closeEditor: () -> Void = { [weak self] in
             self?.navigationController?.popViewController(animated: true)
         }

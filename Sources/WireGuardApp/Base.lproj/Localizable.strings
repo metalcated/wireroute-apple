@@ -873,7 +873,9 @@
 "automaticProfilesProfile" = "Profile";
 "automaticProfilesControlTitle" = "Your connection stays in your control";
 "automaticProfilesControlHelp" = "Only profiles connected by Automatic Profiles are switched. A manual connection is not replaced. Switching briefly disconnects the VPN and is not a kill switch.";
+"automaticProfilesProfileActionTitle" = "Automatic profile switching";
 "automaticProfilesProfileActionHelp" = "Connect automatically or switch profiles as your network changes.";
+"automaticProfilesProfileActionHelpIOS" = "Connect automatically on selected Wi-Fi or cellular networks.";
 "automaticProfilesUnavailable" = "Unavailable profile";
 "automaticProfilesUnavailableProfile (%@)" = "%@ (unavailable)";
 "automaticProfilesWiFiUnavailableTitle" = "Wi-Fi name unavailable";
