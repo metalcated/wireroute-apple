@@ -65,6 +65,11 @@ private enum WireRouteSystemKeychainIdentity {
             || Bundle.main.object(forInfoDictionaryKey: "CFBundlePackageType") as? String == "SYSX"
     }
 
+    static var isAppExtensionProcess: Bool {
+        Bundle.main.bundleURL.pathExtension == "appex"
+            || Bundle.main.object(forInfoDictionaryKey: "CFBundlePackageType") as? String == "XPC!"
+    }
+
     static var baseAppIdentifier: String? {
         guard var identifier = Bundle.main.bundleIdentifier else { return nil }
         if identifier.hasSuffix(networkExtensionSuffix) {
@@ -99,6 +104,27 @@ private enum WireRouteSystemKeychainIdentity {
         }
         return urls.lazy
             .filter { $0.pathExtension == "systemextension" }
+            .compactMap(Bundle.init(url:))
+            .first { $0.bundleIdentifier == expectedIdentifier }
+    }
+
+    static var embeddedAppExtensionBundle: Bundle? {
+        guard isContainingAppProcess,
+              !isSystemExtensionProcess,
+              let baseAppIdentifier,
+              let plugInsURL = Bundle.main.builtInPlugInsURL else {
+            return nil
+        }
+        let expectedIdentifier = baseAppIdentifier + networkExtensionSuffix
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: plugInsURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+        return urls.lazy
+            .filter { $0.pathExtension == "appex" }
             .compactMap(Bundle.init(url:))
             .first { $0.bundleIdentifier == expectedIdentifier }
     }
@@ -828,6 +854,17 @@ class Keychain {
             }
             return reference
         }
+        if serviceSuffix == nil,
+           let appExtension = WireRouteSystemKeychainIdentity.embeddedAppExtensionBundle {
+            return makeEmbeddedAppTunnelReference(
+                containing: value,
+                label: label,
+                account: account,
+                service: service,
+                description: description,
+                appExtension: appExtension
+            )
+        }
         #endif
         var items: [CFString: Any] = [kSecClass: kSecClassGenericPassword,
                                     kSecAttrLabel: label,
@@ -860,6 +897,70 @@ class Keychain {
         }
         return ref as? Data
     }
+
+    #if os(macOS)
+    private static func makeEmbeddedAppTunnelReference(
+        containing value: String,
+        label: String,
+        account: String,
+        service: String,
+        description: String,
+        appExtension: Bundle
+    ) -> Data? {
+        var extensionApplication: SecTrustedApplication?
+        var status = SecTrustedApplicationCreateFromPath(
+            appExtension.bundleURL.path,
+            &extensionApplication
+        )
+        guard status == errSecSuccess,
+              let extensionApplication else {
+            wg_log(.error, message: "Unable to trust embedded network extension for Keychain configuration: \(status)")
+            return nil
+        }
+
+        var containingApplication: SecTrustedApplication?
+        status = SecTrustedApplicationCreateFromPath(nil, &containingApplication)
+        guard status == errSecSuccess,
+              let containingApplication else {
+            wg_log(.error, message: "Unable to trust containing application for Keychain configuration: \(status)")
+            return nil
+        }
+
+        var access: SecAccess?
+        status = SecAccessCreate(
+            label as CFString,
+            [extensionApplication, containingApplication] as CFArray,
+            &access
+        )
+        guard status == errSecSuccess,
+              let access else {
+            wg_log(.error, message: "Unable to create embedded network extension Keychain access: \(status)")
+            return nil
+        }
+
+        let items: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrLabel: label,
+            kSecAttrAccount: account,
+            kSecAttrDescription: description,
+            kSecAttrService: service,
+            kSecAttrSynchronizable: false,
+            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecAttrAccess: access,
+            kSecValueData: value.data(using: .utf8) as Any,
+            kSecReturnPersistentRef: true
+        ]
+
+        var reference: CFTypeRef?
+        status = SecItemAdd(items as CFDictionary, &reference)
+        guard status == errSecSuccess,
+              let reference = reference as? Data else {
+            wg_log(.error, message: "Unable to add embedded extension config to login Keychain: \(status)")
+            return nil
+        }
+        return reference
+    }
+    #endif
 
     private static func serviceIdentifier(suffix: String?) -> String? {
         guard var bundleIdentifier = Bundle.main.bundleIdentifier else { return nil }
@@ -953,23 +1054,24 @@ class Keychain {
         return localStatus == errSecSuccess
     }
 
-    static func requiresDataProtectionKeychainMigration(called ref: Data) -> Bool {
+    static func requiresEmbeddedAppKeychainMigration(called ref: Data) -> Bool {
         guard WireRouteSystemKeychainIdentity.isContainingAppProcess,
-              WireRouteSystemKeychainIdentity.embeddedSystemExtensionBundle == nil else {
+              WireRouteSystemKeychainIdentity.embeddedSystemExtensionBundle == nil,
+              WireRouteSystemKeychainIdentity.embeddedAppExtensionBundle != nil else {
             return false
         }
 
         let (dataProtectionStatus, _) = dataProtectionCopyMatching([
             kSecValuePersistentRef: ref
         ])
-        guard dataProtectionStatus != errSecSuccess else {
-            return false
+        if dataProtectionStatus == errSecSuccess {
+            return true
         }
 
         if let legacyQuery = legacyUserKeychainQuery([kSecValuePersistentRef: ref]) {
             var result: CFTypeRef?
             if SecItemCopyMatching(legacyQuery as CFDictionary, &result) == errSecSuccess {
-                return true
+                return false
             }
         }
 
@@ -990,6 +1092,11 @@ class Keychain {
             systemAttributes[kSecUseKeychain] = systemKeychain
             var result: CFTypeRef?
             let status = SecItemCopyMatching(systemAttributes as CFDictionary, &result)
+            return (status, result)
+        }
+        if WireRouteSystemKeychainIdentity.isAppExtensionProcess {
+            var result: CFTypeRef?
+            let status = SecItemCopyMatching(attributes as CFDictionary, &result)
             return (status, result)
         }
         #endif

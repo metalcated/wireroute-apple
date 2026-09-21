@@ -1173,12 +1173,12 @@ class TunnelsManager {
                let passwordReference = proto.passwordReference,
                proto.verifyConfigurationReference() {
                 saveMacOSRecoveryConfiguration(for: manager)
-                if Keychain.requiresDataProtectionKeychainMigration(called: passwordReference) {
+                if Keychain.requiresEmbeddedAppKeychainMigration(called: passwordReference) {
                     if await migrateMacOSKeychainStorage(
                         manager: manager,
                         configuration: configuration,
                         oldPasswordReference: passwordReference,
-                        destinationDescription: "Data Protection Keychain storage"
+                        destinationDescription: "embedded-extension Keychain storage"
                     ) {
                         saveMacOSRecoveryConfiguration(for: manager)
                     } else {
@@ -1250,7 +1250,7 @@ class TunnelsManager {
             let manager = NETunnelProviderManager()
             let requiresKeychainMigration = Keychain.requiresSystemExtensionMigration(
                 called: storedConfiguration.reference
-            ) || Keychain.requiresDataProtectionKeychainMigration(called: storedConfiguration.reference)
+            ) || Keychain.requiresEmbeddedAppKeychainMigration(called: storedConfiguration.reference)
             let replacementProtocol = requiresKeychainMigration
                 ? manager.setTunnelConfiguration(configuration)
                 : manager.setRecoveredTunnelConfiguration(
@@ -1260,6 +1260,16 @@ class TunnelsManager {
             guard let replacementProtocol else {
                 failedRecoveryNames.append(storedConfiguration.name)
                 continue
+            }
+            if requiresKeychainMigration {
+                guard let newReference = replacementProtocol.passwordReference,
+                      Keychain.verifyReference(called: newReference),
+                      Keychain.openReference(called: newReference) != nil else {
+                    replacementProtocol.destroyConfigurationReference()
+                    failedRecoveryNames.append(storedConfiguration.name)
+                    wg_log(.error, message: "Unable to verify migrated Keychain storage for profile '\(storedConfiguration.name)'")
+                    continue
+                }
             }
             manager.isEnabled = true
             do {
@@ -1376,7 +1386,7 @@ class TunnelsManager {
 
         let canReuseReference = Keychain.openReference(called: record.passwordReference) != nil
             && !Keychain.requiresSystemExtensionMigration(called: record.passwordReference)
-            && !Keychain.requiresDataProtectionKeychainMigration(called: record.passwordReference)
+            && !Keychain.requiresEmbeddedAppKeychainMigration(called: record.passwordReference)
         let replacementProtocol: NETunnelProviderProtocol?
         if canReuseReference {
             replacementProtocol = manager.setRecoveredTunnelConfiguration(
@@ -1387,6 +1397,21 @@ class TunnelsManager {
             replacementProtocol = manager.setTunnelConfiguration(configuration)
         }
         guard let replacementProtocol else { return false }
+        if !canReuseReference {
+            guard let newReference = replacementProtocol.passwordReference,
+                  Keychain.verifyReference(called: newReference),
+                  Keychain.openReference(called: newReference) != nil else {
+                replacementProtocol.destroyConfigurationReference()
+                manager.protocolConfiguration = previousProtocolConfiguration
+                manager.localizedDescription = previousLocalizedDescription
+                manager.cacheTunnelConfiguration(previousConfiguration)
+                manager.isEnabled = previousIsEnabled
+                manager.onDemandRules = previousOnDemandRules
+                manager.isOnDemandEnabled = previousIsOnDemandEnabled
+                wg_log(.error, message: "Unable to verify replacement Keychain storage for profile '\(record.name)'")
+                return false
+            }
+        }
 
         if let providerConfiguration = record.providerConfiguration,
            let propertyList = try? PropertyListSerialization.propertyList(
@@ -1487,7 +1512,9 @@ class TunnelsManager {
 
         guard let replacementProtocol = manager.setTunnelConfiguration(configuration),
               let newPasswordReference = replacementProtocol.passwordReference,
-              newPasswordReference != oldPasswordReference else {
+              newPasswordReference != oldPasswordReference,
+              Keychain.verifyReference(called: newPasswordReference),
+              Keychain.openReference(called: newPasswordReference) != nil else {
             manager.protocolConfiguration = previousProtocolConfiguration
             manager.localizedDescription = previousLocalizedDescription
             manager.cacheTunnelConfiguration(previousConfiguration)
@@ -1871,16 +1898,6 @@ class TunnelsManager {
             automaticProfilesRuntimeState = nil
             automaticProfilesStateRequestToken = nil
             tunnels.forEach { $0.clearAutomaticProfilesProjection() }
-            if let pendingTunnel = pendingAutomaticProfilesActivationTunnel {
-                sendAutomaticProfilesCommand(
-                    .activateManually(
-                        profileID: pendingTunnel.activityProfileIdentifier,
-                        network: automaticProfilesCurrentNetworkObservation
-                    ),
-                    startIfDisconnected: true,
-                    activationAttemptID: pendingTunnel.activationAttemptId
-                )
-            }
             return
         }
 
@@ -2224,6 +2241,17 @@ class TunnelsManager {
 
                 if tunnelProvider == self.automaticProfilesController {
                     wg_log(.debug, message: "Automatic Profiles controller status changed to '\(session.status)'")
+                    if (session.status == .disconnected || session.status == .invalid),
+                       let pendingTunnel = self.pendingAutomaticProfilesActivationTunnel {
+                        self.pendingAutomaticProfilesActivationTunnel = nil
+                        self.pendingAutomaticProfilesActivationToken = nil
+                        pendingTunnel.status = .inactive
+                        self.reportActivationFailure(
+                            for: pendingTunnel,
+                            session: session,
+                            wasOnDemandEnabled: tunnelProvider.isOnDemandEnabled
+                        )
+                    }
                     self.refreshAutomaticProfilesProjection()
                     if session.status == .connected,
                        let pendingTunnel = self.pendingAutomaticProfilesActivationTunnel {
