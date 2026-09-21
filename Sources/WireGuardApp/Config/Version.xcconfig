@@ -1,3 +1,11 @@
-// Shared defaults for targets that do not override Version or Build in Xcode.
-MARKETING_VERSION = 1.0.19
-CURRENT_PROJECT_VERSION = 13
+// Edit versions here. Every app, extension, and helper inherits these values.
+// Do not override Version or Build in an Xcode target's General settings.
+WIREROUTE_IOS_MARKETING_VERSION = 1.0.19
+WIREROUTE_IOS_BUILD_NUMBER = 13
+WIREROUTE_MACOS_MARKETING_VERSION = 1.0.21
+WIREROUTE_MACOS_BUILD_NUMBER = 15
+
+MARKETING_VERSION = $(WIREROUTE_IOS_MARKETING_VERSION)
+CURRENT_PROJECT_VERSION = $(WIREROUTE_IOS_BUILD_NUMBER)
+MARKETING_VERSION[sdk=macosx*] = $(WIREROUTE_MACOS_MARKETING_VERSION)
+CURRENT_PROJECT_VERSION[sdk=macosx*] = $(WIREROUTE_MACOS_BUILD_NUMBER)

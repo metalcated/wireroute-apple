@@ -46,6 +46,18 @@ jobs:
             Sources/WireGuardApp/Config/Developer.xcconfig
           sed -i '' 's/<team_id>//' Sources/WireGuardApp/Config/Developer.xcconfig
 
+      - name: Verify centralized version settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -nE '^[[:space:]]*(MARKETING_VERSION|CURRENT_PROJECT_VERSION) = ' \
+            WireGuard.xcodeproj/project.pbxproj
+          then
+            echo "Version and build overrides must be removed from Xcode targets."
+            echo "Edit Sources/WireGuardApp/Config/Version.xcconfig instead."
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -62,9 +74,9 @@ jobs:
             echo "Release tag must use MAJOR.MINOR.PATCH format; received ${tag}."
             exit 1
           fi
-          version="$(sed -n 's/^MARKETING_VERSION = //p' Sources/WireGuardApp/Config/Version.xcconfig)"
+          version="$(sed -n 's/^WIREROUTE_MACOS_MARKETING_VERSION = //p' Sources/WireGuardApp/Config/Version.xcconfig)"
           if [[ "${tag}" != "${version}" ]]; then
-            echo "Release tag ${tag} does not match MARKETING_VERSION ${version}."
+            echo "Release tag ${tag} does not match the macOS marketing version ${version}."
             exit 1
           fi
 

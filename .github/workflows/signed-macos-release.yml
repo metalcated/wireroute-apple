@@ -9,7 +9,6 @@ on:
       tag:
         description: Existing semantic-version tag to package
         required: true
-        default: "1.0.19"
         type: string
       candidate:
         description: Build a signed test artifact from this workflow branch without publishing the GitHub release
@@ -63,15 +62,23 @@ jobs:
             exit 1
           fi
 
-          version="$(sed -n 's/^MARKETING_VERSION = //p' Sources/WireGuardApp/Config/Version.xcconfig)"
-          if [[ "${RELEASE_TAG}" != "${version}" ]]; then
-            echo "Release tag ${RELEASE_TAG} does not match MARKETING_VERSION ${version}."
+          if grep -nE '^[[:space:]]*(MARKETING_VERSION|CURRENT_PROJECT_VERSION) = ' \
+            WireGuard.xcodeproj/project.pbxproj
+          then
+            echo "Version and build overrides must be removed from Xcode targets."
+            echo "Edit Sources/WireGuardApp/Config/Version.xcconfig instead."
             exit 1
           fi
 
-          build_number="$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' Sources/WireGuardApp/Config/Version.xcconfig)"
+          version="$(sed -n 's/^WIREROUTE_MACOS_MARKETING_VERSION = //p' Sources/WireGuardApp/Config/Version.xcconfig)"
+          if [[ "${RELEASE_TAG}" != "${version}" ]]; then
+            echo "Release tag ${RELEASE_TAG} does not match the macOS marketing version ${version}."
+            exit 1
+          fi
+
+          build_number="$(sed -n 's/^WIREROUTE_MACOS_BUILD_NUMBER = //p' Sources/WireGuardApp/Config/Version.xcconfig)"
           if [[ ! "${build_number}" =~ ^[1-9][0-9]*$ ]]; then
-            echo "CURRENT_PROJECT_VERSION must be a positive integer; received ${build_number}."
+            echo "The macOS build number must be a positive integer; received ${build_number}."
             exit 1
           fi
 
