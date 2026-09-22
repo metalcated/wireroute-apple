@@ -148,7 +148,6 @@ private enum WireRouteSystemKeychainIdentity {
     static var legacyMigrationMachServiceName: String? {
         guard isContainingAppProcess,
               embeddedSystemExtensionBundle == nil,
-              !isEmbeddedAppContainingProcess,
               let appGroupIdentifier = FileManager.appGroupId,
               !appGroupIdentifier.isEmpty else {
             return nil
@@ -980,22 +979,29 @@ class Keychain {
     static func deleteReference(called ref: Data) {
         #if os(macOS)
         if WireRouteSystemKeychainIdentity.isEmbeddedAppContainingProcess {
-            var loginStatus = errSecItemNotFound
-            if let loginQuery = legacyUserKeychainQuery([kSecValuePersistentRef: ref]) {
-                loginStatus = SecItemDelete(loginQuery as CFDictionary)
-                if loginStatus == errSecSuccess {
+            let status: OSStatus
+            switch embeddedAppReferenceStorage(called: ref) {
+            case .login:
+                guard let loginQuery = legacyUserKeychainQuery([
+                    kSecValuePersistentRef: ref
+                ]) else {
                     return
                 }
+                status = SecItemDelete(loginQuery as CFDictionary)
+            case .dataProtection:
+                status = dataProtectionDelete([
+                    kSecValuePersistentRef: ref
+                ])
+            case .unavailable:
+                status = WireRouteSystemKeychainXPCClient.legacyMigrationClient()?
+                    .delete(reference: ref) ?? errSecNotAvailable
             }
-
-            let dataProtectionStatus = dataProtectionDelete([
-                kSecValuePersistentRef: ref
-            ])
-            if dataProtectionStatus != errSecSuccess,
-               (loginStatus != errSecItemNotFound || dataProtectionStatus != errSecItemNotFound) {
+            if status != errSecSuccess,
+               status != errSecItemNotFound,
+               status != errSecNotAvailable {
                 wg_log(
                     .error,
-                    message: "Unable to delete embedded app config from keychains: login=\(loginStatus), data-protection=\(dataProtectionStatus)"
+                    message: "Unable to delete embedded app config from its owning Keychain: \(status)"
                 )
             }
             return
@@ -1090,22 +1096,15 @@ class Keychain {
             return false
         }
 
-        let (dataProtectionStatus, _) = dataProtectionCopyMatching([
-            kSecValuePersistentRef: ref
-        ])
-        if dataProtectionStatus == errSecSuccess {
+        switch embeddedAppReferenceStorage(called: ref) {
+        case .dataProtection:
             return true
+        case .login:
+            return false
+        case .unavailable:
+            return WireRouteSystemKeychainXPCClient.legacyMigrationClient()?
+                .verify(reference: ref) == errSecSuccess
         }
-
-        if let legacyQuery = legacyUserKeychainQuery([kSecValuePersistentRef: ref]) {
-            var result: CFTypeRef?
-            if SecItemCopyMatching(legacyQuery as CFDictionary, &result) == errSecSuccess {
-                return false
-            }
-        }
-
-        return WireRouteSystemKeychainXPCClient.legacyMigrationClient()?
-            .verify(reference: ref) == errSecSuccess
     }
     #endif
 
@@ -1128,12 +1127,28 @@ class Keychain {
             let status = SecItemCopyMatching(attributes as CFDictionary, &result)
             return (status, result)
         }
-        if WireRouteSystemKeychainIdentity.isEmbeddedAppContainingProcess,
-           let loginQuery = legacyUserKeychainQuery(attributes) {
-            var result: CFTypeRef?
-            let loginStatus = SecItemCopyMatching(loginQuery as CFDictionary, &result)
-            if loginStatus == errSecSuccess {
-                return (loginStatus, result)
+        if WireRouteSystemKeychainIdentity.isEmbeddedAppContainingProcess {
+            if let reference = attributes[kSecValuePersistentRef] as? Data {
+                switch embeddedAppReferenceStorage(called: reference) {
+                case .login:
+                    guard let loginQuery = legacyUserKeychainQuery(attributes) else {
+                        return (errSecNotAvailable, nil)
+                    }
+                    var result: CFTypeRef?
+                    let status = SecItemCopyMatching(loginQuery as CFDictionary, &result)
+                    return (status, result)
+                case .dataProtection:
+                    return dataProtectionCopyMatching(attributes)
+                case .unavailable:
+                    return (errSecItemNotFound, nil)
+                }
+            }
+            if let loginQuery = legacyUserKeychainQuery(attributes) {
+                var result: CFTypeRef?
+                let loginStatus = SecItemCopyMatching(loginQuery as CFDictionary, &result)
+                if loginStatus == errSecSuccess {
+                    return (loginStatus, result)
+                }
             }
             return dataProtectionCopyMatching(attributes)
         }
@@ -1196,6 +1211,27 @@ class Keychain {
     private static func shouldTryLegacyKeychain(after status: OSStatus) -> Bool {
         status == errSecItemNotFound || status == errSecParam || status == errSecNotAvailable
     }
+
+    #if os(macOS)
+    private enum EmbeddedAppReferenceStorage {
+        case login
+        case dataProtection
+        case unavailable
+    }
+
+    private static func embeddedAppReferenceStorage(called reference: Data) -> EmbeddedAppReferenceStorage {
+        guard let service = serviceIdentifier(suffix: nil) else {
+            return .unavailable
+        }
+        if persistentReferences(service: service, useDataProtectionKeychain: false).contains(reference) {
+            return .login
+        }
+        if persistentReferences(service: service, useDataProtectionKeychain: true).contains(reference) {
+            return .dataProtection
+        }
+        return .unavailable
+    }
+    #endif
 
     private static func persistentReferences(
         service: String,
