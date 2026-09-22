@@ -129,6 +129,12 @@ private enum WireRouteSystemKeychainIdentity {
             .first { $0.bundleIdentifier == expectedIdentifier }
     }
 
+    static var isEmbeddedAppContainingProcess: Bool {
+        isContainingAppProcess
+            && embeddedSystemExtensionBundle == nil
+            && embeddedAppExtensionBundle != nil
+    }
+
     static var machServiceName: String? {
         let bundle = isSystemExtensionProcess ? Bundle.main : embeddedSystemExtensionBundle
         guard let networkExtension = bundle?.object(forInfoDictionaryKey: "NetworkExtension") as? [String: Any],
@@ -142,6 +148,7 @@ private enum WireRouteSystemKeychainIdentity {
     static var legacyMigrationMachServiceName: String? {
         guard isContainingAppProcess,
               embeddedSystemExtensionBundle == nil,
+              !isEmbeddedAppContainingProcess,
               let appGroupIdentifier = FileManager.appGroupId,
               !appGroupIdentifier.isEmpty else {
             return nil
@@ -972,6 +979,28 @@ class Keychain {
 
     static func deleteReference(called ref: Data) {
         #if os(macOS)
+        if WireRouteSystemKeychainIdentity.isEmbeddedAppContainingProcess {
+            var loginStatus = errSecItemNotFound
+            if let loginQuery = legacyUserKeychainQuery([kSecValuePersistentRef: ref]) {
+                loginStatus = SecItemDelete(loginQuery as CFDictionary)
+                if loginStatus == errSecSuccess {
+                    return
+                }
+            }
+
+            let dataProtectionStatus = dataProtectionDelete([
+                kSecValuePersistentRef: ref
+            ])
+            if dataProtectionStatus != errSecSuccess,
+               (loginStatus != errSecItemNotFound || dataProtectionStatus != errSecItemNotFound) {
+                wg_log(
+                    .error,
+                    message: "Unable to delete embedded app config from keychains: login=\(loginStatus), data-protection=\(dataProtectionStatus)"
+                )
+            }
+            return
+        }
+
         var systemStatus = errSecItemNotFound
         if !WireRouteSystemKeychainIdentity.isSystemExtensionProcess,
            let client = WireRouteSystemKeychainXPCClient() {
@@ -1099,6 +1128,15 @@ class Keychain {
             let status = SecItemCopyMatching(attributes as CFDictionary, &result)
             return (status, result)
         }
+        if WireRouteSystemKeychainIdentity.isEmbeddedAppContainingProcess,
+           let loginQuery = legacyUserKeychainQuery(attributes) {
+            var result: CFTypeRef?
+            let loginStatus = SecItemCopyMatching(loginQuery as CFDictionary, &result)
+            if loginStatus == errSecSuccess {
+                return (loginStatus, result)
+            }
+            return dataProtectionCopyMatching(attributes)
+        }
         #endif
         var (ret, result) = dataProtectionCopyMatching(attributes)
         #if os(macOS)
@@ -1116,12 +1154,30 @@ class Keychain {
     ) -> (OSStatus, CFTypeRef?) {
         var modernAttributes = attributes
         modernAttributes[kSecUseDataProtectionKeychain] = true
+        #if os(macOS)
+        modernAttributes[kSecUseAuthenticationContext] = nonInteractiveAuthenticationContext()
+        #endif
         var result: CFTypeRef?
         let status = SecItemCopyMatching(modernAttributes as CFDictionary, &result)
         return (status, result)
     }
 
     #if os(macOS)
+    private static func dataProtectionDelete(
+        _ attributes: [CFString: Any]
+    ) -> OSStatus {
+        var modernAttributes = attributes
+        modernAttributes[kSecUseDataProtectionKeychain] = true
+        modernAttributes[kSecUseAuthenticationContext] = nonInteractiveAuthenticationContext()
+        return SecItemDelete(modernAttributes as CFDictionary)
+    }
+
+    private static func nonInteractiveAuthenticationContext() -> LAContext {
+        let authenticationContext = LAContext()
+        authenticationContext.interactionNotAllowed = true
+        return authenticationContext
+    }
+
     private static func legacyUserKeychainQuery(
         _ attributes: [CFString: Any]
     ) -> [CFString: Any]? {
@@ -1130,11 +1186,9 @@ class Keychain {
               let defaultKeychain else {
             return nil
         }
-        let authenticationContext = LAContext()
-        authenticationContext.interactionNotAllowed = true
         var query = attributes
         query[kSecMatchSearchList] = [defaultKeychain]
-        query[kSecUseAuthenticationContext] = authenticationContext
+        query[kSecUseAuthenticationContext] = nonInteractiveAuthenticationContext()
         return query
     }
     #endif
