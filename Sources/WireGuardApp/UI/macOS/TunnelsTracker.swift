@@ -25,6 +25,7 @@ class TunnelsTracker {
 
     private var tunnelsManager: TunnelsManager
     private var tunnelStatusObservers = [AnyObject]()
+    private var isShowingRegistrationRepair = false
     private(set) var currentTunnel: TunnelContainer? {
         didSet {
             statusMenu?.currentTunnel = currentTunnel
@@ -109,6 +110,12 @@ extension TunnelsTracker: TunnelsManagerActivationDelegate {
     }
 
     func tunnelActivationFailed(tunnel: TunnelContainer, error: TunnelsManagerActivationError) {
+        if case .activationFailedWithSystemError(let systemError, _) = error,
+           MacOSVPNRegistrationRepair.isProviderUnavailable(systemError),
+           tunnelsManager.canRepairVPNRegistration(for: tunnel) {
+            offerRegistrationRepair(for: tunnel)
+            return
+        }
         if let manageTunnelsRootVC = manageTunnelsRootVC, manageTunnelsRootVC.view.window?.isVisible ?? false {
             ErrorPresenter.showErrorAlert(error: error, from: manageTunnelsRootVC)
         } else {
@@ -118,5 +125,45 @@ extension TunnelsTracker: TunnelsManagerActivationDelegate {
 
     func tunnelActivationSucceeded(tunnel: TunnelContainer) {
         AppDelegate.clearNetworkExtensionApprovalReminder()
+    }
+
+    private func offerRegistrationRepair(for tunnel: TunnelContainer) {
+        guard !isShowingRegistrationRepair else { return }
+        isShowingRegistrationRepair = true
+        let alert = NSAlert()
+        alert.messageText = tr("vpnRegistrationRepairTitle")
+        alert.informativeText = tr("vpnRegistrationRepairExplanation")
+        alert.addButton(withTitle: tr("vpnRegistrationRepairCancel"))
+        alert.addButton(withTitle: tr("vpnRegistrationRepairAction"))
+        let respond: @MainActor (NSApplication.ModalResponse) -> Void = { [weak self, weak tunnel] response in
+            guard let self else { return }
+            guard response == .alertSecondButtonReturn, let tunnel else {
+                self.isShowingRegistrationRepair = false
+                return
+            }
+            Task { @MainActor in
+                defer { self.isShowingRegistrationRepair = false }
+                do {
+                    try await self.tunnelsManager.repairVPNRegistration(for: tunnel)
+                    ErrorPresenter.showErrorAlert(
+                        title: tr("vpnRegistrationRepairSaved"), message: tr("vpnRegistrationRepairNextSteps"),
+                        from: self.manageTunnelsRootVC?.view.window == nil ? nil : self.manageTunnelsRootVC
+                    )
+                } catch {
+                    let detail = (error as? WireGuardAppError)?.alertText.message ?? error.localizedDescription
+                    ErrorPresenter.showErrorAlert(
+                        title: tr("vpnRegistrationRepairFailed"),
+                        message: detail + "\n\n" + tr("vpnRegistrationRepairFailureAdvice"),
+                        from: self.manageTunnelsRootVC?.view.window == nil ? nil : self.manageTunnelsRootVC
+                    )
+                }
+            }
+        }
+        if let window = manageTunnelsRootVC?.view.window, window.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            alert.beginSheetModal(for: window, completionHandler: respond)
+        } else {
+            respond(alert.runModal())
+        }
     }
 }

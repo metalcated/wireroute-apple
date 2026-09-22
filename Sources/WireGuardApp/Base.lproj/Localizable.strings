@@ -973,4 +973,15 @@
 
 // Donation
 
+// macOS installed VPN registration recovery
+"vpnRegistrationRepairTitle" = "Repair VPN Setup?";
+"vpnRegistrationRepairExplanation" = "macOS could not launch this copy of WireRoute’s VPN provider. Its saved registration may be stale, or the provider may be disabled.\n\nRepair recreates only the failed VPN registration. Your profiles, keys, routing, DNS, and automatic connection rules are kept. macOS may ask permission to add the VPN configuration; saved On-Demand rules can resume afterwards.\n\nThis does not reinstall or enable a disabled extension. No router changes are needed.";
+"vpnRegistrationRepairCancel" = "Not Now";
+"vpnRegistrationRepairAction" = "Repair VPN Setup";
+"vpnRegistrationRepairBusy" = "VPN setup is being repaired. Please wait before changing profiles or connection settings.";
+"vpnRegistrationRepairSaved" = "VPN Registration Recreated";
+"vpnRegistrationRepairNextSteps" = "The replacement registration was saved and read back successfully. Your keys and rules were kept.\n\nTry Activate and check for a handshake and traffic. Test On-Demand and Automatic Profiles separately. Saving the registration does not prove that macOS can launch the provider.";
+"vpnRegistrationRepairFailed" = "VPN Setup Repair Did Not Complete";
+"vpnRegistrationRepairFailureAdvice" = "WireRoute did not delete your private keys or change your router. No automatic repair will be retried. If the provider remains unavailable, check that this installed app is the intended copy and collect the log before reinstalling anything.";
+
 "donateLink" = "♥ Donate to the WireGuard Project";

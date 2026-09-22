@@ -241,6 +241,7 @@
 		C0DE00000000000000000024 /* RoutingPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000004 /* RoutingPlan.swift */; };
 		C0DE00000000000000000025 /* TunnelRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000005 /* TunnelRouting.swift */; };
 		C0DE20000000000000000001 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE20000000000000000003 /* MapLibre */; };
+		A73000000000000000000002 /* MacOSVPNRegistrationRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73000000000000000000001 /* MacOSVPNRegistrationRepair.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -493,6 +494,7 @@
 		C0DE00000000000000000003 /* TunnelRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelRoutingPolicy.swift; sourceTree = "<group>"; };
 		C0DE00000000000000000004 /* RoutingPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutingPlan.swift; sourceTree = "<group>"; };
 		C0DE00000000000000000005 /* TunnelRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelRouting.swift; sourceTree = "<group>"; };
+		A73000000000000000000001 /* MacOSVPNRegistrationRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVPNRegistrationRepair.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -893,6 +895,7 @@
 		C0DE00000000000000000031 /* WireRouteCore */ = {
 			isa = PBXGroup;
 			children = (
+				A73000000000000000000001 /* MacOSVPNRegistrationRepair.swift */,
 				A71000000000000000000001 /* ActivityMetrics.swift */,
 				A71000000000000000000051 /* AutomaticProfilePolicy.swift */,
 				C0DE00000000000000000001 /* IPFamily.swift */,
@@ -1426,6 +1429,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A72000000000000000000012 /* AutomaticProfilesEditor.swift in Sources */,
+				A73000000000000000000002 /* MacOSVPNRegistrationRepair.swift in Sources */,
 				A71000000000000000000012 /* ActivityMetrics.swift in Sources */,
 				A71000000000000000000053 /* AutomaticProfilePolicy.swift in Sources */,
 				A71000000000000000000022 /* ActivityMonitor.swift in Sources */,

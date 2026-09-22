@@ -8,6 +8,7 @@ enum TunnelsManagerError: WireGuardAppError {
     case tunnelAlreadyExistsWithThatName
     case tunnelConfigurationUnavailable
     case automaticProfilesEnabled
+    case vpnConfigurationBusy
     case systemErrorOnListingTunnels(systemError: Error)
     case systemErrorOnAddTunnel(systemError: Error)
     case systemErrorOnModifyTunnel(systemError: Error)
@@ -15,6 +16,8 @@ enum TunnelsManagerError: WireGuardAppError {
 
     var alertText: AlertText {
         switch self {
+        case .vpnConfigurationBusy:
+            return (tr("vpnRegistrationRepairTitle"), tr("vpnRegistrationRepairBusy"))
         case .tunnelNameEmpty:
             return (tr("alertTunnelNameEmptyTitle"), tr("alertTunnelNameEmptyMessage"))
         case .tunnelAlreadyExistsWithThatName:

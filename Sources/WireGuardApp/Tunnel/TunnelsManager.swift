@@ -412,11 +412,21 @@ class TunnelsManager {
     private var pendingAutomaticProfilesActivationToken: UUID?
     private weak var pendingDirectActivationTunnel: TunnelContainer?
 
+    private var configurationChangeBlocked: Bool {
+        #if os(macOS)
+        return isRepairingVPNRegistration
+        #else
+        return false
+        #endif
+    }
+
     #if os(macOS)
     private var automaticProfilesMacNetworkObserver: AutomaticProfilesMacNetworkObserver?
     private(set) var profileRecoveryNamesRequiringApproval: [String]
     var profileRecoveryAttentionHandler: (([String]) -> Void)?
     private var isReloadingTunnelConfigurations = false
+    private(set) var isRepairingVPNRegistration = false
+    private var registrationRepairTargets: [UUID: (attemptID: String?, manager: NETunnelProviderManager)] = [:]
     private var didAttemptProfileRecovery: Bool
     #elseif os(iOS)
     private var automaticProfilesIOSNetworkObserver: AutomaticProfilesIOSNetworkObserver?
@@ -480,7 +490,11 @@ class TunnelsManager {
                     return
                 }
 
+                #if os(macOS)
+                let loadedManagers = MacOSVPNRegistrationRepair.visibleManagers(managers ?? [])
+                #else
                 let loadedManagers = managers ?? []
+                #endif
                 let automaticProfilesController = loadedManagers.first {
                     ($0.protocolConfiguration as? NETunnelProviderProtocol)?.isWireRouteAutomaticProfilesController == true
                 }
@@ -542,7 +556,7 @@ class TunnelsManager {
 
     func reload() {
         #if os(macOS)
-        guard !isReloadingTunnelConfigurations else { return }
+        guard !isReloadingTunnelConfigurations, !isRepairingVPNRegistration else { return }
         isReloadingTunnelConfigurations = true
         #endif
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
@@ -563,10 +577,16 @@ class TunnelsManager {
                     return
                 }
 
-                let automaticProfilesController = managers.first {
+                #if os(macOS)
+                let visibleManagers = MacOSVPNRegistrationRepair.visibleManagers(managers)
+                #else
+                let visibleManagers = managers
+                #endif
+
+                let automaticProfilesController = visibleManagers.first {
                     ($0.protocolConfiguration as? NETunnelProviderProtocol)?.isWireRouteAutomaticProfilesController == true
                 }
-                let profileManagers = managers.filter {
+                let profileManagers = visibleManagers.filter {
                     ($0.protocolConfiguration as? NETunnelProviderProtocol)?.isWireRouteAutomaticProfilesController != true
                 }
                 self.automaticProfilesController = automaticProfilesController
@@ -666,6 +686,67 @@ class TunnelsManager {
         didAttemptProfileRecovery = false
         reload()
     }
+
+    private var embeddedProviderIdentifier: String? {
+        guard let appID = Bundle.main.bundleIdentifier,
+              let pluginsURL = Bundle.main.builtInPlugInsURL,
+              let plugins = try? FileManager.default.contentsOfDirectory(at: pluginsURL, includingPropertiesForKeys: nil),
+              plugins.contains(where: {
+                  $0.pathExtension == "appex" && Bundle(url: $0)?.bundleIdentifier == appID + ".network-extension"
+              }) else { return nil }
+        return appID + ".network-extension"
+    }
+
+    func canRepairVPNRegistration(for tunnel: TunnelContainer) -> Bool {
+        guard embeddedProviderIdentifier != nil, !isRepairingVPNRegistration,
+              let target = registrationRepairTargets[tunnel.activityProfileIdentifier],
+              target.attemptID == tunnel.activationAttemptId else { return false }
+        return true
+    }
+
+    /// Called only by the explicit Repair action, never by startup or a retry timer.
+    func repairVPNRegistration(for tunnel: TunnelContainer) async throws {
+        guard canRepairVPNRegistration(for: tunnel),
+              let providerID = embeddedProviderIdentifier,
+              let target = registrationRepairTargets[tunnel.activityProfileIdentifier],
+              tunnels.contains(tunnel) else { throw MacOSVPNRegistrationRepair.Failure.unavailable }
+        guard !isReloadingTunnelConfigurations,
+              tunnels.allSatisfy({ $0.status == .inactive }),
+              automaticProfilesController.map({ MacOSVPNRegistrationRepair.Store.system.isInactive($0) }) ?? true else {
+            throw MacOSVPNRegistrationRepair.Failure.busy
+        }
+        // Check accessibility without creating/replacing any credential. The
+        // controller references the existing snapshot, which is left untouched.
+        let isController = (target.manager.protocolConfiguration as? NETunnelProviderProtocol)?.isWireRouteAutomaticProfilesController == true
+        let profiles = isController ? tunnels : [tunnel]
+        guard profiles.allSatisfy({ $0.isTunnelAvailableToUser && $0.tunnelConfiguration != nil
+            && ($0.tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol)?.verifyConfigurationReference() == true
+        }) else { throw TunnelsManagerError.tunnelConfigurationUnavailable }
+
+        registrationRepairTargets.removeValue(forKey: tunnel.activityProfileIdentifier)
+        isRepairingVPNRegistration = true
+        defer {
+            isRepairingVPNRegistration = false
+            reload()
+        }
+        let replacement: NETunnelProviderManager
+        do {
+            replacement = try await MacOSVPNRegistrationRepair.repair(
+                target.manager, providerID: providerID, ownerUID: getuid()
+            )
+        } catch {
+            let failure = error as NSError
+            wg_log(.error, message: "User-requested VPN registration repair failed (controller=\(isController)): \(failure.domain) (\(failure.code)): \(failure.localizedDescription)")
+            throw error
+        }
+        if isController {
+            automaticProfilesController = replacement
+        } else {
+            tunnel.tunnelProvider = replacement
+            Self.saveMacOSRecoveryConfiguration(for: replacement)
+        }
+        wg_log(.info, staticMessage: "User-requested VPN registration repair saved and verified; connection validation still required")
+    }
     #endif
 
     func add(
@@ -673,6 +754,10 @@ class TunnelsManager {
         onDemandOption: ActivateOnDemandOption = .off,
         completionHandler: @escaping @MainActor @Sendable (Result<TunnelContainer, TunnelsManagerError>) -> Void
     ) {
+        guard !configurationChangeBlocked else {
+            completionHandler(.failure(.vpnConfigurationBusy))
+            return
+        }
         let tunnelName = tunnelConfiguration.name ?? ""
         if tunnelName.isEmpty {
             completionHandler(.failure(TunnelsManagerError.tunnelNameEmpty))
@@ -787,6 +872,10 @@ class TunnelsManager {
                 onDemandOption: ActivateOnDemandOption,
                 shouldEnsureOnDemandEnabled: Bool = false,
                 completionHandler: @escaping @MainActor @Sendable (TunnelsManagerError?) -> Void) {
+        guard !configurationChangeBlocked else {
+            completionHandler(.vpnConfigurationBusy)
+            return
+        }
         let tunnelName = tunnelConfiguration.name ?? ""
         if tunnelName.isEmpty {
             completionHandler(TunnelsManagerError.tunnelNameEmpty)
@@ -917,6 +1006,10 @@ class TunnelsManager {
         tunnel: TunnelContainer,
         completionHandler: @escaping @MainActor @Sendable (TunnelsManagerError?) -> Void
     ) {
+        guard !configurationChangeBlocked else {
+            completionHandler(.vpnConfigurationBusy)
+            return
+        }
         let tunnelProviderManager = tunnel.tunnelProvider
         let wasAutomaticProfilesProjection = tunnel.isAutomaticProfilesProjection
         let protocolConfiguration = tunnelProviderManager.protocolConfiguration as? NETunnelProviderProtocol
@@ -930,6 +1023,21 @@ class TunnelsManager {
         #endif
         Task { @MainActor [weak self] in
             do {
+                #if os(macOS)
+                // An interrupted repair must not resurrect a profile the user
+                // deliberately deletes. Retire staged registrations before the
+                // normal deletion workflow removes any shared Keychain reference.
+                if self?.embeddedProviderIdentifier != nil,
+                   !MacOSVPNRegistrationRepair.isStaged(tunnelProviderManager) {
+                    let installed = try await NETunnelProviderManager.loadAllFromPreferences()
+                    for pending in MacOSVPNRegistrationRepair.pendingReplacements(for: tunnelProviderManager, in: installed) {
+                        guard MacOSVPNRegistrationRepair.Store.system.isInactive(pending) else {
+                            throw MacOSVPNRegistrationRepair.Failure.busy
+                        }
+                        try await pending.removeFromPreferences()
+                    }
+                }
+                #endif
                 try await tunnelProviderManager.removeFromPreferences()
             } catch {
                 wg_log(.error, message: "Remove: Saving configuration failed: \(error)")
@@ -1013,6 +1121,10 @@ class TunnelsManager {
         on tunnel: TunnelContainer,
         completionHandler: @escaping @MainActor @Sendable (TunnelsManagerError?) -> Void
     ) {
+        guard !configurationChangeBlocked else {
+            completionHandler(.vpnConfigurationBusy)
+            return
+        }
         if isOnDemandEnabled && automaticProfilePolicy.isEnabled {
             completionHandler(.automaticProfilesEnabled)
             return
@@ -1061,6 +1173,10 @@ class TunnelsManager {
         on tunnel: TunnelContainer,
         completionHandler: @escaping @MainActor @Sendable (WireGuardAppError?) -> Void
     ) {
+        guard !configurationChangeBlocked else {
+            completionHandler(TunnelsManagerError.vpnConfigurationBusy)
+            return
+        }
         guard let tunnelConfiguration = tunnel.tunnelConfiguration,
               let tunnelProtocol = tunnel.tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol else {
             completionHandler(TunnelRoutingError.invalidStoredRoutes)
@@ -1109,6 +1225,10 @@ class TunnelsManager {
         on tunnel: TunnelContainer,
         completionHandler: @escaping @MainActor @Sendable (WireGuardAppError?) -> Void
     ) {
+        guard !configurationChangeBlocked else {
+            completionHandler(TunnelsManagerError.vpnConfigurationBusy)
+            return
+        }
         guard let tunnelProtocol = tunnel.tunnelProvider.protocolConfiguration as? NETunnelProviderProtocol else {
             completionHandler(TunnelDNSProtectionError.invalidStoredConfiguration)
             return
@@ -1610,6 +1730,9 @@ class TunnelsManager {
     }
 
     private func refreshAutomaticProfilesSnapshotIfNeeded() {
+        #if os(macOS)
+        guard !isRepairingVPNRegistration else { return }
+        #endif
         guard let snapshotURL = FileManager.automaticProfilesSnapshotURL(),
               let existingSnapshot = try? AutomaticProfileFileStore.loadSnapshot(from: snapshotURL),
               existingSnapshot.policy.isEnabled else {
@@ -1650,6 +1773,10 @@ class TunnelsManager {
         _ requestedPolicy: AutomaticProfilePolicy,
         completionHandler: @escaping @MainActor @Sendable (AutomaticProfilesManagementError?) -> Void
     ) {
+        guard !configurationChangeBlocked else {
+            completionHandler(.saveFailed(TunnelsManagerError.vpnConfigurationBusy))
+            return
+        }
         guard let snapshotURL = FileManager.automaticProfilesSnapshotURL() else {
             completionHandler(.sharedStorageUnavailable)
             return
@@ -1833,6 +1960,7 @@ class TunnelsManager {
     private func handleMacAutomaticProfilesNetworkChange(
         _ observation: AutomaticProfileNetworkObservation
     ) {
+        guard !isRepairingVPNRegistration else { return }
         let policy = automaticProfilePolicy
         guard policy.isEnabled else { return }
         guard !tunnels.contains(where: {
@@ -2011,6 +2139,10 @@ class TunnelsManager {
     }
 
     func startActivation(of tunnel: TunnelContainer) {
+        #if os(macOS)
+        guard !isRepairingVPNRegistration else { return }
+        registrationRepairTargets.removeValue(forKey: tunnel.activityProfileIdentifier)
+        #endif
         guard tunnels.contains(tunnel) else { return } // Ensure it's not deleted
         guard tunnel.status == .inactive else {
             activationDelegate?.tunnelActivationAttemptFailed(tunnel: tunnel, error: .tunnelIsNotInactive)
@@ -2239,6 +2371,10 @@ class TunnelsManager {
                     let session = notificationObject.value as? NETunnelProviderSession,
                     let tunnelProvider = session.manager as? NETunnelProviderManager else { return }
 
+                #if os(macOS)
+                guard !self.isRepairingVPNRegistration else { return }
+                #endif
+
                 if tunnelProvider == self.automaticProfilesController {
                     wg_log(.debug, message: "Automatic Profiles controller status changed to '\(session.status)'")
                     if (session.status == .disconnected || session.status == .invalid),
@@ -2351,6 +2487,9 @@ class TunnelsManager {
         }
 
         let activationAttemptId = tunnel.activationAttemptId
+        #if os(macOS)
+        let failedManager = UncheckedTransfer(value: session.manager as? NETunnelProviderManager)
+        #endif
         session.fetchLastDisconnectError { [weak self, weak tunnel] systemError in
             let transferredError = UncheckedTransfer(value: systemError)
             Task { @MainActor [weak self, weak tunnel] in
@@ -2368,6 +2507,13 @@ class TunnelsManager {
                     )
                 } else if let systemError = transferredError.value {
                     let error = systemError as NSError
+                    #if os(macOS)
+                    if MacOSVPNRegistrationRepair.isProviderUnavailable(systemError),
+                       self.embeddedProviderIdentifier != nil,
+                       let manager = failedManager.value {
+                        self.registrationRepairTargets[tunnel.activityProfileIdentifier] = (activationAttemptId, manager)
+                    }
+                    #endif
                     wg_log(
                         .error,
                         message: "Tunnel '\(tunnel.name)' activation failed with VPN disconnect error \(error.domain) (\(error.code)): \(error.localizedDescription)"
