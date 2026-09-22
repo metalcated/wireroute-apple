@@ -575,6 +575,39 @@ enum WireRouteSystemActivityBridge {
 #endif
 
 class Keychain {
+    // Every reference managed here is a generic password. Do not ask the data
+    // protection keychain to infer its class from a file-keychain reference:
+    // macOS rejects that query with errSecParam ("query missing class name").
+    static func referenceQuery(called reference: Data) -> [CFString: Any] {
+        [kSecClass: kSecClassGenericPassword, kSecValuePersistentRef: reference]
+    }
+
+    static func ownedServices(baseIdentifier: String) -> [String] {
+        [baseIdentifier, baseIdentifier + ".credential-recovery", baseIdentifier + ".profile-recovery"]
+    }
+
+    enum ReferenceStorage: Equatable {
+        case login
+        case dataProtection
+        case unavailable
+    }
+
+    static func referenceStorage(
+        called reference: Data,
+        services: [String],
+        listReferences: (String, Bool) -> [Data]
+    ) -> ReferenceStorage {
+        // Classify using service-scoped enumeration before dereferencing. An
+        // unknown persistent reference may point to the System keychain; even
+        // a "non-interactive" direct query can display an administrator prompt.
+        for useDataProtection in [false, true] {
+            for service in services where listReferences(service, useDataProtection).contains(reference) {
+                return useDataProtection ? .dataProtection : .login
+            }
+        }
+        return .unavailable
+    }
+
     #if os(macOS)
     private static let systemKeychainXPCServer: WireRouteSystemKeychainXPCServer? = {
         guard WireRouteSystemKeychainIdentity.isSystemExtensionProcess,
@@ -608,10 +641,9 @@ class Keychain {
             }
         }
         #endif
-        let (ret, result) = copyMatching([
-            kSecValuePersistentRef: ref,
-            kSecReturnData: true
-        ])
+        var query = referenceQuery(called: ref)
+        query[kSecReturnData] = true
+        let (ret, result) = copyMatching(query)
         if ret == errSecSuccess,
            let data = result as? Data {
             return String(data: data, encoding: String.Encoding.utf8)
@@ -944,15 +976,22 @@ class Keychain {
             return nil
         }
 
+        var loginKeychain: SecKeychain?
+        status = SecKeychainCopyDefault(&loginKeychain)
+        guard status == errSecSuccess, let loginKeychain else {
+            wg_log(.error, message: "Unable to open the user Keychain for embedded extension configuration: \(status)")
+            return nil
+        }
+
         let items: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrLabel: label,
             kSecAttrAccount: account,
             kSecAttrDescription: description,
             kSecAttrService: service,
-            kSecAttrSynchronizable: false,
-            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecAttrAccess: access,
+            kSecUseKeychain: loginKeychain,
+            kSecUseDataProtectionKeychain: false,
             kSecValueData: value.data(using: .utf8) as Any,
             kSecReturnPersistentRef: true
         ]
@@ -982,16 +1021,12 @@ class Keychain {
             let status: OSStatus
             switch embeddedAppReferenceStorage(called: ref) {
             case .login:
-                guard let loginQuery = legacyUserKeychainQuery([
-                    kSecValuePersistentRef: ref
-                ]) else {
+                guard let loginQuery = legacyUserKeychainQuery(referenceQuery(called: ref)) else {
                     return
                 }
                 status = SecItemDelete(loginQuery as CFDictionary)
             case .dataProtection:
-                status = dataProtectionDelete([
-                    kSecValuePersistentRef: ref
-                ])
+                status = dataProtectionDelete(referenceQuery(called: ref))
             case .unavailable:
                 status = WireRouteSystemKeychainXPCClient.legacyMigrationClient()?
                     .delete(reference: ref) ?? errSecNotAvailable
@@ -1016,14 +1051,12 @@ class Keychain {
             }
         }
         #endif
-        let query: [CFString: Any] = [
-            kSecValuePersistentRef: ref,
-            kSecUseDataProtectionKeychain: true
-        ]
+        var query = referenceQuery(called: ref)
+        query[kSecUseDataProtectionKeychain] = true
         var ret = SecItemDelete(query as CFDictionary)
         #if os(macOS)
         if shouldTryLegacyKeychain(after: ret),
-           let legacyQuery = legacyUserKeychainQuery([kSecValuePersistentRef: ref]) {
+           let legacyQuery = legacyUserKeychainQuery(referenceQuery(called: ref)) {
             ret = SecItemDelete(legacyQuery as CFDictionary)
         }
         if ret != errSecSuccess,
@@ -1066,7 +1099,7 @@ class Keychain {
             return true
         }
         #endif
-        let (ret, _) = copyMatching([kSecValuePersistentRef: ref])
+        let (ret, _) = copyMatching(referenceQuery(called: ref))
         if ret == errSecSuccess {
             return true
         }
@@ -1085,7 +1118,7 @@ class Keychain {
               client.verify(reference: ref) != errSecSuccess else {
             return false
         }
-        let (localStatus, _) = copyMatching([kSecValuePersistentRef: ref])
+        let (localStatus, _) = copyMatching(referenceQuery(called: ref))
         return localStatus == errSecSuccess
     }
 
@@ -1122,12 +1155,8 @@ class Keychain {
             let status = SecItemCopyMatching(systemAttributes as CFDictionary, &result)
             return (status, result)
         }
-        if WireRouteSystemKeychainIdentity.isAppExtensionProcess {
-            var result: CFTypeRef?
-            let status = SecItemCopyMatching(attributes as CFDictionary, &result)
-            return (status, result)
-        }
-        if WireRouteSystemKeychainIdentity.isEmbeddedAppContainingProcess {
+        if WireRouteSystemKeychainIdentity.isEmbeddedAppContainingProcess
+            || WireRouteSystemKeychainIdentity.isAppExtensionProcess {
             if let reference = attributes[kSecValuePersistentRef] as? Data {
                 switch embeddedAppReferenceStorage(called: reference) {
                 case .login:
@@ -1202,6 +1231,7 @@ class Keychain {
             return nil
         }
         var query = attributes
+        query[kSecUseDataProtectionKeychain] = false
         query[kSecMatchSearchList] = [defaultKeychain]
         query[kSecUseAuthenticationContext] = nonInteractiveAuthenticationContext()
         return query
@@ -1213,23 +1243,15 @@ class Keychain {
     }
 
     #if os(macOS)
-    private enum EmbeddedAppReferenceStorage {
-        case login
-        case dataProtection
-        case unavailable
-    }
-
-    private static func embeddedAppReferenceStorage(called reference: Data) -> EmbeddedAppReferenceStorage {
+    private static func embeddedAppReferenceStorage(called reference: Data) -> ReferenceStorage {
         guard let service = serviceIdentifier(suffix: nil) else {
             return .unavailable
         }
-        if persistentReferences(service: service, useDataProtectionKeychain: false).contains(reference) {
-            return .login
-        }
-        if persistentReferences(service: service, useDataProtectionKeychain: true).contains(reference) {
-            return .dataProtection
-        }
-        return .unavailable
+        return referenceStorage(
+            called: reference,
+            services: ownedServices(baseIdentifier: service),
+            listReferences: persistentReferences(service:useDataProtectionKeychain:)
+        )
     }
     #endif
 
@@ -1412,10 +1434,9 @@ class Keychain {
         let status = verifySystemTunnelReference(called: reference, ownerUID: ownerUID)
         guard status == errSecSuccess else { return status }
         guard let systemKeychain = openSystemKeychain() else { return errSecNotAvailable }
-        return SecItemDelete([
-            kSecValuePersistentRef: reference,
-            kSecUseKeychain: systemKeychain
-        ] as CFDictionary)
+        var query = referenceQuery(called: reference)
+        query[kSecUseKeychain] = systemKeychain
+        return SecItemDelete(query as CFDictionary)
     }
 
     private static func systemTunnelItem(
@@ -1426,11 +1447,9 @@ class Keychain {
         guard let systemKeychain = openSystemKeychain() else {
             return (errSecNotAvailable, nil)
         }
-        var query: [CFString: Any] = [
-            kSecValuePersistentRef: reference,
-            kSecReturnAttributes: true,
-            kSecUseKeychain: systemKeychain
-        ]
+        var query = referenceQuery(called: reference)
+        query[kSecReturnAttributes] = true
+        query[kSecUseKeychain] = systemKeychain
         if returnData {
             query[kSecReturnData] = true
         }
